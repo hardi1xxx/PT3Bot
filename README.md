@@ -49,3 +49,4 @@ Setelah semua variable di atas sudah dimasukkan ke Railway dan berjalan normal:
   entri lama (bukan di bawah)
 - Kolom tanggal pasangannya selalu di-overwrite dengan tanggal terbaru saja (bukan riwayat)
 - Kolom AB tidak pernah ditulis oleh bot — itu tetap formula gabungan otomatis di sheet
+# PT3Bot
