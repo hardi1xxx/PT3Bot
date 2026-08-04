@@ -1,0 +1,93 @@
+import os
+
+# ── Google Sheets identity ────────────────────────────────────────────
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "100Sx_DgMZjobEM_Q9xoHXU4O26iHdy_hANfbM7NxWNQ")
+SHEET_NAME = os.environ.get("SHEET_NAME", "Detail PT3")
+
+HEADER_ROW = 2          # header labels live on row 2
+DATA_START_ROW = 3      # data rows start on row 3
+
+# Unique row identity columns
+COL_IHLD = "I"
+COL_LOKASI = "J"
+
+# Status columns
+COL_STATUS_Z = "Z"    # Status Fisik (main status)
+COL_STATUS_AA = "AA"  # SUB Status Fisik (sub status)
+COL_KETERANGAN_AB = "AB"  # auto-merge formula, never written by the bot
+
+# ── Z (Status Fisik) dropdown options ─────────────────────────────────
+Z_OPTIONS = [
+    "00. DROP",
+    "01. PERIJINAN",
+    "02. PERSIAPAN",
+    "03. MATDEV",
+    "04. INSTALASI",
+    "05. FINISH INSTALASI",
+    "06. GOLIVE",
+    "07. UT",
+    "08. PEMBERKASAN",
+    "09. REKON",
+    "10. BAST",
+    "10.1 BAST 2025",
+    "0.1 SURVEI",
+]
+
+# ── AA (SUB Status Fisik) dropdown options ────────────────────────────
+AA_OPTIONS = [
+    "1.1 Persiapan",
+    "1.2. Survey",
+    "1.3. Review ED",
+    "1.4. Pengajuan PR-PO",
+    "1.5. Juskeb Swakelola",
+    "1.6. Juskeb Permit",
+    "1.7. Revisi Juskeb",
+    "1.8. Kenaikan CC",
+    "2.1. Negosiasi",
+    "2.2. Pembayaran Permit TA",
+    "2.3. Pembayaran Permit Mitra",
+    "3 Material Delivery",
+    "4.1. Galian",
+    "4.2. Tanam Tiang",
+    "4.3. Tarik Kabel",
+    "4.4. instalasi ODP",
+    "4.5. instalasi ODC",
+    "4.6. Perapihan",
+    "4.7. Selesai Fisik",
+    "4.8. Valins",
+    "4.9. Dok GOLIVE",
+    "5 GOLIVE",
+    "5.1 Uji Terima",
+    "5.2 Rekon",
+    "5.3 BAST",
+    "6. Redesign",
+    "7.1 Kendala",
+    "7.2 HOLD",
+    "0. DROP",
+    "0.1. Plan Drop",
+    "5.4 BAST 2025",
+]
+
+# ── Z value -> (date_col, note_col) routing ───────────────────────────
+# Several Z values share the same target pair (BE/BD group and BG/BF group).
+STATUS_COLUMN_MAP = {
+    "0.1 SURVEI":            {"date_col": "AR", "note_col": "AS"},
+    "01. PERIJINAN":         {"date_col": "AT", "note_col": "AU"},
+    "02. PERSIAPAN":         {"date_col": "AV", "note_col": "AW"},
+    "03. MATDEV":            {"date_col": "AX", "note_col": "AY"},
+    "04. INSTALASI":         {"date_col": "AZ", "note_col": "BA"},
+    "05. FINISH INSTALASI":  {"date_col": "BB", "note_col": "BC"},
+    "06. GOLIVE":            {"date_col": "BD", "note_col": "BE"},
+    "07. UT":                {"date_col": "BD", "note_col": "BE"},
+    "08. PEMBERKASAN":       {"date_col": "BD", "note_col": "BE"},
+    "09. REKON":             {"date_col": "BD", "note_col": "BE"},
+    "10. BAST":              {"date_col": "BD", "note_col": "BE"},
+    "00. DROP":              {"date_col": "BF", "note_col": "BG"},
+    "10.1 BAST 2025":        {"date_col": "BF", "note_col": "BG"},
+}
+
+# ── Env / secrets ──────────────────────────────────────────────────────
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+PORT = int(os.environ.get("PORT", 5000))

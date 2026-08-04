@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <label for="q">Cari IHLD / Lokasi IHLD</label>
+  <input type="text" id="q" placeholder="Ketik minimal 3 huruf...">
+  <div id="results" style="margin-top: 14px;"></div>
+</div>
+
+<script>
+const input = document.getElementById('q');
+const results = document.getElementById('results');
+let timer = null;
+
+input.addEventListener('input', () => {
+  clearTimeout(timer);
+  const q = input.value.trim();
+  if (q.length < 2) { results.innerHTML = ''; return; }
+  timer = setTimeout(() => doSearch(q), 350);
+});
+
+async function doSearch(q) {
+  results.innerHTML = '<div class="sub">Mencari...</div>';
+  try {
+    const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    if (!data.ok) { results.innerHTML = '<div class="flash error">' + data.error + '</div>'; return; }
+    if (data.results.length === 0) { results.innerHTML = '<div class="sub">Tidak ditemukan.</div>'; return; }
+    results.innerHTML = data.results.map(r => `
+      <div class="result-item" onclick="window.location.href='/update/${r.row}'">
+        <div class="ihld">${r.ihld} — ${r.lokasi}</div>
+        <div class="meta">
+          <span class="badge">${r.status_z || '(belum ada status)'}</span>
+          ${r.status_aa ? '<span class="badge">' + r.status_aa + '</span>' : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    results.innerHTML = '<div class="flash error">Error: ' + e + '</div>';
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="sub">Baris #{{ row }}</div>
+  <div style="margin-bottom: 10px;">
+    <span class="badge">Status saat ini: {{ snapshot.status_z or '-' }}</span>
+    <span class="badge">Sub: {{ snapshot.status_aa or '-' }}</span>
+  </div>
+  {% if snapshot.note_preview %}
+    <label>Riwayat keterangan (terbaru di atas)</label>
+    <div class="note-preview">{{ snapshot.note_preview }}</div>
+  {% endif %}
+</div>
+
+<form method="post" class="card">
+  <div class="field">
+    <label for="status_z">Status (kolom Z)</label>
+    <select name="status_z" id="status_z" required>
+      <option value="">-- pilih status --</option>
+      {% for opt in z_options %}
+        <option value="{{ opt }}" {% if opt == snapshot.status_z %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="status_aa">Sub Status (kolom AA)</label>
+    <select name="status_aa" id="status_aa">
+      <option value="">-- tidak diubah --</option>
+      {% for opt in aa_options %}
+        <option value="{{ opt }}" {% if opt == snapshot.status_aa %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="note_text">Keterangan update</label>
+    <textarea name="note_text" id="note_text" placeholder="cth: penarikan kabel selesai 80%..." required></textarea>
+  </div>
+  <button type="submit">Simpan Update</button>
+  &nbsp; <a href="/">&larr; Cari lagi</a>
+</form>
+{% endblock %}
