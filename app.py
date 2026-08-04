@@ -1,3 +1,6 @@
+import json
+import traceback
+
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 
 import config
@@ -72,7 +75,6 @@ def debug_sheet_check():
     sheet and reports exactly where it fails, instead of a blank error.
     Safe to leave in place (read-only, no secrets exposed).
     """
-    import json as _json
     report = {}
 
     # Step 1: env vars present?
@@ -82,7 +84,7 @@ def debug_sheet_check():
 
     # Step 2: JSON parses?
     try:
-        info = _json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
+        info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
         report["json_parses"] = True
         report["client_email"] = info.get("client_email")
         report["project_id"] = info.get("project_id")
@@ -98,6 +100,7 @@ def debug_sheet_check():
     except Exception as e:
         report["client_built"] = False
         report["client_error"] = f"{type(e).__name__}: {e}"
+        report["traceback"] = traceback.format_exc()
         return jsonify(report), 500
 
     # Step 4: can we open the spreadsheet by ID?
@@ -109,10 +112,7 @@ def debug_sheet_check():
     except Exception as e:
         report["spreadsheet_opened"] = False
         report["spreadsheet_error"] = f"{type(e).__name__}: {e}"
-        report["permission_hint"] = (
-            "Bagikan spreadsheet ke akun layanan yang dipakai bot sebagai Viewer/Editor, "
-            "dan pastikan SPREADSHEET_ID serta SHEET_NAME benar."
-        )
+        report["traceback"] = traceback.format_exc()
         return jsonify(report), 500
 
     # Step 5: does the target worksheet name match exactly?
@@ -125,6 +125,7 @@ def debug_sheet_check():
     except Exception as e:
         report["worksheet_found"] = False
         report["worksheet_error"] = f"{type(e).__name__}: {e}"
+        report["traceback"] = traceback.format_exc()
         return jsonify(report), 500
 
     report["all_ok"] = True
