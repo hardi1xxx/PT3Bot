@@ -22,6 +22,29 @@ _gspread_client = None
 _worksheet = None
 
 
+def _get_service_account_email() -> str:
+    if not config.GOOGLE_SERVICE_ACCOUNT_JSON:
+        return ""
+    try:
+        info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
+    except Exception:
+        return ""
+    return info.get("client_email", "") or ""
+
+
+def _build_sheet_access_error(exc: Exception) -> str:
+    email = _get_service_account_email()
+    email_hint = f" {email}" if email else ""
+    return (
+        "Tidak bisa membaca data dari Google Sheet. "
+        "Periksa 3 hal berikut: "
+        f"1) Spreadsheet sudah dibagikan ke akun layanan{email_hint} sebagai Viewer/Editor; "
+        f"2) SPREADSHEET_ID benar ({config.SPREADSHEET_ID}); "
+        f"3) SHEET_NAME benar ({config.SHEET_NAME}). "
+        f"Detail error: {exc}"
+    )
+
+
 def _col_to_index(col_letters: str) -> int:
     """'A' -> 1, 'Z' -> 26, 'AA' -> 27, etc."""
     result = 0
@@ -49,9 +72,19 @@ def get_client():
 def get_worksheet():
     global _worksheet
     if _worksheet is None:
-        client = get_client()
-        sh = client.open_by_key(config.SPREADSHEET_ID)
-        _worksheet = sh.worksheet(config.SHEET_NAME)
+        try:
+            client = get_client()
+            sh = client.open_by_key(config.SPREADSHEET_ID)
+            _worksheet = sh.worksheet(config.SHEET_NAME)
+        except Exception as exc:
+            if (
+                isinstance(exc, PermissionError)
+                or "permission" in str(exc).lower()
+                or "403" in str(exc)
+                or "not found" in str(exc).lower()
+            ):
+                raise RuntimeError(_build_sheet_access_error(exc)) from exc
+            raise
     return _worksheet
 
 

@@ -109,6 +109,10 @@ def debug_sheet_check():
     except Exception as e:
         report["spreadsheet_opened"] = False
         report["spreadsheet_error"] = f"{type(e).__name__}: {e}"
+        report["permission_hint"] = (
+            "Bagikan spreadsheet ke akun layanan yang dipakai bot sebagai Viewer/Editor, "
+            "dan pastikan SPREADSHEET_ID serta SHEET_NAME benar."
+        )
         return jsonify(report), 500
 
     # Step 5: does the target worksheet name match exactly?
