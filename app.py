@@ -25,6 +25,50 @@ def api_search():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/dashboard")
+def api_dashboard():
+    try:
+        data = sheets_service.get_dashboard_data()
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/row/<int:row_num>")
+def api_row(row_num):
+    try:
+        snapshot = sheets_service.get_row_snapshot(row_num)
+        label = sheets_service.get_row_label(row_num)
+        return jsonify({
+            "ok": True,
+            "snapshot": snapshot,
+            "label": label,
+            "z_options": config.Z_OPTIONS,
+            "aa_options": config.AA_OPTIONS,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/row/<int:row_num>/update", methods=["POST"])
+def api_row_update(row_num):
+    payload = request.get_json(silent=True) or {}
+    z_value = (payload.get("status_z") or "").strip()
+    aa_value = (payload.get("status_aa") or "").strip()
+    note_text = (payload.get("note_text") or "").strip()
+
+    if not z_value:
+        return jsonify({"ok": False, "error": "Status (kolom Z) wajib dipilih."}), 400
+    if not note_text:
+        return jsonify({"ok": False, "error": "Keterangan tidak boleh kosong."}), 400
+
+    try:
+        date_col, note_col = sheets_service.update_status(row_num, z_value, aa_value, note_text)
+        return jsonify({"ok": True, "date_col": date_col, "note_col": note_col})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/update/<int:row_num>", methods=["GET"])
 def update_form(row_num):
     try:

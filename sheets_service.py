@@ -121,6 +121,140 @@ def search_rows(query: str, limit: int = 15):
     return results
 
 
+def get_row_label(row_num: int):
+    """Return {ihld, lokasi, batch} for the row header shown in the update panel."""
+    ws = get_worksheet()
+    ihld = ws.acell(f"{config.COL_IHLD}{row_num}").value or ""
+    lokasi = ws.acell(f"{config.COL_LOKASI}{row_num}").value or ""
+    batch = ws.acell(f"{config.COL_BATCH}{row_num}").value or ""
+    return {"ihld": ihld.strip(), "lokasi": lokasi.strip(), "batch": batch.strip()}
+
+
+def _to_number(raw: str) -> float:
+    """Parse a sheet cell into a number. Tolerates '' , '12', '12.5', and the
+    Indonesian '1.234,56' thousands/decimal style. Anything unparseable -> 0."""
+    raw = (raw or "").strip()
+    if not raw:
+        return 0.0
+    if "," in raw and "." in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    elif "," in raw:
+        raw = raw.replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
+        return 0.0
+
+
+def get_dashboard_data():
+    """
+    One-shot read of the whole sheet, aggregated into everything the
+    dashboard needs:
+      - total_order: count of rows with a value in kolom A
+      - total_port: sum of kolom AG
+      - port_table / lop_table: pivot rows=batch (kolom C), cols=DASHBOARD_STATUSES,
+        values = sum(AG) for port_table, count(rows) for lop_table. Both include
+        a per-row "total" and a trailing "TOTAL" row.
+      - bh_table: frequency count of every distinct value found in kolom BH
+      - running_locations: every row whose status (kolom Z) is one of
+        DASHBOARD_STATUSES, i.e. "sedang berjalan"
+    """
+    ws = get_worksheet()
+    all_values = ws.get_all_values()
+
+    idx = {
+        "order": _col_to_index(config.COL_ORDER) - 1,
+        "batch": _col_to_index(config.COL_BATCH) - 1,
+        "status_z": _col_to_index(config.COL_STATUS_Z) - 1,
+        "status_aa": _col_to_index(config.COL_STATUS_AA) - 1,
+        "port": _col_to_index(config.COL_PORT) - 1,
+        "bh": _col_to_index(config.COL_BH) - 1,
+        "ihld": _col_to_index(config.COL_IHLD) - 1,
+        "lokasi": _col_to_index(config.COL_LOKASI) - 1,
+    }
+
+    statuses = config.DASHBOARD_STATUSES
+    data_rows = all_values[config.DATA_START_ROW - 1:]
+
+    batch_order = []
+    pivot_port = {}
+    pivot_lop = {}
+    total_order = 0
+    total_port = 0.0
+    bh_counter = {}
+    running_locations = []
+
+    for offset, row in enumerate(data_rows):
+        row_num = config.DATA_START_ROW + offset
+
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+
+        order_val = cell("order")
+        batch_val = cell("batch") or "(Tanpa Batch)"
+        status_val = cell("status_z")
+        aa_val = cell("status_aa")
+        port_num = _to_number(cell("port"))
+        bh_val = cell("bh")
+        ihld_val = cell("ihld")
+        lokasi_val = cell("lokasi")
+
+        if not order_val and not ihld_val and not cell("batch"):
+            continue  # fully empty row, skip
+
+        if order_val:
+            total_order += 1
+        total_port += port_num
+
+        if batch_val not in pivot_port:
+            pivot_port[batch_val] = {s: 0.0 for s in statuses}
+            pivot_lop[batch_val] = {s: 0 for s in statuses}
+            batch_order.append(batch_val)
+
+        if status_val in statuses:
+            pivot_port[batch_val][status_val] += port_num
+            pivot_lop[batch_val][status_val] += 1
+            running_locations.append({
+                "row": row_num,
+                "ihld": ihld_val,
+                "lokasi": lokasi_val,
+                "batch": batch_val,
+                "status_z": status_val,
+                "status_aa": aa_val,
+                "port": port_num,
+            })
+
+        if bh_val:
+            bh_counter[bh_val] = bh_counter.get(bh_val, 0) + 1
+
+    def build_table(pivot):
+        rows = []
+        col_totals = {s: 0 for s in statuses}
+        for b in batch_order:
+            row_data = pivot[b]
+            row_total = sum(row_data.values())
+            for s in statuses:
+                col_totals[s] += row_data[s]
+            rows.append({"batch": b, "values": row_data, "total": row_total})
+        grand_total = sum(col_totals.values())
+        rows.append({"batch": "TOTAL", "values": col_totals, "total": grand_total})
+        return rows
+
+    bh_table = [{"label": k, "count": v} for k, v in sorted(bh_counter.items(), key=lambda kv: kv[0].lower())]
+    running_locations.sort(key=lambda r: (r["batch"], r["status_z"]))
+
+    return {
+        "total_order": total_order,
+        "total_port": total_port,
+        "statuses": statuses,
+        "port_table": build_table(pivot_port),
+        "lop_table": build_table(pivot_lop),
+        "bh_table": bh_table,
+        "running_locations": running_locations,
+    }
+
+
 def get_row_snapshot(row_num: int):
     """Return current Z, AA and the keterangan cell content for the row's current Z status."""
     ws = get_worksheet()

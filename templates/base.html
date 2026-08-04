@@ -3,110 +3,52 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}PT3 Status Update{% endblock %}</title>
-  <style>
-    :root {
-      --bg: #0f172a;
-      --panel: #111827;
-      --panel2: #1f2937;
-      --border: #2d3748;
-      --accent: #22c55e;
-      --accent-dark: #16a34a;
-      --text: #e5e7eb;
-      --muted: #9ca3af;
-      --danger: #ef4444;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      padding: 20px;
-    }
-    .wrap { max-width: 720px; margin: 0 auto; }
-    h1 { font-size: 1.3rem; margin-bottom: 4px; }
-    .sub { color: var(--muted); margin-bottom: 20px; font-size: 0.9rem; }
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px;
-      margin-bottom: 16px;
-    }
-    input[type=text], select, textarea {
-      width: 100%;
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: var(--panel2);
-      color: var(--text);
-      font-size: 0.95rem;
-      margin-top: 6px;
-    }
-    label { font-size: 0.85rem; color: var(--muted); }
-    textarea { min-height: 80px; resize: vertical; }
-    button {
-      background: var(--accent);
-      color: #052e16;
-      border: none;
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-      font-size: 0.95rem;
-    }
-    button:hover { background: var(--accent-dark); }
-    .field { margin-bottom: 14px; }
-    .result-item {
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      margin-bottom: 8px;
-      cursor: pointer;
-      background: var(--panel2);
-    }
-    .result-item:hover { border-color: var(--accent); }
-    .result-item .ihld { font-weight: 600; }
-    .result-item .meta { color: var(--muted); font-size: 0.8rem; }
-    .flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 0.9rem; }
-    .flash.success { background: #052e16; border: 1px solid var(--accent); }
-    .flash.error { background: #3f0d0d; border: 1px solid var(--danger); }
-    .note-preview {
-      white-space: pre-wrap;
-      background: var(--panel2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px;
-      font-size: 0.85rem;
-      color: var(--muted);
-      max-height: 160px;
-      overflow-y: auto;
-    }
-    .badge {
-      display: inline-block;
-      background: var(--panel2);
-      border: 1px solid var(--border);
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 0.75rem;
-      color: var(--muted);
-    }
-    a { color: var(--accent); }
-  </style>
+  <title>{% block title %}PT3 Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
 </head>
 <body>
-  <div class="wrap">
-    <h1>PT3 Status Update</h1>
-    <div class="sub">Update status &amp; keterangan tanpa buka Google Sheet</div>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="flash {{ category }}">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">MENU</div>
+      <nav>
+        <div class="menu-group-label">FBB</div>
+        <a href="/" class="menu-item {% block menu_pt3 %}{% endblock %}">PT3</a>
+        <a href="#" class="menu-item disabled" title="Belum tersedia">PT2</a>
+      </nav>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1>{% block page_title %}Dashboard PT3{% endblock %}</h1>
+          <p class="topbar-sub">{% block page_sub %}Monitoring status fisik & update lapangan{% endblock %}</p>
+        </div>
+        <div class="topbar-logos">
+          <div class="logo-badge telkom">
+            <img src="{{ url_for('static', filename='logo-telkomakses.png') }}" alt="Telkom Akses"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+            <span class="logo-fallback" style="display:none;">TELKOM AKSES</span>
+          </div>
+          <div class="logo-badge infranexia">
+            <img src="{{ url_for('static', filename='logo-infranexia.png') }}" alt="Infranexia"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+            <span class="logo-fallback" style="display:none;">INFRANEXIA</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
   </div>
 </body>
 </html>

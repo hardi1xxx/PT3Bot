@@ -16,6 +16,22 @@ COL_STATUS_Z = "Z"    # Status Fisik (main status)
 COL_STATUS_AA = "AA"  # SUB Status Fisik (sub status)
 COL_KETERANGAN_AB = "AB"  # auto-merge formula, never written by the bot
 
+# ── Dashboard columns ───────────────────────────────────────────────────
+COL_ORDER = "A"    # 1 baris = 1 order -> dipakai untuk hitung Total Order
+COL_BATCH = "C"    # Batch, dipakai sebagai baris (row) pada tabel pivot
+COL_PORT = "AG"    # Jumlah port per baris -> dipakai untuk Total Port & tabel "Data / Port"
+COL_BH = "BH"      # Kolom bebas isian, direkap jadi tabel jumlah per nilai
+
+# Status yang dianggap "sedang berjalan" -> dipakai sebagai kolom pada
+# kedua tabel pivot dashboard (Port & LOP) dan untuk filter list lokasi aktif.
+DASHBOARD_STATUSES = [
+    "01. PERIJINAN",
+    "02. PERSIAPAN",
+    "03. MATDEV",
+    "04. INSTALASI",
+    "05. FINISH INSTALASI",
+]
+
 # ── Z (Status Fisik) dropdown options ─────────────────────────────────
 Z_OPTIONS = [
     "00. DROP",

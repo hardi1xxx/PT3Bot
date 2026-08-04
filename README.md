@@ -5,11 +5,39 @@ tanpa buka Google Sheet secara manual.
 
 ## Struktur
 
-- `config.py` — mapping kolom (Z → tanggal/keterangan), daftar dropdown Z & AA
-- `sheets_service.py` — semua baca/tulis ke Google Sheets (dipakai bersama oleh web & bot)
-- `app.py` — web dashboard (Flask): cari site, lihat riwayat, isi update
+- `config.py` — mapping kolom (Z → tanggal/keterangan), daftar dropdown Z & AA,
+  plus kolom dashboard (Total Order, Total Port, Batch, BH, daftar status aktif)
+- `sheets_service.py` — semua baca/tulis ke Google Sheets (dipakai bersama oleh web & bot),
+  termasuk `get_dashboard_data()` yang menghitung semua angka/tabel dashboard
+- `app.py` — web dashboard (Flask): halaman utama + API JSON (`/api/dashboard`,
+  `/api/row/<id>`, `/api/row/<id>/update`) yang dipakai halaman dashboard
 - `bot.py` — bot Telegram: alur `/update` → cari → pilih status → isi keterangan → konfirmasi
 - `Procfile` — dua process: `web` (dashboard) dan `worker` (bot polling)
+- `templates/` — `base.html` (shell: sidebar + header + logo), `index.html` (dashboard),
+  `update.html` (halaman update mandiri, fallback dari link langsung)
+- `static/style.css` — semua styling dashboard
+- `static/chart.umd.min.js` — Chart.js versi lokal (tidak pakai CDN luar, supaya tetap
+  jalan di jaringan kantor yang dibatasi)
+- `static/logo-telkomakses.png`, `static/logo-infranexia.png` — **belum disertakan**,
+  lihat `static/LOGO_README.txt`
+
+## Dashboard (baru)
+
+Halaman utama (`/`) sekarang berupa dashboard, bukan cuma kotak pencarian:
+
+- 4 kartu ringkasan: Total Order (hitung kolom A), Total Port (jumlah kolom AG),
+  Lokasi Sedang Berjalan, dan % Progress Finish Instalasi
+- Tabel **Data / Port**: baris = Batch (kolom C), kolom = status fisik (kolom Z),
+  nilai = jumlah port (AG) — untuk 5 status: Perijinan, Persiapan, Matdev, Instalasi,
+  Finish Instalasi
+- Tabel **Data / LOP**: sama seperti di atas tapi nilainya jumlah baris (LOP), bukan port
+- Donut chart distribusi total order per status
+- Rekap kolom BH (hitung otomatis semua nilai unik + jumlahnya)
+- Panel pencarian + daftar lokasi sedang berjalan, dengan panel update di sampingnya
+  (klik lokasi → form update langsung muncul, simpan tanpa reload halaman)
+
+Semua angka dashboard dihitung ulang dari sheet setiap kali halaman dibuka /
+tombol "Refresh" ditekan (tidak di-cache di server).
 
 ## Deploy ke Railway (project baru)
 

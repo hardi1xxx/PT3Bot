@@ -1,42 +1,292 @@
 {% extends "base.html" %}
+{% block menu_pt3 %}active{% endblock %}
+{% block page_title %}Dashboard PT3{% endblock %}
+{% block page_sub %}Rekap Order, Port & LOP per Batch — status fisik terkini{% endblock %}
+
 {% block content %}
-<div class="card">
-  <label for="q">Cari IHLD / Lokasi IHLD</label>
-  <input type="text" id="q" placeholder="Ketik minimal 3 huruf...">
-  <div id="results" style="margin-top: 14px;"></div>
+
+<!-- Stat cards -->
+<div class="stat-grid" id="statGrid">
+  <div class="stat-card">
+    <div class="stat-label">Total Order</div>
+    <div class="stat-value" id="statTotalOrder">–</div>
+    <div class="stat-foot">Jumlah baris terisi (kolom A)</div>
+  </div>
+  <div class="stat-card alt">
+    <div class="stat-label">Total Port</div>
+    <div class="stat-value" id="statTotalPort">–</div>
+    <div class="stat-foot">Jumlah port (kolom AG)</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Lokasi Sedang Berjalan</div>
+    <div class="stat-value" id="statActive">–</div>
+    <div class="stat-foot">Status 01. Perijinan – 05. Finish Instalasi</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">Progress Finish Instalasi</div>
+    <div class="stat-value" id="statProgress">–</div>
+    <div class="stat-foot">% lokasi aktif yang sudah Finish Instalasi</div>
+  </div>
+</div>
+
+<!-- Tables + chart -->
+<div class="section-title">
+  Rekap per Batch
+  <span class="hint">baris = batch (kolom C) · kolom = status fisik (kolom Z)</span>
+  <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">↻ Refresh</button>
+</div>
+
+<div class="dashboard-grid">
+  <div class="tables-col">
+    <div class="card">
+      <div class="section-title" style="margin-bottom:8px;">Data / Port</div>
+      <div class="pivot-table-wrap" id="portTableWrap"><div class="skeleton">Memuat data...</div></div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:8px;">Data / LOP</div>
+      <div class="pivot-table-wrap" id="lopTableWrap"><div class="skeleton">Memuat data...</div></div>
+    </div>
+  </div>
+
+  <div class="card chart-card">
+    <div class="section-title" style="margin-bottom:8px;">Distribusi Order per Status</div>
+    <canvas id="statusChart"></canvas>
+    <div class="chart-legend" id="chartLegend"></div>
+  </div>
+</div>
+
+<!-- BH breakdown -->
+<div class="section-title">Rekap Kolom BH</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="bh-grid" id="bhGrid"><div class="skeleton">Memuat data...</div></div>
+</div>
+
+<!-- Search + update -->
+<div class="section-title">Lokasi Sedang Berjalan &amp; Update Status</div>
+<div class="split-grid">
+  <div class="card">
+    <label for="q">Cari IHLD / Lokasi IHLD</label>
+    <input type="text" id="q" placeholder="Ketik untuk mencari, atau lihat semua di bawah...">
+    <div class="loc-list" id="locList" style="margin-top: 12px;">
+      <div class="skeleton">Memuat lokasi aktif...</div>
+    </div>
+  </div>
+
+  <div class="card" id="updatePanel">
+    <div class="empty-state">Pilih lokasi di sebelah kiri untuk lihat riwayat &amp; update status.</div>
+  </div>
 </div>
 
 <script>
-const input = document.getElementById('q');
-const results = document.getElementById('results');
-let timer = null;
+const STATUS_COLORS = {
+  '01. PERIJINAN': '#e30613',
+  '02. PERSIAPAN': '#d97706',
+  '03. MATDEV': '#29467a',
+  '04. INSTALASI': '#0ea5e9',
+  '05. FINISH INSTALASI': '#16a34a',
+};
 
-input.addEventListener('input', () => {
-  clearTimeout(timer);
-  const q = input.value.trim();
-  if (q.length < 2) { results.innerHTML = ''; return; }
-  timer = setTimeout(() => doSearch(q), 350);
-});
+let dashboardCache = null;
+let selectedRow = null;
+let statusChart = null;
 
-async function doSearch(q) {
-  results.innerHTML = '<div class="sub">Mencari...</div>';
-  try {
-    const res = await fetch('/api/search?q=' + encodeURIComponent(q));
-    const data = await res.json();
-    if (!data.ok) { results.innerHTML = '<div class="flash error">' + data.error + '</div>'; return; }
-    if (data.results.length === 0) { results.innerHTML = '<div class="sub">Tidak ditemukan.</div>'; return; }
-    results.innerHTML = data.results.map(r => `
-      <div class="result-item" onclick="window.location.href='/update/${r.row}'">
-        <div class="ihld">${r.ihld} — ${r.lokasi}</div>
-        <div class="meta">
-          <span class="badge">${r.status_z || '(belum ada status)'}</span>
-          ${r.status_aa ? '<span class="badge">' + r.status_aa + '</span>' : ''}
-        </div>
+function fmtNum(n) {
+  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0);
+}
+
+function renderPivotTable(el, table, statuses) {
+  let html = '<table class="pivot"><thead><tr><th>BATCH</th>';
+  statuses.forEach(s => html += `<th>${s.replace(/^\d+\.\s*/, '')}</th>`);
+  html += '<th class="total-col">TOTAL</th></tr></thead><tbody>';
+  table.forEach(row => {
+    html += `<tr><th>${row.batch}</th>`;
+    statuses.forEach(s => {
+      const v = row.values[s] || 0;
+      html += `<td>${fmtNum(v)}</td>`;
+    });
+    html += `<td class="total-col">${fmtNum(row.total)}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function renderChart(portTable, statuses) {
+  const totalRow = portTable.find(r => r.batch === 'TOTAL');
+  const labels = statuses.map(s => s.replace(/^\d+\.\s*/, ''));
+  const values = statuses.map(s => (totalRow ? totalRow.values[s] : 0) || 0);
+  const colors = statuses.map(s => STATUS_COLORS[s] || '#94a3b8');
+
+  const ctx = document.getElementById('statusChart').getContext('2d');
+  if (statusChart) statusChart.destroy();
+  statusChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
+    options: {
+      plugins: { legend: { display: false } },
+      cutout: '62%',
+    },
+  });
+
+  const legend = document.getElementById('chartLegend');
+  legend.innerHTML = statuses.map((s, i) => `
+    <span><span class="dot" style="background:${colors[i]}"></span>${labels[i]}: <strong>${fmtNum(values[i])}</strong></span>
+  `).join('');
+}
+
+function renderBH(bhTable) {
+  const el = document.getElementById('bhGrid');
+  if (!bhTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data di kolom BH.</div>'; return; }
+  el.innerHTML = bhTable.map(item => `
+    <div class="bh-chip"><span>${item.label}</span><span class="bh-count">${fmtNum(item.count)}</span></div>
+  `).join('');
+}
+
+function renderLocList(locations, filterText) {
+  const el = document.getElementById('locList');
+  const q = (filterText || '').trim().toLowerCase();
+  const filtered = q
+    ? locations.filter(r => (r.ihld + ' ' + r.lokasi).toLowerCase().includes(q))
+    : locations;
+
+  if (!filtered.length) { el.innerHTML = '<div class="empty-state">Tidak ada lokasi ditemukan.</div>'; return; }
+
+  el.innerHTML = filtered.map(r => `
+    <div class="result-item ${r.row === selectedRow ? 'selected' : ''}" onclick="openRow(${r.row})">
+      <div class="ihld">${r.ihld || '(tanpa IHLD)'} — ${r.lokasi || '-'}</div>
+      <div class="meta">
+        <span class="badge">${r.batch}</span>
+        <span class="badge status">${r.status_z}</span>
       </div>
-    `).join('');
+    </div>
+  `).join('');
+}
+
+async function loadDashboard() {
+  document.getElementById('portTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
+  document.getElementById('lopTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
+  try {
+    const res = await fetch('/api/dashboard');
+    const json = await res.json();
+    if (!json.ok) {
+      document.getElementById('portTableWrap').innerHTML = `<div class="flash error">${json.error}</div>`;
+      document.getElementById('lopTableWrap').innerHTML = '';
+      document.getElementById('locList').innerHTML = '';
+      return;
+    }
+    dashboardCache = json.data;
+    const d = json.data;
+
+    document.getElementById('statTotalOrder').textContent = fmtNum(d.total_order);
+    document.getElementById('statTotalPort').textContent = fmtNum(d.total_port);
+    document.getElementById('statActive').textContent = fmtNum(d.running_locations.length);
+
+    const finishCount = d.running_locations.filter(r => r.status_z === '05. FINISH INSTALASI').length;
+    const pct = d.running_locations.length ? Math.round((finishCount / d.running_locations.length) * 100) : 0;
+    document.getElementById('statProgress').textContent = pct + '%';
+
+    try { renderPivotTable(document.getElementById('portTableWrap'), d.port_table, d.statuses); }
+    catch (e) { document.getElementById('portTableWrap').innerHTML = `<div class="flash error">Gagal render tabel: ${e}</div>`; }
+
+    try { renderPivotTable(document.getElementById('lopTableWrap'), d.lop_table, d.statuses); }
+    catch (e) { document.getElementById('lopTableWrap').innerHTML = `<div class="flash error">Gagal render tabel: ${e}</div>`; }
+
+    try {
+      if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
+      renderChart(d.port_table, d.statuses);
+    } catch (e) {
+      document.querySelector('.chart-card').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
+    }
+
+    try { renderBH(d.bh_table); }
+    catch (e) { document.getElementById('bhGrid').innerHTML = `<div class="flash error">Gagal render BH: ${e}</div>`; }
+
+    try { renderLocList(d.running_locations, document.getElementById('q').value); }
+    catch (e) { document.getElementById('locList').innerHTML = `<div class="flash error">Gagal render lokasi: ${e}</div>`; }
   } catch (e) {
-    results.innerHTML = '<div class="flash error">Error: ' + e + '</div>';
+    document.getElementById('portTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
   }
 }
+
+document.getElementById('q').addEventListener('input', (e) => {
+  if (dashboardCache) renderLocList(dashboardCache.running_locations, e.target.value);
+});
+
+async function openRow(rowNum) {
+  selectedRow = rowNum;
+  if (dashboardCache) renderLocList(dashboardCache.running_locations, document.getElementById('q').value);
+
+  const panel = document.getElementById('updatePanel');
+  panel.innerHTML = '<div class="skeleton">Memuat baris...</div>';
+
+  try {
+    const res = await fetch(`/api/row/${rowNum}`);
+    const json = await res.json();
+    if (!json.ok) { panel.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+
+    const { snapshot, label, z_options, aa_options } = json;
+    panel.innerHTML = `
+      <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${label.ihld} · ${label.lokasi}</div>
+      <div style="margin-bottom: 10px;">
+        <span class="badge status">Status saat ini: ${snapshot.status_z || '-'}</span>
+        <span class="badge">Sub: ${snapshot.status_aa || '-'}</span>
+      </div>
+      ${snapshot.note_preview ? `
+        <label>Riwayat keterangan (terbaru di atas)</label>
+        <div class="note-preview">${snapshot.note_preview.replace(/</g,'&lt;')}</div>
+      ` : ''}
+      <div class="field" style="margin-top:14px;">
+        <label for="status_z">Status (kolom Z)</label>
+        <select id="status_z">
+          <option value="">-- pilih status --</option>
+          ${z_options.map(o => `<option value="${o}" ${o === snapshot.status_z ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label for="status_aa">Sub Status (kolom AA)</label>
+        <select id="status_aa">
+          <option value="">-- tidak diubah --</option>
+          ${aa_options.map(o => `<option value="${o}" ${o === snapshot.status_aa ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label for="note_text">Keterangan update</label>
+        <textarea id="note_text" placeholder="cth: penarikan kabel selesai 80%..."></textarea>
+      </div>
+      <div id="updateMsg"></div>
+      <button onclick="saveUpdate(${rowNum})">Simpan Update</button>
+      &nbsp; <a href="#" onclick="document.getElementById('q').focus(); return false;">&larr; Cari lagi</a>
+    `;
+  } catch (e) {
+    panel.innerHTML = `<div class="flash error">Gagal memuat baris: ${e}</div>`;
+  }
+}
+
+async function saveUpdate(rowNum) {
+  const status_z = document.getElementById('status_z').value;
+  const status_aa = document.getElementById('status_aa').value;
+  const note_text = document.getElementById('note_text').value;
+  const msg = document.getElementById('updateMsg');
+
+  if (!status_z) { msg.innerHTML = '<div class="flash error">Status (kolom Z) wajib dipilih.</div>'; return; }
+  if (!note_text.trim()) { msg.innerHTML = '<div class="flash error">Keterangan tidak boleh kosong.</div>'; return; }
+
+  msg.innerHTML = '<div class="skeleton">Menyimpan...</div>';
+  try {
+    const res = await fetch(`/api/row/${rowNum}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status_z, status_aa, note_text }),
+    });
+    const json = await res.json();
+    if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+    msg.innerHTML = `<div class="flash success">Tersimpan ke kolom ${json.note_col} (tanggal di ${json.date_col}).</div>`;
+    loadDashboard();
+    openRow(rowNum);
+  } catch (e) {
+    msg.innerHTML = `<div class="flash error">Gagal menyimpan: ${e}</div>`;
+  }
+}
+
+loadDashboard();
 </script>
 {% endblock %}

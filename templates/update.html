@@ -1,9 +1,13 @@
 {% extends "base.html" %}
+{% block menu_pt3 %}active{% endblock %}
+{% block page_title %}Update Status — Baris #{{ row }}{% endblock %}
+{% block page_sub %}Update status &amp; keterangan tanpa buka Google Sheet{% endblock %}
+
 {% block content %}
-<div class="card">
-  <div class="sub">Baris #{{ row }}</div>
-  <div style="margin-bottom: 10px;">
-    <span class="badge">Status saat ini: {{ snapshot.status_z or '-' }}</span>
+<div class="card" style="max-width:640px; margin:0 auto 16px;">
+  <div class="sub" style="color:var(--muted); font-size:0.85rem;">Baris #{{ row }}</div>
+  <div style="margin: 8px 0 10px;">
+    <span class="badge status">Status saat ini: {{ snapshot.status_z or '-' }}</span>
     <span class="badge">Sub: {{ snapshot.status_aa or '-' }}</span>
   </div>
   {% if snapshot.note_preview %}
@@ -12,7 +16,7 @@
   {% endif %}
 </div>
 
-<form method="post" class="card">
+<form method="post" class="card" style="max-width:640px; margin:0 auto;">
   <div class="field">
     <label for="status_z">Status (kolom Z)</label>
     <select name="status_z" id="status_z" required>
@@ -36,6 +40,6 @@
     <textarea name="note_text" id="note_text" placeholder="cth: penarikan kabel selesai 80%..." required></textarea>
   </div>
   <button type="submit">Simpan Update</button>
-  &nbsp; <a href="/">&larr; Cari lagi</a>
+  &nbsp; <a href="/">&larr; Kembali ke dashboard</a>
 </form>
 {% endblock %}
