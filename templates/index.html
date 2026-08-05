@@ -223,7 +223,7 @@ function renderDetailTable(filteredRows) {
   if (!rows.length) { el.innerHTML = '<div class="empty-state">Tidak ada lokasi yang sedang berjalan.</div>'; return; }
 
   let html = '<table class="pivot"><thead><tr>';
-  ['IHLD', 'Lokasi', 'Batch', 'Nama Mitra', 'ODP (L)', 'PORT (M)', 'BoQ (N)', 'CPP (O)', 'Status'].forEach((h, i) => {
+  ['IHLD', 'Lokasi', 'Batch', 'Nama Mitra', 'ODP (L)', 'PORT (M)', 'BoQ (N)', 'CPP (O)', 'Status', ''].forEach((h, i) => {
     html += `<th${i < 4 ? ' style="text-align:left;"' : ''}>${h}</th>`;
   });
   html += '</tr></thead><tbody>';
@@ -238,10 +238,19 @@ function renderDetailTable(filteredRows) {
       <td>${esc(r.boq_n) || '-'}</td>
       <td>${esc(r.cpp_o) || '-'}</td>
       <td><span class="badge status">${esc(r.status)}</span></td>
+      <td><button type="button" class="btn-sm" onclick="editFromDetail(${r.row})">Edit</button></td>
     </tr>`;
   });
   html += '</tbody></table>';
   el.innerHTML = html;
+}
+
+// Klik "Edit" di tabel Detail Lokasi -> isi panel update (kanan) dengan
+// data baris tsb (dicari ulang lewat IHLD/Lokasi via /api/row/<row>), lalu
+// scroll ke panel supaya langsung terlihat.
+function editFromDetail(rowNum) {
+  openRow(rowNum);
+  document.getElementById('updatePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── Filter branch (kolom S) — dropdown + checkbox ─────────────────

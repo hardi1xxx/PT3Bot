@@ -422,12 +422,14 @@ table.pivot-combined tbody tr.grand-total-row th {
   accent-color: var(--brand-blue);
 }
 
-.branch-dropdown { position: relative; }
+.branch-dropdown { position: relative; display: inline-block; min-width: 220px; }
 .branch-dropdown-toggle {
-  width: 100%;
-  display: flex;
+  width: auto;
+  min-width: 220px;
+  display: inline-flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   background: var(--panel-alt);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -445,15 +447,19 @@ table.pivot-combined tbody tr.grand-total-row th {
   z-index: 30;
   top: calc(100% + 6px);
   left: 0;
-  right: 0;
+  width: max(220px, 100%);
+  max-width: 320px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: var(--shadow);
   padding: 12px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 .branch-dropdown-panel.open { display: block; }
 .branch-dropdown-panel .branch-filter-grid {
+  max-height: 190px;
   overflow-y: auto;
 }
 
