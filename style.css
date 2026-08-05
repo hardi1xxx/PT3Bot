@@ -312,6 +312,54 @@ table.pivot-combined tbody tr.grand-total-row th {
   margin-right: 5px;
 }
 
+/* ── Aging: alur tahapan (timeline horizontal) ───────────────────── */
+.stage-funnel-track {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.stage-step {
+  flex: 1 1 150px;
+  min-width: 150px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--muted);
+  border-radius: 10px;
+  padding: 16px 12px;
+  text-align: center;
+}
+.stage-step-count {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.stage-step-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 2px;
+}
+.stage-step-aging {
+  font-size: 0.74rem;
+  font-weight: 600;
+  margin-top: 6px;
+}
+.stage-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 1.1rem;
+  flex: 0 0 auto;
+  padding: 0 2px;
+}
+@media (max-width: 720px) {
+  .stage-funnel-track { flex-direction: column; }
+  .stage-arrow { transform: rotate(90deg); padding: 4px 0; }
+}
+
 /* ── BH table ─────────────────────────────────────────────────────── */
 .bh-grid {
   display: grid;

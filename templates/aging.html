@@ -48,14 +48,13 @@
   </div>
 </div>
 
-<!-- Chart: distribusi aging, gampang dibaca orang awam -->
+<!-- Timeline: alur tahapan Perijinan -> Finish Instalasi, jumlah LOP & rata-rata aging tiap tahap -->
 <div class="section-title">
-  Distribusi Aging
-  <span class="hint">semua lokasi terfilter, dikelompokkan Aman / Perhatian / Kritis</span>
+  Alur Tahapan (Timeline)
+  <span class="hint">jumlah LOP &amp; rata-rata aging per tahap, urut Perijinan &rarr; Finish Instalasi — warna ikut rata-rata aging tahap tsb</span>
 </div>
-<div class="card chart-card" style="margin-bottom:22px;">
-  <canvas id="agingChart" height="90"></canvas>
-  <div class="chart-legend" id="agingChartLegend"></div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="stage-funnel" id="agingFunnel"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Tabel rata-rata per branch -->
@@ -76,10 +75,8 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 let agingCache = null;   // { branches, warning_days, critical_days, rows }
-let agingChart = null;
 
 function esc2(s) {
   return (s === null || s === undefined ? '' : String(s))
@@ -173,33 +170,40 @@ function refreshAging() {
   document.getElementById('agingWarnCount').textContent = fmtNum2(warnCount);
   document.getElementById('agingCritCount').textContent = fmtNum2(critCount);
 
-  renderAgingChart(safeCount, warnCount, critCount);
+  renderStageFunnel(filtered, warnDays, critDays);
   renderAgingBranchTable(filtered, warnDays, critDays);
   renderAgingLopTable(filtered, warnDays, critDays, document.getElementById('agingSearch').value);
 }
 
-function renderAgingChart(safeCount, warnCount, critCount) {
-  const ctx = document.getElementById('agingChart').getContext('2d');
-  if (agingChart) agingChart.destroy();
-  agingChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Aman', 'Perhatian', 'Kritis'],
-      datasets: [{ data: [safeCount, warnCount, critCount], backgroundColor: ['#16a34a', '#d97706', '#dc2626'], borderWidth: 0 }],
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      cutout: '62%',
-    },
-  });
-  const total = safeCount + warnCount + critCount;
-  const legend = document.getElementById('agingChartLegend');
-  const pct = (n) => total ? Math.round((n / total) * 100) : 0;
-  legend.innerHTML = `
-    <span><span class="dot" style="background:#16a34a"></span>Aman: <strong>${fmtNum2(safeCount)}</strong> (${pct(safeCount)}%)</span>
-    <span><span class="dot" style="background:#d97706"></span>Perhatian: <strong>${fmtNum2(warnCount)}</strong> (${pct(warnCount)}%)</span>
-    <span><span class="dot" style="background:#dc2626"></span>Kritis: <strong>${fmtNum2(critCount)}</strong> (${pct(critCount)}%)</span>
-  `;
+// Alur tahapan Perijinan -> Finish Instalasi: jumlah LOP & rata-rata aging
+// per tahap, ditampilkan sebagai timeline horizontal (bukan grafik batang).
+const AGING_STAGES = [
+  ['01. PERIJINAN', 'Perijinan'],
+  ['02. PERSIAPAN', 'Persiapan'],
+  ['03. MATDEV', 'Matdev'],
+  ['04. INSTALASI', 'Instalasi'],
+  ['05. FINISH INSTALASI', 'Finish Instalasi'],
+];
+
+function renderStageFunnel(filteredRows, warnDays, critDays) {
+  const el = document.getElementById('agingFunnel');
+  const stepsHtml = AGING_STAGES.map(([statusKey, label], i) => {
+    const rowsInStage = filteredRows.filter(r => r.status_z === statusKey);
+    const withAging = rowsInStage.filter(r => r.aging_days !== null);
+    const avg = withAging.length ? Math.round(withAging.reduce((s, r) => s + r.aging_days, 0) / withAging.length) : null;
+    const bucket = avg === null ? null : agingBucket(avg, warnDays, critDays);
+    const color = bucket ? agingColor(bucket) : '#9ca3af';
+    const arrow = i < AGING_STAGES.length - 1 ? '<div class="stage-arrow">&#10148;</div>' : '';
+    return `
+      <div class="stage-step" style="border-top-color:${color};">
+        <div class="stage-step-count">${fmtNum2(rowsInStage.length)}</div>
+        <div class="stage-step-label">${esc2(label)}</div>
+        <div class="stage-step-aging" style="color:${color};">${avg !== null ? `Rata-rata ${avg} hari` : 'Belum ada data'}</div>
+      </div>
+      ${arrow}
+    `;
+  }).join('');
+  el.innerHTML = `<div class="stage-funnel-track">${stepsHtml}</div>`;
 }
 
 function renderAgingBranchTable(filteredRows, warnDays, critDays) {
