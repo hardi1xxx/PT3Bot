@@ -48,13 +48,32 @@
   </div>
 </div>
 
+<!-- Status filter (collapsible) — default: semua dicentang KECUALI 00. DROP -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="branch-filter-head" id="agingStatusFilterHeader" style="cursor:pointer; margin-bottom:0;">
+    <label style="cursor:pointer;">Filter Status Pekerjaan (kolom Z) — <span id="agingStatusFilterSummary">memuat...</span></label>
+    <div class="branch-filter-actions">
+      <button type="button" class="btn-ghost btn-sm" id="agingStatusFilterToggleBtn">Tampilkan &#9662;</button>
+    </div>
+  </div>
+  <div id="agingStatusFilterBody" style="display:none; margin-top:12px;">
+    <div class="branch-filter-actions" style="margin-bottom:8px;">
+      <button type="button" class="btn-ghost btn-sm" id="agingStatusSelectAll">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="agingStatusClearAll">Kosongkan</button>
+    </div>
+    <div class="branch-filter-grid" id="agingStatusGrid">
+      <div class="skeleton">Memuat status...</div>
+    </div>
+  </div>
+</div>
+
 <!-- Timeline: alur tahapan Perijinan -> Finish Instalasi, jumlah LOP & rata-rata aging tiap tahap -->
 <div class="section-title">
   Alur Tahapan (Timeline)
   <span class="hint">jumlah LOP &amp; rata-rata aging per tahap, urut Perijinan &rarr; Finish Instalasi — warna ikut rata-rata aging tahap tsb</span>
 </div>
 <div class="card" style="margin-bottom:22px;">
-  <div class="stage-funnel" id="agingFunnel"><div class="skeleton">Memuat data...</div></div>
+  <div id="agingFunnel"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Tabel rata-rata per branch -->
@@ -97,10 +116,13 @@ function agingLabel(bucket) {
   return bucket === 'crit' ? 'Kritis' : bucket === 'warn' ? 'Perhatian' : 'Aman';
 }
 
+function statusKeyOf(r) { return r.status_z || '(Tanpa Status)'; }
+
 function getAgingFilteredRows() {
   if (!agingCache) return [];
-  const selected = new Set(Array.from(document.querySelectorAll('.aging-branch-checkbox:checked')).map(cb => cb.value));
-  return agingCache.rows.filter(r => selected.has(r.branch));
+  const selectedBranches = new Set(Array.from(document.querySelectorAll('.aging-branch-checkbox:checked')).map(cb => cb.value));
+  const selectedStatuses = new Set(Array.from(document.querySelectorAll('.aging-status-checkbox:checked')).map(cb => cb.value));
+  return agingCache.rows.filter(r => selectedBranches.has(r.branch) && selectedStatuses.has(statusKeyOf(r)));
 }
 
 function renderAgingBranchFilter(branches) {
@@ -124,6 +146,30 @@ function updateAgingFilterSummary() {
   else summary.textContent = `${checked.length} dari ${all.length} branch dipilih`;
 }
 
+// Filter status pekerjaan (kolom Z) — default semua dicentang KECUALI "00. DROP",
+// karena permintaannya Drop tidak dimasukkan ke perhitungan aging.
+function renderAgingStatusFilter(rows) {
+  const el = document.getElementById('agingStatusGrid');
+  const statuses = Array.from(new Set(rows.map(statusKeyOf))).sort((a, b) => a.localeCompare(b));
+  if (!statuses.length) { el.innerHTML = '<div class="empty-state">Tidak ada data status.</div>'; return; }
+  el.innerHTML = statuses.map(s => `
+    <label class="branch-check">
+      <input type="checkbox" class="aging-status-checkbox" value="${esc2(s)}" ${s === '00. DROP' ? '' : 'checked'}>
+      <span>${esc2(s)}</span>
+    </label>
+  `).join('');
+  updateAgingStatusFilterSummary();
+}
+function updateAgingStatusFilterSummary() {
+  const all = document.querySelectorAll('.aging-status-checkbox');
+  const checked = document.querySelectorAll('.aging-status-checkbox:checked');
+  const summary = document.getElementById('agingStatusFilterSummary');
+  if (all.length === 0) { summary.textContent = 'tidak ada status'; return; }
+  if (checked.length === all.length) summary.textContent = `semua status dipilih (${all.length})`;
+  else if (checked.length === 0) summary.textContent = 'tidak ada status dipilih';
+  else summary.textContent = `${checked.length} dari ${all.length} status dipilih`;
+}
+
 document.getElementById('agingBranchGrid').addEventListener('change', (e) => {
   if (e.target.classList.contains('aging-branch-checkbox')) refreshAging();
 });
@@ -136,6 +182,18 @@ document.getElementById('agingBranchClearAll').addEventListener('click', () => {
   refreshAging();
 });
 
+document.getElementById('agingStatusGrid').addEventListener('change', (e) => {
+  if (e.target.classList.contains('aging-status-checkbox')) refreshAging();
+});
+document.getElementById('agingStatusSelectAll').addEventListener('click', () => {
+  document.querySelectorAll('.aging-status-checkbox').forEach(cb => { cb.checked = true; });
+  refreshAging();
+});
+document.getElementById('agingStatusClearAll').addEventListener('click', () => {
+  document.querySelectorAll('.aging-status-checkbox').forEach(cb => { cb.checked = false; });
+  refreshAging();
+});
+
 const agingFilterBody = document.getElementById('agingFilterBody');
 const agingFilterToggleBtn = document.getElementById('agingFilterToggleBtn');
 function setAgingFilterOpen(open) {
@@ -145,6 +203,16 @@ function setAgingFilterOpen(open) {
 agingFilterToggleBtn.addEventListener('click', (e) => { e.stopPropagation(); setAgingFilterOpen(agingFilterBody.style.display === 'none'); });
 document.getElementById('agingFilterHeader').addEventListener('click', () => setAgingFilterOpen(agingFilterBody.style.display === 'none'));
 setAgingFilterOpen(false);
+
+const agingStatusFilterBody = document.getElementById('agingStatusFilterBody');
+const agingStatusFilterToggleBtn = document.getElementById('agingStatusFilterToggleBtn');
+function setAgingStatusFilterOpen(open) {
+  agingStatusFilterBody.style.display = open ? 'block' : 'none';
+  agingStatusFilterToggleBtn.innerHTML = open ? 'Sembunyikan &#9652;' : 'Tampilkan &#9662;';
+}
+agingStatusFilterToggleBtn.addEventListener('click', (e) => { e.stopPropagation(); setAgingStatusFilterOpen(agingStatusFilterBody.style.display === 'none'); });
+document.getElementById('agingStatusFilterHeader').addEventListener('click', () => setAgingStatusFilterOpen(agingStatusFilterBody.style.display === 'none'));
+setAgingStatusFilterOpen(false);
 
 function refreshAging() {
   if (!agingCache) return;
@@ -187,23 +255,24 @@ const AGING_STAGES = [
 
 function renderStageFunnel(filteredRows, warnDays, critDays) {
   const el = document.getElementById('agingFunnel');
-  const stepsHtml = AGING_STAGES.map(([statusKey, label], i) => {
+  const itemsHtml = AGING_STAGES.map(([statusKey, label], i) => {
     const rowsInStage = filteredRows.filter(r => r.status_z === statusKey);
     const withAging = rowsInStage.filter(r => r.aging_days !== null);
     const avg = withAging.length ? Math.round(withAging.reduce((s, r) => s + r.aging_days, 0) / withAging.length) : null;
     const bucket = avg === null ? null : agingBucket(avg, warnDays, critDays);
     const color = bucket ? agingColor(bucket) : '#9ca3af';
-    const arrow = i < AGING_STAGES.length - 1 ? '<div class="stage-arrow">&#10148;</div>' : '';
+    const connector = i < AGING_STAGES.length - 1 ? `<div class="aging-tl-connector" style="background:${color};"></div>` : '';
     return `
-      <div class="stage-step" style="border-top-color:${color};">
-        <div class="stage-step-count">${fmtNum2(rowsInStage.length)}</div>
-        <div class="stage-step-label">${esc2(label)}</div>
-        <div class="stage-step-aging" style="color:${color};">${avg !== null ? `Rata-rata ${avg} hari` : 'Belum ada data'}</div>
+      <div class="aging-tl-item">
+        <div class="aging-tl-count">${fmtNum2(rowsInStage.length)}</div>
+        <div class="aging-tl-dot" style="background:${color};"></div>
+        <div class="aging-tl-label">${esc2(label)}</div>
+        <div class="aging-tl-aging" style="color:${color};">${avg !== null ? `Rata-rata ${avg} hari` : 'Belum ada data'}</div>
       </div>
-      ${arrow}
+      ${connector}
     `;
   }).join('');
-  el.innerHTML = `<div class="stage-funnel-track">${stepsHtml}</div>`;
+  el.innerHTML = `<div class="aging-tl-row">${itemsHtml}</div>`;
 }
 
 function renderAgingBranchTable(filteredRows, warnDays, critDays) {
@@ -276,6 +345,7 @@ async function loadAging() {
     }
     agingCache = json.data;
     renderAgingBranchFilter(agingCache.branches);
+    renderAgingStatusFilter(agingCache.rows);
     refreshAging();
   } catch (e) {
     document.getElementById('agingLopTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
