@@ -422,47 +422,6 @@ table.pivot-combined tbody tr.grand-total-row th {
   accent-color: var(--brand-blue);
 }
 
-.branch-dropdown { position: relative; display: inline-block; min-width: 220px; }
-.branch-dropdown-toggle {
-  width: auto;
-  min-width: 220px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--panel-alt);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 9px 12px;
-  font-size: 0.85rem;
-  color: var(--text);
-  cursor: pointer;
-  font-weight: 600;
-}
-.branch-dropdown-toggle:hover { border-color: var(--brand-blue); }
-.branch-dropdown-toggle .chev { color: var(--muted); font-size: 0.7rem; }
-.branch-dropdown-panel {
-  display: none;
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 6px);
-  left: 0;
-  width: 280px !important;
-  max-width: 280px !important;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
-  padding: 12px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-.branch-dropdown-panel.open { display: block; }
-.branch-dropdown-panel .branch-filter-grid {
-  max-height: 190px;
-  overflow-y: auto;
-}
-
 /* ── Search + update split panel ─────────────────────────────────── */
 .split-grid {
   display: grid;

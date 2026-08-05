@@ -29,24 +29,21 @@
   </div>
 </div>
 
-<!-- Branch filter (dropdown + checkbox), mempengaruhi SEMUA bagian di bawah -->
+<!-- Branch filter (collapsible), mempengaruhi SEMUA bagian di bawah -->
 <div class="card" style="margin-bottom:14px;">
-  <div class="branch-filter-head">
-    <label>Filter Branch (kolom S) — berlaku untuk kartu, tabel, chart &amp; kategori drop</label>
+  <div class="branch-filter-head" id="filterCardHeader" style="cursor:pointer; margin-bottom:0;">
+    <label style="cursor:pointer;">Filter Branch (kolom S) — <span id="filterSummary">memuat...</span></label>
+    <div class="branch-filter-actions">
+      <button type="button" class="btn-ghost btn-sm" id="filterToggleBtn">Tampilkan &#9662;</button>
+    </div>
   </div>
-  <div class="branch-dropdown" id="branchDropdown">
-    <button type="button" class="branch-dropdown-toggle" id="branchDropdownToggle">
-      <span id="branchDropdownLabel">Memuat branch...</span>
-      <span class="chev">&#9662;</span>
-    </button>
-    <div class="branch-dropdown-panel" id="branchDropdownPanel">
-      <div class="branch-filter-actions" style="margin-bottom:8px;">
-        <button type="button" class="btn-ghost btn-sm" id="branchSelectAll">Pilih Semua</button>
-        <button type="button" class="btn-ghost btn-sm" id="branchClearAll">Kosongkan</button>
-      </div>
-      <div class="branch-filter-grid" id="branchFilterGrid" style="flex-direction:column; flex-wrap:nowrap; max-height:240px;">
-        <div class="skeleton">Memuat branch...</div>
-      </div>
+  <div id="filterCardBody" style="display:none; margin-top:12px;">
+    <div class="branch-filter-actions" style="margin-bottom:8px;">
+      <button type="button" class="btn-ghost btn-sm" id="branchSelectAll">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="branchClearAll">Kosongkan</button>
+    </div>
+    <div class="branch-filter-grid" id="branchFilterGrid">
+      <div class="skeleton">Memuat branch...</div>
     </div>
   </div>
 </div>
@@ -273,11 +270,11 @@ function getSelectedBranches() {
 function updateBranchDropdownLabel() {
   const all = document.querySelectorAll('.branch-checkbox');
   const checked = document.querySelectorAll('.branch-checkbox:checked');
-  const label = document.getElementById('branchDropdownLabel');
-  if (all.length === 0) { label.textContent = 'Tidak ada branch'; return; }
-  if (checked.length === all.length) { label.textContent = `Semua Branch (${all.length})`; }
-  else if (checked.length === 0) { label.textContent = 'Tidak ada branch dipilih'; }
-  else { label.textContent = `${checked.length} dari ${all.length} branch dipilih`; }
+  const summary = document.getElementById('filterSummary');
+  if (all.length === 0) { summary.textContent = 'tidak ada branch'; return; }
+  if (checked.length === all.length) { summary.textContent = `semua branch dipilih (${all.length})`; }
+  else if (checked.length === 0) { summary.textContent = 'tidak ada branch dipilih'; }
+  else { summary.textContent = `${checked.length} dari ${all.length} branch dipilih`; }
 }
 
 // Refresh everything that depends on the branch filter
@@ -314,18 +311,21 @@ document.getElementById('branchClearAll').addEventListener('click', () => {
   refreshAll();
 });
 
-// Dropdown open/close
-const branchToggle = document.getElementById('branchDropdownToggle');
-const branchPanel = document.getElementById('branchDropdownPanel');
-branchToggle.addEventListener('click', (e) => {
+// Filter card collapse/expand — hidden by default so it doesn't take up space
+const filterBody = document.getElementById('filterCardBody');
+const filterToggleBtn = document.getElementById('filterToggleBtn');
+function setFilterOpen(open) {
+  filterBody.style.display = open ? 'block' : 'none';
+  filterToggleBtn.innerHTML = open ? 'Sembunyikan &#9652;' : 'Tampilkan &#9662;';
+}
+filterToggleBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  branchPanel.classList.toggle('open');
+  setFilterOpen(filterBody.style.display === 'none');
 });
-document.addEventListener('click', (e) => {
-  if (!document.getElementById('branchDropdown').contains(e.target)) {
-    branchPanel.classList.remove('open');
-  }
+document.getElementById('filterCardHeader').addEventListener('click', () => {
+  setFilterOpen(filterBody.style.display === 'none');
 });
+setFilterOpen(false);
 
 // ── Bar chart: distribusi status pekerjaan (jumlah order per status) ──
 function renderChart(lopTable, statuses) {
