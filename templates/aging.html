@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block menu_aging %}active{% endblock %}
+{% block page_title %}Aging PT3{% endblock %}
+{% block page_sub %}Durasi berjalan tiap lokasi — dari Tanggal NDE (kolom AP) sampai hari ini (atau tanggal Drop/BAST2025 di kolom BF){% endblock %}
+
+{% block content %}
+
+<!-- Stat cards -->
+<div class="stat-grid" id="agingStatGrid">
+  <div class="stat-card alt">
+    <div class="stat-label">Rata-rata Aging</div>
+    <div class="stat-value" id="agingAvg">–</div>
+    <div class="stat-foot">hari, dari seluruh lokasi terfilter</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Aman</div>
+    <div class="stat-value" id="agingSafeCount">–</div>
+    <div class="stat-foot">&le; <span id="agingSafeThresholdLabel">14</span> hari</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">Perhatian</div>
+    <div class="stat-value" id="agingWarnCount">–</div>
+    <div class="stat-foot"><span id="agingWarnRangeLabel">15–30</span> hari</div>
+  </div>
+  <div class="stat-card" style="border-top-color:#dc2626;">
+    <div class="stat-label">Kritis</div>
+    <div class="stat-value" id="agingCritCount">–</div>
+    <div class="stat-foot">&gt; <span id="agingCritThresholdLabel">30</span> hari</div>
+  </div>
+</div>
+
+<!-- Branch filter (collapsible) -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="branch-filter-head" id="agingFilterHeader" style="cursor:pointer; margin-bottom:0;">
+    <label style="cursor:pointer;">Filter Branch (kolom S) — <span id="agingFilterSummary">memuat...</span></label>
+    <div class="branch-filter-actions">
+      <button type="button" class="btn-ghost btn-sm" id="agingFilterToggleBtn">Tampilkan &#9662;</button>
+    </div>
+  </div>
+  <div id="agingFilterBody" style="display:none; margin-top:12px;">
+    <div class="branch-filter-actions" style="margin-bottom:8px;">
+      <button type="button" class="btn-ghost btn-sm" id="agingBranchSelectAll">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="agingBranchClearAll">Kosongkan</button>
+    </div>
+    <div class="branch-filter-grid" id="agingBranchGrid">
+      <div class="skeleton">Memuat branch...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Chart: distribusi aging, gampang dibaca orang awam -->
+<div class="section-title">
+  Distribusi Aging
+  <span class="hint">semua lokasi terfilter, dikelompokkan Aman / Perhatian / Kritis</span>
+</div>
+<div class="card chart-card" style="margin-bottom:22px;">
+  <canvas id="agingChart" height="90"></canvas>
+  <div class="chart-legend" id="agingChartLegend"></div>
+</div>
+
+<!-- Tabel rata-rata per branch -->
+<div class="section-title">Rata-rata Aging per Branch</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap"><table class="pivot" id="agingBranchTable"></table></div>
+</div>
+
+<!-- Tabel per LOP -->
+<div class="section-title">
+  Detail per LOP
+  <button class="refresh-btn" style="margin-left:auto;" onclick="loadAging()">&#8635; Refresh</button>
+</div>
+<div class="card">
+  <input type="text" id="agingSearch" placeholder="Cari IHLD / Lokasi...">
+  <div class="pivot-table-wrap" id="agingLopTableWrap" style="max-height:460px; overflow-y:auto; margin-top:12px;">
+    <div class="skeleton">Memuat data...</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+let agingCache = null;   // { branches, warning_days, critical_days, rows }
+let agingChart = null;
+
+function esc2(s) {
+  return (s === null || s === undefined ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function fmtNum2(n) { return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0); }
+
+function agingBucket(days, warnDays, critDays) {
+  if (days === null || days === undefined) return null;
+  if (days > critDays) return 'crit';
+  if (days > warnDays) return 'warn';
+  return 'safe';
+}
+function agingColor(bucket) {
+  return bucket === 'crit' ? '#dc2626' : bucket === 'warn' ? '#d97706' : '#16a34a';
+}
+function agingLabel(bucket) {
+  return bucket === 'crit' ? 'Kritis' : bucket === 'warn' ? 'Perhatian' : 'Aman';
+}
+
+function getAgingFilteredRows() {
+  if (!agingCache) return [];
+  const selected = new Set(Array.from(document.querySelectorAll('.aging-branch-checkbox:checked')).map(cb => cb.value));
+  return agingCache.rows.filter(r => selected.has(r.branch));
+}
+
+function renderAgingBranchFilter(branches) {
+  const el = document.getElementById('agingBranchGrid');
+  if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch (kolom S).</div>'; return; }
+  el.innerHTML = branches.map(b => `
+    <label class="branch-check">
+      <input type="checkbox" class="aging-branch-checkbox" value="${esc2(b)}" checked>
+      <span>${esc2(b)}</span>
+    </label>
+  `).join('');
+  updateAgingFilterSummary();
+}
+function updateAgingFilterSummary() {
+  const all = document.querySelectorAll('.aging-branch-checkbox');
+  const checked = document.querySelectorAll('.aging-branch-checkbox:checked');
+  const summary = document.getElementById('agingFilterSummary');
+  if (all.length === 0) { summary.textContent = 'tidak ada branch'; return; }
+  if (checked.length === all.length) summary.textContent = `semua branch dipilih (${all.length})`;
+  else if (checked.length === 0) summary.textContent = 'tidak ada branch dipilih';
+  else summary.textContent = `${checked.length} dari ${all.length} branch dipilih`;
+}
+
+document.getElementById('agingBranchGrid').addEventListener('change', (e) => {
+  if (e.target.classList.contains('aging-branch-checkbox')) refreshAging();
+});
+document.getElementById('agingBranchSelectAll').addEventListener('click', () => {
+  document.querySelectorAll('.aging-branch-checkbox').forEach(cb => { cb.checked = true; });
+  refreshAging();
+});
+document.getElementById('agingBranchClearAll').addEventListener('click', () => {
+  document.querySelectorAll('.aging-branch-checkbox').forEach(cb => { cb.checked = false; });
+  refreshAging();
+});
+
+const agingFilterBody = document.getElementById('agingFilterBody');
+const agingFilterToggleBtn = document.getElementById('agingFilterToggleBtn');
+function setAgingFilterOpen(open) {
+  agingFilterBody.style.display = open ? 'block' : 'none';
+  agingFilterToggleBtn.innerHTML = open ? 'Sembunyikan &#9652;' : 'Tampilkan &#9662;';
+}
+agingFilterToggleBtn.addEventListener('click', (e) => { e.stopPropagation(); setAgingFilterOpen(agingFilterBody.style.display === 'none'); });
+document.getElementById('agingFilterHeader').addEventListener('click', () => setAgingFilterOpen(agingFilterBody.style.display === 'none'));
+setAgingFilterOpen(false);
+
+function refreshAging() {
+  if (!agingCache) return;
+  const warnDays = agingCache.warning_days;
+  const critDays = agingCache.critical_days;
+  const filtered = getAgingFilteredRows();
+  updateAgingFilterSummary();
+
+  document.getElementById('agingSafeThresholdLabel').textContent = warnDays;
+  document.getElementById('agingWarnRangeLabel').textContent = `${warnDays + 1}–${critDays}`;
+  document.getElementById('agingCritThresholdLabel').textContent = critDays;
+
+  const withAging = filtered.filter(r => r.aging_days !== null);
+  const avg = withAging.length ? withAging.reduce((s, r) => s + r.aging_days, 0) / withAging.length : 0;
+  let safeCount = 0, warnCount = 0, critCount = 0;
+  withAging.forEach(r => {
+    const b = agingBucket(r.aging_days, warnDays, critDays);
+    if (b === 'safe') safeCount++; else if (b === 'warn') warnCount++; else critCount++;
+  });
+
+  document.getElementById('agingAvg').textContent = withAging.length ? Math.round(avg) : '–';
+  document.getElementById('agingSafeCount').textContent = fmtNum2(safeCount);
+  document.getElementById('agingWarnCount').textContent = fmtNum2(warnCount);
+  document.getElementById('agingCritCount').textContent = fmtNum2(critCount);
+
+  renderAgingChart(safeCount, warnCount, critCount);
+  renderAgingBranchTable(filtered, warnDays, critDays);
+  renderAgingLopTable(filtered, warnDays, critDays, document.getElementById('agingSearch').value);
+}
+
+function renderAgingChart(safeCount, warnCount, critCount) {
+  const ctx = document.getElementById('agingChart').getContext('2d');
+  if (agingChart) agingChart.destroy();
+  agingChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Aman', 'Perhatian', 'Kritis'],
+      datasets: [{ data: [safeCount, warnCount, critCount], backgroundColor: ['#16a34a', '#d97706', '#dc2626'], borderWidth: 0 }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      cutout: '62%',
+    },
+  });
+  const total = safeCount + warnCount + critCount;
+  const legend = document.getElementById('agingChartLegend');
+  const pct = (n) => total ? Math.round((n / total) * 100) : 0;
+  legend.innerHTML = `
+    <span><span class="dot" style="background:#16a34a"></span>Aman: <strong>${fmtNum2(safeCount)}</strong> (${pct(safeCount)}%)</span>
+    <span><span class="dot" style="background:#d97706"></span>Perhatian: <strong>${fmtNum2(warnCount)}</strong> (${pct(warnCount)}%)</span>
+    <span><span class="dot" style="background:#dc2626"></span>Kritis: <strong>${fmtNum2(critCount)}</strong> (${pct(critCount)}%)</span>
+  `;
+}
+
+function renderAgingBranchTable(filteredRows, warnDays, critDays) {
+  const table = document.getElementById('agingBranchTable');
+  const byBranch = {};
+  filteredRows.forEach(r => {
+    if (r.aging_days === null) return;
+    if (!byBranch[r.branch]) byBranch[r.branch] = { sum: 0, count: 0, safe: 0, warn: 0, crit: 0 };
+    const g = byBranch[r.branch];
+    g.sum += r.aging_days; g.count += 1;
+    const b = agingBucket(r.aging_days, warnDays, critDays);
+    g[b]++;
+  });
+  const branches = Object.keys(byBranch).sort((a, b) => a.localeCompare(b));
+  if (!branches.length) { table.innerHTML = '<tr><td class="empty-state">Tidak ada data.</td></tr>'; return; }
+
+  let html = '<thead><tr><th style="text-align:left;">Branch</th><th>Jumlah LOP</th><th>Rata-rata Aging</th><th>Aman</th><th>Perhatian</th><th>Kritis</th></tr></thead><tbody>';
+  branches.forEach(b => {
+    const g = byBranch[b];
+    const avg = Math.round(g.sum / g.count);
+    const bucket = agingBucket(avg, warnDays, critDays);
+    html += `<tr>
+      <th style="text-align:left;">${esc2(b)}</th>
+      <td>${fmtNum2(g.count)}</td>
+      <td><span class="badge" style="background:${agingColor(bucket)}22; color:${agingColor(bucket)}; border-color:${agingColor(bucket)}55; font-weight:700;">${avg} hari</span></td>
+      <td>${fmtNum2(g.safe)}</td>
+      <td>${fmtNum2(g.warn)}</td>
+      <td>${fmtNum2(g.crit)}</td>
+    </tr>`;
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+function renderAgingLopTable(filteredRows, warnDays, critDays, searchText) {
+  const el = document.getElementById('agingLopTableWrap');
+  const q = (searchText || '').trim().toLowerCase();
+  let rows = filteredRows.filter(r => r.aging_days !== null);
+  if (q) rows = rows.filter(r => (r.ihld + ' ' + r.lokasi).toLowerCase().includes(q));
+  rows = rows.slice().sort((a, b) => b.aging_days - a.aging_days);
+
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">Tidak ada data.</div>'; return; }
+
+  let html = '<table class="pivot"><thead><tr><th style="text-align:left;">IHLD</th><th style="text-align:left;">Lokasi</th><th style="text-align:left;">Batch</th><th style="text-align:left;">Branch</th><th>Status</th><th>Aging</th></tr></thead><tbody>';
+  rows.forEach(r => {
+    const bucket = agingBucket(r.aging_days, warnDays, critDays);
+    html += `<tr>
+      <td style="text-align:left;">${esc2(r.ihld) || '-'}</td>
+      <td style="text-align:left;">${esc2(r.lokasi) || '-'}</td>
+      <td style="text-align:left;">${esc2(r.batch)}</td>
+      <td style="text-align:left;">${esc2(r.branch)}</td>
+      <td><span class="badge status">${esc2(r.status_z) || '-'}</span></td>
+      <td><span class="badge" style="background:${agingColor(bucket)}22; color:${agingColor(bucket)}; border-color:${agingColor(bucket)}55; font-weight:700;">${r.aging_days} hari (${agingLabel(bucket)})</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+document.getElementById('agingSearch').addEventListener('input', () => refreshAging());
+
+async function loadAging() {
+  document.getElementById('agingLopTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
+  try {
+    const res = await fetch('/api/aging-data');
+    const json = await res.json();
+    if (!json.ok) {
+      document.getElementById('agingLopTableWrap').innerHTML = `<div class="flash error">${esc2(json.error)}</div>`;
+      return;
+    }
+    agingCache = json.data;
+    renderAgingBranchFilter(agingCache.branches);
+    refreshAging();
+  } catch (e) {
+    document.getElementById('agingLopTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
+  }
+}
+
+loadAging();
+</script>
+{% endblock %}

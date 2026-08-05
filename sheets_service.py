@@ -8,6 +8,7 @@ import datetime
 import threading
 
 import gspread
+from dateutil import parser as date_parser
 from google.oauth2.service_account import Credentials
 
 import config
@@ -325,3 +326,107 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str, whe
     ws.update_acell(f"{date_col}{row_num}", date_str)
 
     return date_col, note_col
+
+
+def _parse_date(raw: str):
+    """Best-effort parse of a sheet cell into a date. Kolom AP (Tanggal NDE)
+    is a pre-existing column not written by this app, so its format isn't
+    guaranteed. Tries unambiguous explicit formats first (including ISO
+    YYYY-MM-DD) — dateutil's dayfirst=True fallback mis-parses ISO dates
+    (e.g. "2026-06-01" -> 6 Jan instead of 1 Jun), so it's only used as a
+    last resort for formats like "1 Jun 2026"."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y"):
+        try:
+            return datetime.datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    try:
+        return date_parser.parse(raw, dayfirst=True).date()
+    except (ValueError, OverflowError):
+        return None
+
+
+def get_aging_data():
+    """
+    Per-row aging: (end_date - start_date) in days.
+      start_date = kolom AP (Tanggal NDE)
+      end_date   = HARI INI secara default, KECUALI status Z ada di
+                   config.AGING_FIXED_END_COLUMNS (Drop/BAST2025 -> BF;
+                   Golive/UT/Rekon/BAST -> BD), dalam hal itu end_date =
+                   nilai kolom tsb — jatuh balik ke hari ini kalau kosong
+                   / tidak valid.
+    aging_days bernilai None kalau AP kosong/tidak bisa di-parse.
+    """
+    ws = get_worksheet()
+    all_values = ws.get_all_values()
+
+    # Only the fixed-end columns actually referenced in config need reading.
+    fixed_end_cols = sorted(set(config.AGING_FIXED_END_COLUMNS.values()))
+
+    idx = {
+        "ap": _col_to_index(config.COL_TANGGAL_NDE) - 1,
+        "order": _col_to_index(config.COL_ORDER) - 1,
+        "batch": _col_to_index(config.COL_BATCH) - 1,
+        "branch": _col_to_index(config.COL_BRANCH) - 1,
+        "status_z": _col_to_index(config.COL_STATUS_Z) - 1,
+        "status_aa": _col_to_index(config.COL_STATUS_AA) - 1,
+        "ihld": _col_to_index(config.COL_IHLD) - 1,
+        "lokasi": _col_to_index(config.COL_LOKASI) - 1,
+        "mitra": _col_to_index(config.COL_MITRA) - 1,
+    }
+    for col in fixed_end_cols:
+        idx[f"fixed_{col}"] = _col_to_index(col) - 1
+
+    data_rows = all_values[config.DATA_START_ROW - 1:]
+    today = datetime.date.today()
+    rows = []
+    branch_set = set()
+
+    for offset, row in enumerate(data_rows):
+        row_num = config.DATA_START_ROW + offset
+
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+
+        order_val = cell("order")
+        ihld_val = cell("ihld")
+        if not order_val and not ihld_val and not cell("batch"):
+            continue  # fully empty row, skip
+
+        branch_val = cell("branch") or "(Tanpa Branch)"
+        branch_set.add(branch_val)
+
+        status_raw = cell("status_z")
+        start_date = _parse_date(cell("ap"))
+
+        fixed_col = config.AGING_FIXED_END_COLUMNS.get(status_raw)
+        if fixed_col:
+            end_date = _parse_date(cell(f"fixed_{fixed_col}")) or today
+        else:
+            end_date = today
+
+        aging_days = (end_date - start_date).days if start_date else None
+
+        rows.append({
+            "row": row_num,
+            "ihld": ihld_val,
+            "lokasi": cell("lokasi"),
+            "batch": cell("batch") or "(Tanpa Batch)",
+            "branch": branch_val,
+            "mitra": cell("mitra"),
+            "status_z": status_raw,
+            "status_aa": cell("status_aa"),
+            "aging_days": aging_days,
+            "fixed_end_column": fixed_col,
+        })
+
+    return {
+        "branches": sorted(branch_set, key=lambda b: b.lower()),
+        "warning_days": config.AGING_WARNING_DAYS,
+        "critical_days": config.AGING_CRITICAL_DAYS,
+        "rows": rows,
+    }

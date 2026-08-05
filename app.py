@@ -79,6 +79,20 @@ def api_row_update(row_num):
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/aging")
+def aging_page():
+    return render_template("aging.html")
+
+
+@app.route("/api/aging-data")
+def api_aging_data():
+    try:
+        data = sheets_service.get_aging_data()
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/update/<int:row_num>", methods=["GET"])
 def update_form(row_num):
     try:

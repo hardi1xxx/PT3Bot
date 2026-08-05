@@ -111,6 +111,23 @@ STATUS_COLUMN_MAP = {
     "10.1 BAST 2025":        {"date_col": "BF", "note_col": "BG"},
 }
 
+# ── Aging ────────────────────────────────────────────────────────────
+COL_TANGGAL_NDE = "AP"   # tanggal awal (start) untuk hitung aging
+AGING_WARNING_DAYS = 15   # > segini = kuning ("Perhatian")
+AGING_CRITICAL_DAYS = 31  # > segini = merah ("Kritis")
+
+# Status Z yang aging-nya dihitung sampai tanggal TETAP (bukan sampai hari
+# ini) -> AP s/d kolom di bawah ini. Fallback ke hari ini kalau kolomnya
+# kosong/tidak valid. Status lain di luar daftar ini pakai "hari ini".
+AGING_FIXED_END_COLUMNS = {
+    "00. DROP":        "BF",
+    "10.1 BAST 2025":  "BF",
+    "06. GOLIVE":      "BD",
+    "07. UT":          "BD",
+    "09. REKON":       "BD",
+    "10. BAST":        "BD",
+}
+
 # ── Env / secrets ──────────────────────────────────────────────────────
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
