@@ -146,6 +146,18 @@ def _to_number(raw: str) -> float:
         return 0.0
 
 
+# Normalized (trimmed + uppercased) lookup so that status values entered in the
+# sheet with different case or stray whitespace (e.g. "01. perijinan ") still
+# match a DASHBOARD_STATUSES entry instead of being silently dropped from the
+# pivot tables / "lokasi sedang berjalan" count.
+_STATUS_LOOKUP = {s.strip().upper(): s for s in config.DASHBOARD_STATUSES}
+
+
+def _match_status(raw: str):
+    """Return the canonical DASHBOARD_STATUSES value matching `raw`, or None."""
+    return _STATUS_LOOKUP.get((raw or "").strip().upper())
+
+
 def get_dashboard_data():
     """
     One-shot read of the whole sheet, aggregated into everything the
@@ -155,9 +167,11 @@ def get_dashboard_data():
       - port_table / lop_table: pivot rows=batch (kolom C), cols=DASHBOARD_STATUSES,
         values = sum(AG) for port_table, count(rows) for lop_table. Both include
         a per-row "total" and a trailing "TOTAL" row.
-      - bh_table: frequency count of every distinct value found in kolom BH
-      - running_locations: every row whose status (kolom Z) is one of
-        DASHBOARD_STATUSES, i.e. "sedang berjalan"
+      - bh_table: frequency count of every distinct value found in kolom BH,
+        each entry also carries "rows": [{row, ihld, lokasi, batch, status_z}, ...]
+        for the "Kategori Drop" click-to-list-to-detail UI.
+      - running_locations: every row whose status (kolom Z) matches one of
+        DASHBOARD_STATUSES (case/whitespace-insensitive), i.e. "sedang berjalan"
     """
     ws = get_worksheet()
     all_values = ws.get_all_values()
@@ -182,6 +196,7 @@ def get_dashboard_data():
     total_order = 0
     total_port = 0.0
     bh_counter = {}
+    bh_rows = {}
     running_locations = []
 
     for offset, row in enumerate(data_rows):
@@ -193,7 +208,8 @@ def get_dashboard_data():
 
         order_val = cell("order")
         batch_val = cell("batch") or "(Tanpa Batch)"
-        status_val = cell("status_z")
+        status_raw = cell("status_z")
+        status_val = _match_status(status_raw)  # canonical value or None
         aa_val = cell("status_aa")
         port_num = _to_number(cell("port"))
         bh_val = cell("bh")
@@ -212,7 +228,7 @@ def get_dashboard_data():
             pivot_lop[batch_val] = {s: 0 for s in statuses}
             batch_order.append(batch_val)
 
-        if status_val in statuses:
+        if status_val:
             pivot_port[batch_val][status_val] += port_num
             pivot_lop[batch_val][status_val] += 1
             running_locations.append({
@@ -227,6 +243,13 @@ def get_dashboard_data():
 
         if bh_val:
             bh_counter[bh_val] = bh_counter.get(bh_val, 0) + 1
+            bh_rows.setdefault(bh_val, []).append({
+                "row": row_num,
+                "ihld": ihld_val,
+                "lokasi": lokasi_val,
+                "batch": batch_val,
+                "status_z": status_raw,
+            })
 
     def build_table(pivot):
         rows = []
@@ -241,7 +264,10 @@ def get_dashboard_data():
         rows.append({"batch": "TOTAL", "values": col_totals, "total": grand_total})
         return rows
 
-    bh_table = [{"label": k, "count": v} for k, v in sorted(bh_counter.items(), key=lambda kv: kv[0].lower())]
+    bh_table = [
+        {"label": k, "count": v, "rows": bh_rows.get(k, [])}
+        for k, v in sorted(bh_counter.items(), key=lambda kv: kv[0].lower())
+    ]
     running_locations.sort(key=lambda r: (r["batch"], r["status_z"]))
 
     return {
@@ -265,6 +291,29 @@ def get_row_snapshot(row_num: int):
         note_col = config.STATUS_COLUMN_MAP[z_val]["note_col"]
         note_preview = ws.acell(f"{note_col}{row_num}").value or ""
     return {"row": row_num, "status_z": z_val, "status_aa": aa_val, "note_preview": note_preview}
+
+
+def get_row_detail(row_num: int):
+    """
+    Return header/value pairs for every column from I to AB (inclusive) of
+    the given row, used by the "Kategori Drop" list -> detail view.
+    Headers come from HEADER_ROW; falls back to "Kolom N" if a header cell
+    is blank.
+    """
+    ws = get_worksheet()
+    start_idx = _col_to_index("I")
+    end_idx = _col_to_index("AB")
+    header_range = ws.get(f"I{config.HEADER_ROW}:AB{config.HEADER_ROW}")
+    value_range = ws.get(f"I{row_num}:AB{row_num}")
+    headers = header_range[0] if header_range else []
+    values = value_range[0] if value_range else []
+
+    fields = []
+    for i in range(end_idx - start_idx + 1):
+        h = headers[i].strip() if i < len(headers) and headers[i].strip() else f"Kolom {i + 1}"
+        v = values[i] if i < len(values) else ""
+        fields.append({"header": h, "value": v})
+    return fields
 
 
 def update_status(row_num: int, z_value: str, aa_value: str, note_text: str, when: datetime.date = None):

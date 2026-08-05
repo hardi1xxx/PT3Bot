@@ -50,6 +50,16 @@ def api_row(row_num):
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/row/<int:row_num>/detail")
+def api_row_detail(row_num):
+    """Kolom I s/d AB untuk satu baris — dipakai oleh panel 'Kategori Drop'."""
+    try:
+        fields = sheets_service.get_row_detail(row_num)
+        return jsonify({"ok": True, "fields": fields})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/row/<int:row_num>/update", methods=["POST"])
 def api_row_update(row_num):
     payload = request.get_json(silent=True) or {}

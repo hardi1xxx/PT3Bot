@@ -29,34 +29,25 @@
   </div>
 </div>
 
-<!-- Tables + chart -->
+<!-- Combined Port + LOP table -->
 <div class="section-title">
-  Rekap per Batch
-  <span class="hint">baris = batch (kolom C) · kolom = status fisik (kolom Z)</span>
+  Rekap Port &amp; LOP per Batch
+  <span class="hint">baris = batch (kolom C) · setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan</span>
   <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">↻ Refresh</button>
 </div>
-
-<div class="dashboard-grid">
-  <div class="tables-col">
-    <div class="card">
-      <div class="section-title" style="margin-bottom:8px;">Data / Port</div>
-      <div class="pivot-table-wrap" id="portTableWrap"><div class="skeleton">Memuat data...</div></div>
-    </div>
-    <div class="card">
-      <div class="section-title" style="margin-bottom:8px;">Data / LOP</div>
-      <div class="pivot-table-wrap" id="lopTableWrap"><div class="skeleton">Memuat data...</div></div>
-    </div>
-  </div>
-
-  <div class="card chart-card">
-    <div class="section-title" style="margin-bottom:8px;">Distribusi Order per Status</div>
-    <canvas id="statusChart"></canvas>
-    <div class="chart-legend" id="chartLegend"></div>
-  </div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="pivotTableWrap"><div class="skeleton">Memuat data...</div></div>
 </div>
 
-<!-- BH breakdown -->
-<div class="section-title">Rekap Kolom BH</div>
+<!-- Chart -->
+<div class="section-title">Distribusi Status Pekerjaan</div>
+<div class="card chart-card" style="margin-bottom:22px;">
+  <canvas id="statusChart" height="90"></canvas>
+  <div class="chart-legend" id="chartLegend"></div>
+</div>
+
+<!-- Kategori Drop (kolom BH) -->
+<div class="section-title">Kategori Drop</div>
 <div class="card" style="margin-bottom:22px;">
   <div class="bh-grid" id="bhGrid"><div class="skeleton">Memuat data...</div></div>
 </div>
@@ -77,6 +68,11 @@
   </div>
 </div>
 
+<!-- Kategori Drop modal: list of rows -> detail (kolom I..AB) -->
+<div class="modal-overlay" id="bhModalOverlay">
+  <div class="modal-box" id="bhModalBox"></div>
+</div>
+
 <script>
 const STATUS_COLORS = {
   '01. PERIJINAN': '#e30613',
@@ -89,29 +85,50 @@ const STATUS_COLORS = {
 let dashboardCache = null;
 let selectedRow = null;
 let statusChart = null;
+let bhCurrentLabel = null;
 
 function fmtNum(n) {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0);
 }
 
-function renderPivotTable(el, table, statuses) {
-  let html = '<table class="pivot"><thead><tr><th>BATCH</th>';
-  statuses.forEach(s => html += `<th>${s.replace(/^\d+\.\s*/, '')}</th>`);
-  html += '<th class="total-col">TOTAL</th></tr></thead><tbody>';
-  table.forEach(row => {
-    html += `<tr><th>${row.batch}</th>`;
+function esc(s) {
+  return (s === null || s === undefined ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ── Combined Port + LOP pivot table ────────────────────────────────
+function renderCombinedTable(el, portTable, lopTable, statuses) {
+  const lopByBatch = {};
+  lopTable.forEach(r => { lopByBatch[r.batch] = r; });
+
+  let html = '<table class="pivot pivot-combined"><thead>';
+  html += '<tr><th rowspan="2">BATCH</th>';
+  statuses.forEach(s => { html += `<th colspan="2">${esc(s.replace(/^\d+\.\s*/, ''))}</th>`; });
+  html += '<th colspan="2" class="total-col">TOTAL</th></tr>';
+  html += '<tr>';
+  statuses.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th class="total-col">LOP</th><th class="total-col">Port</th>';
+  html += '</tr></thead><tbody>';
+
+  portTable.forEach(portRow => {
+    const lopRow = lopByBatch[portRow.batch] || { values: {}, total: 0 };
+    const isTotal = portRow.batch === 'TOTAL';
+    html += `<tr${isTotal ? ' class="grand-total-row"' : ''}><th>${esc(portRow.batch)}</th>`;
     statuses.forEach(s => {
-      const v = row.values[s] || 0;
-      html += `<td>${fmtNum(v)}</td>`;
+      const lopV = lopRow.values[s] || 0;
+      const portV = portRow.values[s] || 0;
+      html += `<td>${fmtNum(lopV)}</td><td>${fmtNum(portV)}</td>`;
     });
-    html += `<td class="total-col">${fmtNum(row.total)}</td></tr>`;
+    html += `<td class="total-col">${fmtNum(lopRow.total)}</td><td class="total-col">${fmtNum(portRow.total)}</td>`;
+    html += '</tr>';
   });
   html += '</tbody></table>';
   el.innerHTML = html;
 }
 
-function renderChart(portTable, statuses) {
-  const totalRow = portTable.find(r => r.batch === 'TOTAL');
+// ── Bar chart: distribusi status pekerjaan (jumlah order per status) ──
+function renderChart(lopTable, statuses) {
+  const totalRow = lopTable.find(r => r.batch === 'TOTAL');
   const labels = statuses.map(s => s.replace(/^\d+\.\s*/, ''));
   const values = statuses.map(s => (totalRow ? totalRow.values[s] : 0) || 0);
   const colors = statuses.map(s => STATUS_COLORS[s] || '#94a3b8');
@@ -119,28 +136,121 @@ function renderChart(portTable, statuses) {
   const ctx = document.getElementById('statusChart').getContext('2d');
   if (statusChart) statusChart.destroy();
   statusChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Jumlah Order', data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 46 }],
+    },
     options: {
       plugins: { legend: { display: false } },
-      cutout: '62%',
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { grid: { display: false } },
+      },
     },
   });
 
   const legend = document.getElementById('chartLegend');
   legend.innerHTML = statuses.map((s, i) => `
-    <span><span class="dot" style="background:${colors[i]}"></span>${labels[i]}: <strong>${fmtNum(values[i])}</strong></span>
+    <span><span class="dot" style="background:${colors[i]}"></span>${esc(labels[i])}: <strong>${fmtNum(values[i])}</strong></span>
   `).join('');
 }
 
+// ── Kategori Drop (kolom BH): card -> list -> detail (kolom I..AB) ───
 function renderBH(bhTable) {
   const el = document.getElementById('bhGrid');
-  if (!bhTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data di kolom BH.</div>'; return; }
-  el.innerHTML = bhTable.map(item => `
-    <div class="bh-chip"><span>${item.label}</span><span class="bh-count">${fmtNum(item.count)}</span></div>
+  if (!bhTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data kategori drop.</div>'; return; }
+  el.innerHTML = bhTable.map((item, i) => `
+    <div class="bh-chip" data-bh-index="${i}" title="Klik untuk lihat daftar">
+      <span>${esc(item.label)}</span><span class="bh-count">${fmtNum(item.count)}</span>
+    </div>
   `).join('');
 }
 
+document.getElementById('bhGrid').addEventListener('click', (e) => {
+  const chip = e.target.closest('.bh-chip');
+  if (!chip || !dashboardCache) return;
+  const item = dashboardCache.bh_table[parseInt(chip.dataset.bhIndex, 10)];
+  if (item) openBhCategory(item.label);
+});
+
+function openBhCategory(label) {
+  bhCurrentLabel = label;
+  const item = (dashboardCache.bh_table || []).find(x => x.label === label);
+  const rows = item ? item.rows : [];
+
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">${esc(label)} <span class="badge">${fmtNum(rows.length)}</span></div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup ✕</button>
+    </div>
+    <div class="loc-list" style="margin-top:10px;" id="bhModalList">
+      ${rows.length ? rows.map(r => `
+        <div class="result-item" data-row="${r.row}">
+          <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
+          <div class="meta">
+            <span class="badge">${esc(r.batch) || '-'}</span>
+            ${r.status_z ? `<span class="badge status">${esc(r.status_z)}</span>` : ''}
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state">Tidak ada data untuk kategori ini.</div>'}
+    </div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  const list = document.getElementById('bhModalList');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) openBhRowDetail(parseInt(item.dataset.row, 10));
+    });
+  }
+  document.getElementById('bhModalOverlay').classList.add('open');
+}
+
+async function openBhRowDetail(rowNum) {
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Detail Baris #${rowNum}</div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup ✕</button>
+    </div>
+    <a href="#" class="modal-back" id="bhBackLink">&larr; Kembali ke daftar</a>
+    <div class="skeleton">Memuat detail (kolom I s/d AB)...</div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  document.getElementById('bhBackLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (bhCurrentLabel) openBhCategory(bhCurrentLabel);
+  });
+
+  try {
+    const res = await fetch(`/api/row/${rowNum}/detail`);
+    const json = await res.json();
+    const body = document.querySelector('#bhModalBox');
+    if (!json.ok) {
+      body.insertAdjacentHTML('beforeend', `<div class="flash error">${esc(json.error)}</div>`);
+      return;
+    }
+    const table = `
+      <table class="detail-table">
+        ${json.fields.map(f => `<tr><th>${esc(f.header)}</th><td>${esc(f.value) || '-'}</td></tr>`).join('')}
+      </table>
+    `;
+    body.querySelector('.skeleton').outerHTML = table;
+  } catch (e) {
+    modalBox.insertAdjacentHTML('beforeend', `<div class="flash error">Gagal memuat detail: ${esc(e)}</div>`);
+  }
+}
+
+function closeBhModal() {
+  document.getElementById('bhModalOverlay').classList.remove('open');
+}
+document.getElementById('bhModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'bhModalOverlay') closeBhModal();
+});
+
+// ── Lokasi sedang berjalan ─────────────────────────────────────────
 function renderLocList(locations, filterText) {
   const el = document.getElementById('locList');
   const q = (filterText || '').trim().toLowerCase();
@@ -152,24 +262,22 @@ function renderLocList(locations, filterText) {
 
   el.innerHTML = filtered.map(r => `
     <div class="result-item ${r.row === selectedRow ? 'selected' : ''}" onclick="openRow(${r.row})">
-      <div class="ihld">${r.ihld || '(tanpa IHLD)'} — ${r.lokasi || '-'}</div>
+      <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
       <div class="meta">
-        <span class="badge">${r.batch}</span>
-        <span class="badge status">${r.status_z}</span>
+        <span class="badge">${esc(r.batch)}</span>
+        <span class="badge status">${esc(r.status_z)}</span>
       </div>
     </div>
   `).join('');
 }
 
 async function loadDashboard() {
-  document.getElementById('portTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
-  document.getElementById('lopTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
+  document.getElementById('pivotTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
   try {
     const res = await fetch('/api/dashboard');
     const json = await res.json();
     if (!json.ok) {
-      document.getElementById('portTableWrap').innerHTML = `<div class="flash error">${json.error}</div>`;
-      document.getElementById('lopTableWrap').innerHTML = '';
+      document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">${esc(json.error)}</div>`;
       document.getElementById('locList').innerHTML = '';
       return;
     }
@@ -184,26 +292,23 @@ async function loadDashboard() {
     const pct = d.running_locations.length ? Math.round((finishCount / d.running_locations.length) * 100) : 0;
     document.getElementById('statProgress').textContent = pct + '%';
 
-    try { renderPivotTable(document.getElementById('portTableWrap'), d.port_table, d.statuses); }
-    catch (e) { document.getElementById('portTableWrap').innerHTML = `<div class="flash error">Gagal render tabel: ${e}</div>`; }
-
-    try { renderPivotTable(document.getElementById('lopTableWrap'), d.lop_table, d.statuses); }
-    catch (e) { document.getElementById('lopTableWrap').innerHTML = `<div class="flash error">Gagal render tabel: ${e}</div>`; }
+    try { renderCombinedTable(document.getElementById('pivotTableWrap'), d.port_table, d.lop_table, d.statuses); }
+    catch (e) { document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal render tabel: ${e}</div>`; }
 
     try {
       if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
-      renderChart(d.port_table, d.statuses);
+      renderChart(d.lop_table, d.statuses);
     } catch (e) {
       document.querySelector('.chart-card').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
     }
 
     try { renderBH(d.bh_table); }
-    catch (e) { document.getElementById('bhGrid').innerHTML = `<div class="flash error">Gagal render BH: ${e}</div>`; }
+    catch (e) { document.getElementById('bhGrid').innerHTML = `<div class="flash error">Gagal render kategori drop: ${e}</div>`; }
 
     try { renderLocList(d.running_locations, document.getElementById('q').value); }
     catch (e) { document.getElementById('locList').innerHTML = `<div class="flash error">Gagal render lokasi: ${e}</div>`; }
   } catch (e) {
-    document.getElementById('portTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
+    document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
   }
 }
 
@@ -225,10 +330,10 @@ async function openRow(rowNum) {
 
     const { snapshot, label, z_options, aa_options } = json;
     panel.innerHTML = `
-      <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${label.ihld} · ${label.lokasi}</div>
+      <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${esc(label.ihld)} · ${esc(label.lokasi)}</div>
       <div style="margin-bottom: 10px;">
-        <span class="badge status">Status saat ini: ${snapshot.status_z || '-'}</span>
-        <span class="badge">Sub: ${snapshot.status_aa || '-'}</span>
+        <span class="badge status">Status saat ini: ${esc(snapshot.status_z) || '-'}</span>
+        <span class="badge">Sub: ${esc(snapshot.status_aa) || '-'}</span>
       </div>
       ${snapshot.note_preview ? `
         <label>Riwayat keterangan (terbaru di atas)</label>

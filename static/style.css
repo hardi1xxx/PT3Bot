@@ -287,7 +287,15 @@ table.pivot td.total-col, table.pivot th.total-col {
   font-weight: 700;
 }
 
-.chart-card canvas { max-height: 260px; }
+/* ── Combined Port + LOP table ───────────────────────────────────── */
+table.pivot-combined thead tr:first-child th { border-bottom: 2px solid rgba(255, 255, 255, 0.35); }
+table.pivot-combined tbody tr.grand-total-row td,
+table.pivot-combined tbody tr.grand-total-row th {
+  background: var(--brand-blue-mid) !important;
+  font-weight: 700;
+}
+
+.chart-card canvas { max-height: 300px; }
 
 .chart-legend {
   display: flex;
@@ -324,6 +332,57 @@ table.pivot td.total-col, table.pivot th.total-col {
   font-weight: 800;
   color: var(--brand-blue);
 }
+.bh-chip {
+  cursor: pointer;
+  transition: border-color .15s, transform .15s;
+}
+.bh-chip:hover { border-color: var(--brand-blue); transform: translateY(-1px); }
+
+/* ── Kategori Drop modal (list + detail kolom I..AB) ─────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 32, 0.45);
+  z-index: 50;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  width: 100%;
+  max-width: 560px;
+  max-height: 82vh;
+  overflow-y: auto;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modal-title { font-weight: 700; font-size: 1rem; }
+.modal-close { padding: 5px 10px; font-size: 0.78rem; }
+.modal-back {
+  display: inline-block;
+  margin: 10px 0;
+  font-size: 0.8rem;
+  color: var(--brand-blue);
+  font-weight: 600;
+}
+.detail-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 10px; }
+.detail-table th, .detail-table td {
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.detail-table th { width: 38%; background: var(--panel-alt); font-weight: 600; color: var(--muted); }
 
 /* ── Search + update split panel ─────────────────────────────────── */
 .split-grid {
