@@ -114,7 +114,7 @@ STATUS_COLUMN_MAP = {
 # ── Aging ────────────────────────────────────────────────────────────
 COL_TANGGAL_NDE = "AP"   # tanggal awal (start) untuk hitung aging
 AGING_WARNING_DAYS = 15   # > segini = kuning ("Perhatian")
-AGING_CRITICAL_DAYS = 31  # > segini = merah ("Kritis")
+AGING_CRITICAL_DAYS = 35  # > segini = merah ("Kritis")
 
 # Status Z yang aging-nya dihitung sampai tanggal TETAP (bukan sampai hari
 # ini) -> AP s/d kolom di bawah ini. Fallback ke hari ini kalau kolomnya

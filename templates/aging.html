@@ -94,6 +94,10 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="agingDetailModalOverlay">
+  <div class="modal-box" id="agingDetailModalBox"></div>
+</div>
+
 <script>
 let agingCache = null;   // { branches, warning_days, critical_days, rows }
 
@@ -321,7 +325,7 @@ function renderAgingLopTable(filteredRows, warnDays, critDays, searchText) {
     const bucket = agingBucket(r.aging_days, warnDays, critDays);
     html += `<tr>
       <td style="text-align:left;">${esc2(r.ihld) || '-'}</td>
-      <td style="text-align:left;">${esc2(r.lokasi) || '-'}</td>
+      <td style="text-align:left;"><a href="#" style="color:var(--primary); text-decoration:underline;" onclick="openAgingRowDetail(${r.row}); return false;">${esc2(r.lokasi) || '-'}</a></td>
       <td style="text-align:left;">${esc2(r.batch)}</td>
       <td style="text-align:left;">${esc2(r.branch)}</td>
       <td><span class="badge status">${esc2(r.status_z) || '-'}</span></td>
@@ -333,6 +337,56 @@ function renderAgingLopTable(filteredRows, warnDays, critDays, searchText) {
 }
 
 document.getElementById('agingSearch').addEventListener('input', () => refreshAging());
+
+function closeAgingDetailModal() {
+  const overlay = document.getElementById('agingDetailModalOverlay');
+  overlay.classList.remove('open');
+}
+
+function openAgingRowDetail(rowNum) {
+  if (!agingCache) return;
+  const row = agingCache.rows.find(r => r.row === rowNum);
+  if (!row) return;
+  const warnDays = agingCache.warning_days;
+  const critDays = agingCache.critical_days;
+  const bucket = agingBucket(row.aging_days, warnDays, critDays);
+  const agingText = row.aging_days !== null ? `${row.aging_days} hari (${agingLabel(bucket)})` : 'Tidak tersedia';
+
+  document.getElementById('agingDetailModalBox').innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Detail Aging</div>
+      <button class="btn-ghost modal-close" id="agingDetailModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="modal-body">
+      <table style="width:100%; border-collapse:collapse;">
+        <tr><th style="text-align:left; padding:8px; width:30%;">Baris</th><td style="padding:8px;">${row.row}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">IHLD</th><td style="padding:8px;">${esc2(row.ihld) || '-'}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">Lokasi</th><td style="padding:8px;">${esc2(row.lokasi) || '-'}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">Batch</th><td style="padding:8px;">${esc2(row.batch)}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">Branch</th><td style="padding:8px;">${esc2(row.branch)}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">Mitra</th><td style="padding:8px;">${esc2(row.mitra) || '-'}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">Status Z</th><td style="padding:8px;">${esc2(row.status_z) || '-'}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">Status AA</th><td style="padding:8px;">${esc2(row.status_aa) || '-'}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">Sumber Akhir Aging</th><td style="padding:8px;">${row.fixed_end_column ? `Kolom ${esc2(row.fixed_end_column)}` : 'Hari ini'}</td></tr>
+        <tr><th style="text-align:left; padding:8px;">Aging</th><td style="padding:8px;">${agingText}</td></tr>
+      </table>
+      <div style="margin-top:16px;">
+        <strong>Catatan:</strong> Klik Lokasi untuk melihat detail aging baris ini.
+      </div>
+    </div>
+    <div style="margin-top:16px; text-align:right;">
+      <a href="/update/${rowNum}" class="btn-ghost btn-sm">Buka Update</a>
+    </div>
+  `;
+
+  const overlay = document.getElementById('agingDetailModalOverlay');
+  overlay.classList.add('open');
+  document.getElementById('agingDetailModalCloseBtn').addEventListener('click', closeAgingDetailModal);
+}
+
+document.getElementById('agingDetailModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'agingDetailModalOverlay') closeAgingDetailModal();
+});
 
 async function loadAging() {
   document.getElementById('agingLopTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
