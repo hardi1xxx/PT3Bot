@@ -29,21 +29,33 @@
   </div>
 </div>
 
+<!-- Branch filter (dropdown + checkbox), mempengaruhi SEMUA bagian di bawah -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="branch-filter-head">
+    <label>Filter Branch (kolom S) — berlaku untuk kartu, tabel, chart &amp; kategori drop</label>
+  </div>
+  <div class="branch-dropdown" id="branchDropdown">
+    <button type="button" class="branch-dropdown-toggle" id="branchDropdownToggle">
+      <span id="branchDropdownLabel">Memuat branch...</span>
+      <span class="chev">&#9662;</span>
+    </button>
+    <div class="branch-dropdown-panel" id="branchDropdownPanel">
+      <div class="branch-filter-actions" style="margin-bottom:8px;">
+        <button type="button" class="btn-ghost btn-sm" id="branchSelectAll">Pilih Semua</button>
+        <button type="button" class="btn-ghost btn-sm" id="branchClearAll">Kosongkan</button>
+      </div>
+      <div class="branch-filter-grid" id="branchFilterGrid" style="flex-direction:column; flex-wrap:nowrap; max-height:240px;">
+        <div class="skeleton">Memuat branch...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Combined Port + LOP table -->
 <div class="section-title">
   Rekap Port &amp; LOP per Batch
   <span class="hint">baris = batch (kolom C) · setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan</span>
-  <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">↻ Refresh</button>
-</div>
-<div class="card" style="margin-bottom:14px;">
-  <div class="branch-filter-head">
-    <label>Filter Branch (kolom S)</label>
-    <div class="branch-filter-actions">
-      <button type="button" class="btn-ghost btn-sm" id="branchSelectAll">Pilih Semua</button>
-      <button type="button" class="btn-ghost btn-sm" id="branchClearAll">Kosongkan</button>
-    </div>
-  </div>
-  <div class="branch-filter-grid" id="branchFilterGrid"><div class="skeleton">Memuat branch...</div></div>
+  <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">&#8635; Refresh</button>
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pivot-table-wrap" id="pivotTableWrap"><div class="skeleton">Memuat data...</div></div>
@@ -54,6 +66,17 @@
 <div class="card chart-card" style="margin-bottom:22px;">
   <canvas id="statusChart" height="90"></canvas>
   <div class="chart-legend" id="chartLegend"></div>
+</div>
+
+<!-- Detail Lokasi table (di bawah chart) -->
+<div class="section-title">
+  Detail Lokasi Sedang Berjalan
+  <span class="hint">IHLD, Lokasi, Batch, Nama Mitra &amp; kolom L–O (ODP/PORT/BoQ/CPP)</span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="detailTableWrap" style="max-height:420px; overflow-y:auto;">
+    <div class="skeleton">Memuat data...</div>
+  </div>
 </div>
 
 <!-- Kategori Drop (kolom BH) -->
@@ -92,7 +115,7 @@ const STATUS_COLORS = {
   '05. FINISH INSTALASI': '#16a34a',
 };
 
-let dashboardCache = null;
+let dashboardCache = null;   // { statuses, batches, branches, rows }
 let selectedRow = null;
 let statusChart = null;
 let bhCurrentLabel = null;
@@ -104,6 +127,27 @@ function fmtNum(n) {
 function esc(s) {
   return (s === null || s === undefined ? '' : String(s))
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ── Single source of truth: filter raw rows by selected branches ─────
+function getFilteredRows() {
+  if (!dashboardCache) return [];
+  const selected = new Set(getSelectedBranches());
+  return dashboardCache.rows.filter(r => selected.has(r.branch));
+}
+
+// ── Stat cards ─────────────────────────────────────────────────────
+function refreshStats(filteredRows) {
+  const totalOrder = filteredRows.filter(r => r.has_order).length;
+  const totalPort = filteredRows.reduce((sum, r) => sum + (r.port || 0), 0);
+  const active = filteredRows.filter(r => r.status);
+  const finishCount = active.filter(r => r.status === '05. FINISH INSTALASI').length;
+  const pct = active.length ? Math.round((finishCount / active.length) * 100) : 0;
+
+  document.getElementById('statTotalOrder').textContent = fmtNum(totalOrder);
+  document.getElementById('statTotalPort').textContent = fmtNum(totalPort);
+  document.getElementById('statActive').textContent = fmtNum(active.length);
+  document.getElementById('statProgress').textContent = pct + '%';
 }
 
 // ── Combined Port + LOP pivot table ────────────────────────────────
@@ -136,9 +180,8 @@ function renderCombinedTable(el, portTable, lopTable, statuses) {
   el.innerHTML = html;
 }
 
-// ── Recompute port/LOP pivot tables client-side, filtered by branch ──
-function computePivotTables(pivotRows, batches, statuses, selectedBranches) {
-  const selectedSet = new Set(selectedBranches);
+// ── Build port/LOP pivot tables from filtered rows ────────────────
+function computePivotTables(filteredRows, batches, statuses) {
   const pivotPort = {};
   const pivotLop = {};
   const ensure = (b) => {
@@ -148,10 +191,10 @@ function computePivotTables(pivotRows, batches, statuses, selectedBranches) {
     }
   };
   batches.forEach(ensure);
-  (pivotRows || []).forEach(r => {
-    if (!selectedSet.has(r.branch)) return;
+  filteredRows.forEach(r => {
+    if (!r.status) return;
     ensure(r.batch);
-    pivotPort[r.batch][r.status] += r.port;
+    pivotPort[r.batch][r.status] += (r.port || 0);
     pivotLop[r.batch][r.status] += 1;
   });
 
@@ -173,7 +216,35 @@ function computePivotTables(pivotRows, batches, statuses, selectedBranches) {
   return { portTable: buildTable(pivotPort), lopTable: buildTable(pivotLop) };
 }
 
-// ── Filter branch (kolom S) ─────────────────────────────────────────
+// ── Detail Lokasi table (di bawah chart) ──────────────────────────
+function renderDetailTable(filteredRows) {
+  const el = document.getElementById('detailTableWrap');
+  const rows = filteredRows.filter(r => r.status);
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">Tidak ada lokasi yang sedang berjalan.</div>'; return; }
+
+  let html = '<table class="pivot"><thead><tr>';
+  ['IHLD', 'Lokasi', 'Batch', 'Nama Mitra', 'ODP (L)', 'PORT (M)', 'BoQ (N)', 'CPP (O)', 'Status'].forEach((h, i) => {
+    html += `<th${i < 4 ? ' style="text-align:left;"' : ''}>${h}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+  rows.forEach(r => {
+    html += `<tr>
+      <td style="text-align:left;">${esc(r.ihld) || '-'}</td>
+      <td style="text-align:left;">${esc(r.lokasi) || '-'}</td>
+      <td style="text-align:left;">${esc(r.batch) || '-'}</td>
+      <td style="text-align:left;">${esc(r.mitra) || '-'}</td>
+      <td>${esc(r.odp_l) || '-'}</td>
+      <td>${esc(r.port_m) || '-'}</td>
+      <td>${esc(r.boq_n) || '-'}</td>
+      <td>${esc(r.cpp_o) || '-'}</td>
+      <td><span class="badge status">${esc(r.status)}</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// ── Filter branch (kolom S) — dropdown + checkbox ─────────────────
 function renderBranchFilter(branches) {
   const el = document.getElementById('branchFilterGrid');
   if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch (kolom S).</div>'; return; }
@@ -183,31 +254,68 @@ function renderBranchFilter(branches) {
       <span>${esc(b)}</span>
     </label>
   `).join('');
+  updateBranchDropdownLabel();
 }
 
 function getSelectedBranches() {
   return Array.from(document.querySelectorAll('.branch-checkbox:checked')).map(cb => cb.value);
 }
 
-function refreshPivotTable() {
+function updateBranchDropdownLabel() {
+  const all = document.querySelectorAll('.branch-checkbox');
+  const checked = document.querySelectorAll('.branch-checkbox:checked');
+  const label = document.getElementById('branchDropdownLabel');
+  if (all.length === 0) { label.textContent = 'Tidak ada branch'; return; }
+  if (checked.length === all.length) { label.textContent = `Semua Branch (${all.length})`; }
+  else if (checked.length === 0) { label.textContent = 'Tidak ada branch dipilih'; }
+  else { label.textContent = `${checked.length} dari ${all.length} branch dipilih`; }
+}
+
+// Refresh everything that depends on the branch filter
+function refreshAll() {
   if (!dashboardCache) return;
-  const selected = getSelectedBranches();
-  const { portTable, lopTable } = computePivotTables(
-    dashboardCache.pivot_rows, dashboardCache.batches, dashboardCache.statuses, selected
-  );
+  const filtered = getFilteredRows();
+  updateBranchDropdownLabel();
+  refreshStats(filtered);
+
+  const { portTable, lopTable } = computePivotTables(filtered, dashboardCache.batches, dashboardCache.statuses);
   renderCombinedTable(document.getElementById('pivotTableWrap'), portTable, lopTable, dashboardCache.statuses);
+
+  try {
+    if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
+    renderChart(lopTable, dashboardCache.statuses);
+  } catch (e) {
+    document.querySelector('.chart-card').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
+  }
+
+  renderDetailTable(filtered);
+  renderBH(filtered);
+  renderLocList(filtered.filter(r => r.status), document.getElementById('q').value);
 }
 
 document.getElementById('branchFilterGrid').addEventListener('change', (e) => {
-  if (e.target.classList.contains('branch-checkbox')) refreshPivotTable();
+  if (e.target.classList.contains('branch-checkbox')) refreshAll();
 });
 document.getElementById('branchSelectAll').addEventListener('click', () => {
   document.querySelectorAll('.branch-checkbox').forEach(cb => { cb.checked = true; });
-  refreshPivotTable();
+  refreshAll();
 });
 document.getElementById('branchClearAll').addEventListener('click', () => {
   document.querySelectorAll('.branch-checkbox').forEach(cb => { cb.checked = false; });
-  refreshPivotTable();
+  refreshAll();
+});
+
+// Dropdown open/close
+const branchToggle = document.getElementById('branchDropdownToggle');
+const branchPanel = document.getElementById('branchDropdownPanel');
+branchToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  branchPanel.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('branchDropdown').contains(e.target)) {
+    branchPanel.classList.remove('open');
+  }
 });
 
 // ── Bar chart: distribusi status pekerjaan (jumlah order per status) ──
@@ -241,7 +349,23 @@ function renderChart(lopTable, statuses) {
 }
 
 // ── Kategori Drop (kolom BH): card -> list -> detail (kolom I..AB) ───
-function renderBH(bhTable) {
+function computeBhTable(filteredRows) {
+  const counter = {};
+  const rowsByLabel = {};
+  filteredRows.forEach(r => {
+    if (!r.bh) return;
+    counter[r.bh] = (counter[r.bh] || 0) + 1;
+    (rowsByLabel[r.bh] = rowsByLabel[r.bh] || []).push({
+      row: r.row, ihld: r.ihld, lokasi: r.lokasi, batch: r.batch, status_z: r.status_raw,
+    });
+  });
+  return Object.keys(counter).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(label => ({ label, count: counter[label], rows: rowsByLabel[label] }));
+}
+
+function renderBH(filteredRows) {
+  const bhTable = computeBhTable(filteredRows);
+  dashboardCache.bh_table = bhTable; // cache for modal lookups
   const el = document.getElementById('bhGrid');
   if (!bhTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data kategori drop.</div>'; return; }
   el.innerHTML = bhTable.map((item, i) => `
@@ -267,7 +391,7 @@ function openBhCategory(label) {
   modalBox.innerHTML = `
     <div class="modal-header">
       <div class="modal-title">${esc(label)} <span class="badge">${fmtNum(rows.length)}</span></div>
-      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup ✕</button>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
     </div>
     <div class="loc-list" style="margin-top:10px;" id="bhModalList">
       ${rows.length ? rows.map(r => `
@@ -297,7 +421,7 @@ async function openBhRowDetail(rowNum) {
   modalBox.innerHTML = `
     <div class="modal-header">
       <div class="modal-title">Detail Baris #${rowNum}</div>
-      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup ✕</button>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
     </div>
     <a href="#" class="modal-back" id="bhBackLink">&larr; Kembali ke daftar</a>
     <div class="skeleton">Memuat detail (kolom I s/d AB)...</div>
@@ -349,7 +473,7 @@ function renderLocList(locations, filterText) {
       <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
       <div class="meta">
         <span class="badge">${esc(r.batch)}</span>
-        <span class="badge status">${esc(r.status_z)}</span>
+        <span class="badge status">${esc(r.status)}</span>
       </div>
     </div>
   `).join('');
@@ -365,46 +489,21 @@ async function loadDashboard() {
       document.getElementById('locList').innerHTML = '';
       return;
     }
-    dashboardCache = json.data;
-    const d = json.data;
-
-    document.getElementById('statTotalOrder').textContent = fmtNum(d.total_order);
-    document.getElementById('statTotalPort').textContent = fmtNum(d.total_port);
-    document.getElementById('statActive').textContent = fmtNum(d.running_locations.length);
-
-    const finishCount = d.running_locations.filter(r => r.status_z === '05. FINISH INSTALASI').length;
-    const pct = d.running_locations.length ? Math.round((finishCount / d.running_locations.length) * 100) : 0;
-    document.getElementById('statProgress').textContent = pct + '%';
-
-    try {
-      renderBranchFilter(d.branches);
-      refreshPivotTable();
-    } catch (e) { document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal render tabel: ${e}</div>`; }
-
-    try {
-      if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
-      renderChart(d.lop_table, d.statuses);
-    } catch (e) {
-      document.querySelector('.chart-card').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
-    }
-
-    try { renderBH(d.bh_table); }
-    catch (e) { document.getElementById('bhGrid').innerHTML = `<div class="flash error">Gagal render kategori drop: ${e}</div>`; }
-
-    try { renderLocList(d.running_locations, document.getElementById('q').value); }
-    catch (e) { document.getElementById('locList').innerHTML = `<div class="flash error">Gagal render lokasi: ${e}</div>`; }
+    dashboardCache = json.data;   // { statuses, batches, branches, rows }
+    renderBranchFilter(dashboardCache.branches);
+    refreshAll();
   } catch (e) {
     document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
   }
 }
 
 document.getElementById('q').addEventListener('input', (e) => {
-  if (dashboardCache) renderLocList(dashboardCache.running_locations, e.target.value);
+  if (dashboardCache) renderLocList(getFilteredRows().filter(r => r.status), e.target.value);
 });
 
 async function openRow(rowNum) {
   selectedRow = rowNum;
-  if (dashboardCache) renderLocList(dashboardCache.running_locations, document.getElementById('q').value);
+  if (dashboardCache) renderLocList(getFilteredRows().filter(r => r.status), document.getElementById('q').value);
 
   const panel = document.getElementById('updatePanel');
   panel.innerHTML = '<div class="skeleton">Memuat baris...</div>';
@@ -421,9 +520,13 @@ async function openRow(rowNum) {
         <span class="badge status">Status saat ini: ${esc(snapshot.status_z) || '-'}</span>
         <span class="badge">Sub: ${esc(snapshot.status_aa) || '-'}</span>
       </div>
+      ${snapshot.last_note ? `
+        <label>Keterangan sebelumnya</label>
+        <div class="note-preview" style="border-color:var(--brand-blue); color:var(--text); margin-bottom:10px;">${esc(snapshot.last_note)}</div>
+      ` : ''}
       ${snapshot.note_preview ? `
-        <label>Riwayat keterangan (terbaru di atas)</label>
-        <div class="note-preview">${snapshot.note_preview.replace(/</g,'&lt;')}</div>
+        <label>Riwayat keterangan lengkap (terbaru di atas)</label>
+        <div class="note-preview">${esc(snapshot.note_preview)}</div>
       ` : ''}
       <div class="field" style="margin-top:14px;">
         <label for="status_z">Status (kolom Z)</label>

@@ -24,6 +24,13 @@ COL_PORT = "AG"    # Jumlah port per baris -> dipakai untuk Total Port & tabel "
 COL_BH = "BH"      # Kolom bebas isian, direkap jadi tabel jumlah per nilai
 COL_BRANCH = "S"   # Branch, dipakai untuk filter checkbox di tabel Rekap Port & LOP
 
+# Kolom tambahan untuk tabel "Detail Lokasi" di bawah chart
+COL_MITRA = "Y"    # Nama Mitra
+COL_ODP_L = "L"    # ODP
+COL_PORT_M = "M"   # PORT
+COL_BOQ_N = "N"    # BoQ
+COL_CPP_O = "O"    # CPP
+
 # Status yang dianggap "sedang berjalan" -> dipakai sebagai kolom pada
 # kedua tabel pivot dashboard (Port & LOP) dan untuk filter list lokasi aktif.
 DASHBOARD_STATUSES = [
