@@ -35,6 +35,16 @@
   <span class="hint">baris = batch (kolom C) · setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan</span>
   <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">↻ Refresh</button>
 </div>
+<div class="card" style="margin-bottom:14px;">
+  <div class="branch-filter-head">
+    <label>Filter Branch (kolom S)</label>
+    <div class="branch-filter-actions">
+      <button type="button" class="btn-ghost btn-sm" id="branchSelectAll">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="branchClearAll">Kosongkan</button>
+    </div>
+  </div>
+  <div class="branch-filter-grid" id="branchFilterGrid"><div class="skeleton">Memuat branch...</div></div>
+</div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pivot-table-wrap" id="pivotTableWrap"><div class="skeleton">Memuat data...</div></div>
 </div>
@@ -125,6 +135,80 @@ function renderCombinedTable(el, portTable, lopTable, statuses) {
   html += '</tbody></table>';
   el.innerHTML = html;
 }
+
+// ── Recompute port/LOP pivot tables client-side, filtered by branch ──
+function computePivotTables(pivotRows, batches, statuses, selectedBranches) {
+  const selectedSet = new Set(selectedBranches);
+  const pivotPort = {};
+  const pivotLop = {};
+  const ensure = (b) => {
+    if (!pivotPort[b]) {
+      pivotPort[b] = {}; pivotLop[b] = {};
+      statuses.forEach(s => { pivotPort[b][s] = 0; pivotLop[b][s] = 0; });
+    }
+  };
+  batches.forEach(ensure);
+  (pivotRows || []).forEach(r => {
+    if (!selectedSet.has(r.branch)) return;
+    ensure(r.batch);
+    pivotPort[r.batch][r.status] += r.port;
+    pivotLop[r.batch][r.status] += 1;
+  });
+
+  function buildTable(pivot) {
+    const rows = [];
+    const colTotals = {};
+    statuses.forEach(s => { colTotals[s] = 0; });
+    batches.forEach(b => {
+      const values = pivot[b];
+      const total = statuses.reduce((sum, s) => sum + (values[s] || 0), 0);
+      statuses.forEach(s => { colTotals[s] += (values[s] || 0); });
+      rows.push({ batch: b, values, total });
+    });
+    const grandTotal = statuses.reduce((sum, s) => sum + colTotals[s], 0);
+    rows.push({ batch: 'TOTAL', values: colTotals, total: grandTotal });
+    return rows;
+  }
+
+  return { portTable: buildTable(pivotPort), lopTable: buildTable(pivotLop) };
+}
+
+// ── Filter branch (kolom S) ─────────────────────────────────────────
+function renderBranchFilter(branches) {
+  const el = document.getElementById('branchFilterGrid');
+  if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch (kolom S).</div>'; return; }
+  el.innerHTML = branches.map(b => `
+    <label class="branch-check">
+      <input type="checkbox" class="branch-checkbox" value="${esc(b)}" checked>
+      <span>${esc(b)}</span>
+    </label>
+  `).join('');
+}
+
+function getSelectedBranches() {
+  return Array.from(document.querySelectorAll('.branch-checkbox:checked')).map(cb => cb.value);
+}
+
+function refreshPivotTable() {
+  if (!dashboardCache) return;
+  const selected = getSelectedBranches();
+  const { portTable, lopTable } = computePivotTables(
+    dashboardCache.pivot_rows, dashboardCache.batches, dashboardCache.statuses, selected
+  );
+  renderCombinedTable(document.getElementById('pivotTableWrap'), portTable, lopTable, dashboardCache.statuses);
+}
+
+document.getElementById('branchFilterGrid').addEventListener('change', (e) => {
+  if (e.target.classList.contains('branch-checkbox')) refreshPivotTable();
+});
+document.getElementById('branchSelectAll').addEventListener('click', () => {
+  document.querySelectorAll('.branch-checkbox').forEach(cb => { cb.checked = true; });
+  refreshPivotTable();
+});
+document.getElementById('branchClearAll').addEventListener('click', () => {
+  document.querySelectorAll('.branch-checkbox').forEach(cb => { cb.checked = false; });
+  refreshPivotTable();
+});
 
 // ── Bar chart: distribusi status pekerjaan (jumlah order per status) ──
 function renderChart(lopTable, statuses) {
@@ -292,8 +376,10 @@ async function loadDashboard() {
     const pct = d.running_locations.length ? Math.round((finishCount / d.running_locations.length) * 100) : 0;
     document.getElementById('statProgress').textContent = pct + '%';
 
-    try { renderCombinedTable(document.getElementById('pivotTableWrap'), d.port_table, d.lop_table, d.statuses); }
-    catch (e) { document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal render tabel: ${e}</div>`; }
+    try {
+      renderBranchFilter(d.branches);
+      refreshPivotTable();
+    } catch (e) { document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal render tabel: ${e}</div>`; }
 
     try {
       if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');

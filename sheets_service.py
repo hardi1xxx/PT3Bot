@@ -183,6 +183,7 @@ def get_dashboard_data():
         "status_aa": _col_to_index(config.COL_STATUS_AA) - 1,
         "port": _col_to_index(config.COL_PORT) - 1,
         "bh": _col_to_index(config.COL_BH) - 1,
+        "branch": _col_to_index(config.COL_BRANCH) - 1,
         "ihld": _col_to_index(config.COL_IHLD) - 1,
         "lokasi": _col_to_index(config.COL_LOKASI) - 1,
     }
@@ -198,6 +199,8 @@ def get_dashboard_data():
     bh_counter = {}
     bh_rows = {}
     running_locations = []
+    branch_set = set()
+    pivot_rows = []  # raw rows for client-side branch-filtered pivot recompute
 
     for offset, row in enumerate(data_rows):
         row_num = config.DATA_START_ROW + offset
@@ -213,6 +216,7 @@ def get_dashboard_data():
         aa_val = cell("status_aa")
         port_num = _to_number(cell("port"))
         bh_val = cell("bh")
+        branch_val = cell("branch") or "(Tanpa Branch)"
         ihld_val = cell("ihld")
         lokasi_val = cell("lokasi")
 
@@ -222,6 +226,7 @@ def get_dashboard_data():
         if order_val:
             total_order += 1
         total_port += port_num
+        branch_set.add(branch_val)
 
         if batch_val not in pivot_port:
             pivot_port[batch_val] = {s: 0.0 for s in statuses}
@@ -239,6 +244,12 @@ def get_dashboard_data():
                 "status_z": status_val,
                 "status_aa": aa_val,
                 "port": port_num,
+            })
+            pivot_rows.append({
+                "batch": batch_val,
+                "status": status_val,
+                "port": port_num,
+                "branch": branch_val,
             })
 
         if bh_val:
@@ -278,6 +289,9 @@ def get_dashboard_data():
         "lop_table": build_table(pivot_lop),
         "bh_table": bh_table,
         "running_locations": running_locations,
+        "batches": batch_order,
+        "branches": sorted(branch_set, key=lambda b: b.lower()),
+        "pivot_rows": pivot_rows,
     }
 
 

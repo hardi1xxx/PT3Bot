@@ -384,6 +384,44 @@ table.pivot-combined tbody tr.grand-total-row th {
 }
 .detail-table th { width: 38%; background: var(--panel-alt); font-weight: 600; color: var(--muted); }
 
+/* ── Filter branch (kolom S) ─────────────────────────────────────── */
+.branch-filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.branch-filter-head label { font-weight: 600; color: var(--text); font-size: 0.82rem; }
+.branch-filter-actions { display: flex; gap: 8px; }
+.btn-sm { padding: 5px 10px; font-size: 0.74rem; }
+.branch-filter-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.branch-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px 5px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.branch-check:hover { border-color: var(--brand-blue); }
+.branch-check input[type=checkbox] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--brand-blue);
+}
+
 /* ── Search + update split panel ─────────────────────────────────── */
 .split-grid {
   display: grid;

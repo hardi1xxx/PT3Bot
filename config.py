@@ -19,8 +19,10 @@ COL_KETERANGAN_AB = "AB"  # auto-merge formula, never written by the bot
 # ── Dashboard columns ───────────────────────────────────────────────────
 COL_ORDER = "A"    # 1 baris = 1 order -> dipakai untuk hitung Total Order
 COL_BATCH = "C"    # Batch, dipakai sebagai baris (row) pada tabel pivot
+COL_BRANCH = "S"   # Branch, dipakai untuk filter checkbox di atas tabel pivot
 COL_PORT = "AG"    # Jumlah port per baris -> dipakai untuk Total Port & tabel "Data / Port"
 COL_BH = "BH"      # Kolom bebas isian, direkap jadi tabel jumlah per nilai
+COL_BRANCH = "S"   # Branch, dipakai untuk filter checkbox di tabel Rekap Port & LOP
 
 # Status yang dianggap "sedang berjalan" -> dipakai sebagai kolom pada
 # kedua tabel pivot dashboard (Port & LOP) dan untuk filter list lokasi aktif.
