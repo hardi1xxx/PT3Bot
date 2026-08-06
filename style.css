@@ -312,7 +312,6 @@ table.pivot tbody tr.clickable-row:hover td { background: #fdecec; }
   border: 2px solid var(--panel);
 }
 .notif-panel {
-  display: none;
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
@@ -327,8 +326,16 @@ table.pivot tbody tr.clickable-row:hover td { background: #fdecec; }
   padding: 12px;
   z-index: 40;
 }
-.notif-panel.open { display: block; }
 .notif-panel-header { font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
+.notif-branch-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--brand-blue);
+  margin: 10px 0 4px;
+}
+.notif-branch-label:first-child { margin-top: 0; }
 .notif-item {
   display: flex;
   justify-content: space-between;
