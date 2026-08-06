@@ -164,8 +164,9 @@ PT2_COL_REGIONAL = "L"              # REGIONAL TA
 PT2_COL_STATUS = "M"                # STATUS LOP -> status pekerjaan utama
 PT2_COL_KLASIFIKASI_CANCEL = "P"    # Klasifikasi Cancel -> kategori kendala
 PT2_COL_DETAIL_CANCEL = "Q"         # Detail Cancel -> alasan/detail kendala
+PT2_COL_ODP_GOLIVE = "U"            # ODP GOLIVE -> ditampilkan di daftar golive
 PT2_COL_FINAL_PORT = "AC"           # FINAL PORT -> dipakai untuk hitung Port
-PT2_COL_TGL_CLOSE_WO = "AE"         # TGL CLOSE WO -> Golive Hari Ini / bulan ini
+PT2_COL_TGL_CLOSE_WO = "AE"         # TGL CLOSE WO -> Golive Hari Ini / bulan ini / Tanggal Golive
 
 PT2_DATE_FORMAT = "%d/%m/%Y"        # format tanggal di kolom AE
 

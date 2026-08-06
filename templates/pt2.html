@@ -224,12 +224,12 @@ function pt2RefreshStats(data, grand) {
 
 function pt2CardClick(kind) {
   if (!pt2Cache) return;
-  if (kind === 'total_lop') pt2OpenFilteredList('Total LOP — Semua Data', pt2Cache.rows);
-  else if (kind === 'total_port') pt2OpenFilteredList('Total Port — Semua Data', pt2Cache.rows);
-  else if (kind === 'golive_hi') pt2OpenFilteredList('Golive Hari Ini', pt2FilterRows({ golive_hi: true }));
-  else if (kind === 'pct_golive') pt2OpenFilteredList(pt2ShortLabel(pt2Cache.golive_status), pt2FilterRows({ status: pt2Cache.golive_status }));
-  else if (kind === 'status_drop') pt2OpenFilteredList('0.DROP', pt2FilterRows({ status: '0.DROP' }));
-  else if (kind === 'status_kendala') pt2OpenFilteredList('0.KENDALA', pt2FilterRows({ status: '0.KENDALA' }));
+  if (kind === 'total_lop') pt2OpenFilteredList('Total LOP — Semua Data', pt2Cache.rows, {});
+  else if (kind === 'total_port') pt2OpenFilteredList('Total Port — Semua Data', pt2Cache.rows, {});
+  else if (kind === 'golive_hi') { const f = { golive_hi: true }; pt2OpenFilteredList('Golive Hari Ini', pt2FilterRows(f), f); }
+  else if (kind === 'pct_golive') { const f = { status: pt2Cache.golive_status }; pt2OpenFilteredList(pt2ShortLabel(pt2Cache.golive_status), pt2FilterRows(f), f); }
+  else if (kind === 'status_drop') { const f = { status: '0.DROP' }; pt2OpenFilteredList('0.DROP', pt2FilterRows(f), f); }
+  else if (kind === 'status_kendala') { const f = { status: '0.KENDALA' }; pt2OpenFilteredList('0.KENDALA', pt2FilterRows(f), f); }
 }
 
 // ── Pivot table render (setiap sel angka bisa diklik) ────────────────
@@ -302,7 +302,7 @@ document.getElementById('pt2PivotWrap').addEventListener('click', (e) => {
   const td = e.target.closest('.pt2-clickable');
   if (!td || !pt2Cache) return;
   const filter = JSON.parse(td.dataset.filter);
-  pt2OpenFilteredList(pt2FilterTitle(filter), pt2FilterRows(filter));
+  pt2OpenFilteredList(pt2FilterTitle(filter), pt2FilterRows(filter), filter);
 });
 
 // ── Donut chart ─────────────────────────────────────────────────────
@@ -324,7 +324,7 @@ function pt2RenderDonut(data, grand) {
         onClick: (evt, elements) => {
           if (!elements.length) return;
           const status = data.statuses[elements[0].index];
-          pt2OpenFilteredList(pt2ShortLabel(status), pt2FilterRows({ status }));
+          pt2OpenFilteredList(pt2ShortLabel(status), pt2FilterRows({ status }), { status });
         },
       },
     });
@@ -343,7 +343,7 @@ document.getElementById('pt2ChartLegend').addEventListener('click', (e) => {
   const el = e.target.closest('[data-status]');
   if (!el || !pt2Cache) return;
   const status = el.dataset.status;
-  pt2OpenFilteredList(pt2ShortLabel(status), pt2FilterRows({ status }));
+  pt2OpenFilteredList(pt2ShortLabel(status), pt2FilterRows({ status }), { status });
 });
 
 // ── Kendala (kolom P): kategori -> daftar lokasi (9 kolom) + download ─
@@ -378,8 +378,11 @@ document.getElementById('pt2KendalaGrid').addEventListener('click', (e) => {
   if (item) pt2OpenFilteredList(item.label, item.rows);
 });
 
-// ── Modal generik: daftar 9 kolom + download CSV ──────────────────────
-const PT2_LIST_COLS = [
+// ── Modal generik: daftar bernomor + download CSV ─────────────────────
+// Kolom dasar sama untuk semua list; 2 kolom terakhir berbeda tergantung
+// konteks: status/kolom terkait GOLIVE menampilkan ODP GOLIVE & Tanggal
+// Golive, selain itu menampilkan Klasifikasi Cancel & Detail Cancel.
+const PT2_LIST_COLS_BASE = [
   { key: 'ihld', label: 'IHLD' },
   { key: 'lokasi', label: 'Lokasi' },
   { key: 'source_order', label: 'Source Order' },
@@ -387,25 +390,36 @@ const PT2_LIST_COLS = [
   { key: 'regional', label: 'Regional' },
   { key: 'branch', label: 'Branch' },
   { key: 'status_raw', label: 'Status' },
+];
+const PT2_LIST_COLS_CANCEL = PT2_LIST_COLS_BASE.concat([
   { key: 'klasifikasi', label: 'Klasifikasi Cancel' },
   { key: 'detail_cancel', label: 'Detail Cancel' },
-];
+]);
+const PT2_LIST_COLS_GOLIVE = PT2_LIST_COLS_BASE.concat([
+  { key: 'odp_golive', label: 'ODP GOLIVE' },
+  { key: 'tgl_close_wo_formatted', label: 'Tanggal Golive' },
+]);
 const PT2_LIST_DISPLAY_CAP = 300;
 
-function pt2RowsToCSV(rows) {
+function pt2IsGoliveFilter(filter) {
+  filter = filter || {};
+  return filter.status === (pt2Cache && pt2Cache.golive_status) || !!filter.golive_hi || !!filter.golive_month;
+}
+
+function pt2RowsToCSV(rows, cols) {
   const escCsv = (v) => {
     const s = (v === null || v === undefined) ? '' : String(v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const lines = [PT2_LIST_COLS.map(c => escCsv(c.label)).join(',')];
-  rows.forEach(r => {
-    lines.push(PT2_LIST_COLS.map(c => escCsv(r[c.key])).join(','));
+  const lines = [['No'].concat(cols.map(c => c.label)).map(escCsv).join(',')];
+  rows.forEach((r, i) => {
+    lines.push([i + 1].concat(cols.map(c => r[c.key])).map(escCsv).join(','));
   });
   return lines.join('\n');
 }
 
-function pt2DownloadCSV(rows, title) {
-  const csv = pt2RowsToCSV(rows);
+function pt2DownloadCSV(rows, title, cols) {
+  const csv = pt2RowsToCSV(rows, cols);
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const safeName = (title || 'pt2-data').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -418,8 +432,9 @@ function pt2DownloadCSV(rows, title) {
   URL.revokeObjectURL(url);
 }
 
-function pt2OpenFilteredList(title, rows) {
+function pt2OpenFilteredList(title, rows, filter) {
   rows = rows || [];
+  const cols = pt2IsGoliveFilter(filter) ? PT2_LIST_COLS_GOLIVE : PT2_LIST_COLS_CANCEL;
   const capped = rows.slice(0, PT2_LIST_DISPLAY_CAP);
   const modalBox = document.getElementById('pt2ListModalBox');
   modalBox.innerHTML = `
@@ -433,18 +448,18 @@ function pt2OpenFilteredList(title, rows) {
     ${rows.length ? `
       <div style="overflow:auto; max-height:58vh; border:1px solid var(--border, #e2e8f0); border-radius:8px;">
         <table class="pt2-list-table">
-          <thead><tr>${PT2_LIST_COLS.map(c => `<th>${pt2Esc(c.label)}</th>`).join('')}</tr></thead>
+          <thead><tr><th>No</th>${cols.map(c => `<th>${pt2Esc(c.label)}</th>`).join('')}</tr></thead>
           <tbody>
-            ${capped.map(r => `<tr>${PT2_LIST_COLS.map(c => `<td>${pt2Esc(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
+            ${capped.map((r, i) => `<tr><td>${i + 1}</td>${cols.map(c => `<td>${pt2Esc(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
           </tbody>
         </table>
       </div>
-      ${rows.length > capped.length ? `<p style="color:var(--muted,#64748b); font-size:0.8rem; margin-top:8px;">Menampilkan ${pt2FmtNum(capped.length)} dari ${pt2FmtNum(rows.length)} baris di layar — download CSV untuk lihat semuanya.</p>` : ''}
+      ${rows.length > capped.length ? `<p style="color:var(--muted,#64748b); font-size:0.8rem; margin-top:8px;">Menampilkan ${pt2FmtNum(capped.length)} dari ${pt2FmtNum(rows.length)} baris di layar — download CSV untuk lihat semuanya (bernomor lengkap).</p>` : ''}
     ` : '<div class="empty-state">Tidak ada data untuk kategori ini.</div>'}
   `;
   document.getElementById('pt2ListModalCloseBtn').addEventListener('click', pt2CloseListModal);
   const dlBtn = document.getElementById('pt2ListDownloadBtn');
-  if (dlBtn && rows.length) dlBtn.addEventListener('click', () => pt2DownloadCSV(rows, title));
+  if (dlBtn && rows.length) dlBtn.addEventListener('click', () => pt2DownloadCSV(rows, title, cols));
   document.getElementById('pt2ListModalOverlay').classList.add('open');
 }
 

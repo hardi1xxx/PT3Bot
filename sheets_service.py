@@ -580,6 +580,7 @@ def get_pt2_dashboard_data():
         "status": _col_to_index(config.PT2_COL_STATUS) - 1,
         "klasifikasi": _col_to_index(config.PT2_COL_KLASIFIKASI_CANCEL) - 1,
         "detail_cancel": _col_to_index(config.PT2_COL_DETAIL_CANCEL) - 1,
+        "odp_golive": _col_to_index(config.PT2_COL_ODP_GOLIVE) - 1,
         "port": _col_to_index(config.PT2_COL_FINAL_PORT) - 1,
         "tgl_close": _col_to_index(config.PT2_COL_TGL_CLOSE_WO) - 1,
     }
@@ -619,6 +620,10 @@ def get_pt2_dashboard_data():
             and tgl_close_date.year == today.year
             and tgl_close_date.month == today.month
         )
+        tgl_close_formatted = ""
+        if tgl_close_date:
+            month_name = config.PT2_MONTH_NAMES_ID.get(tgl_close_date.month, "").title()
+            tgl_close_formatted = f"{tgl_close_date.day:02d} {month_name} {tgl_close_date.year}"
 
         rows.append({
             "row": row_num,
@@ -633,8 +638,10 @@ def get_pt2_dashboard_data():
             "status_raw": status_raw,
             "klasifikasi": cell("klasifikasi"),
             "detail_cancel": cell("detail_cancel"),
+            "odp_golive": cell("odp_golive"),
             "port": _to_number(cell("port")),
             "tgl_close_wo": tgl_close_raw,
+            "tgl_close_wo_formatted": tgl_close_formatted,
             "is_golive_today": is_golive_today,
             "is_golive_month": is_golive_month,
         })
