@@ -157,7 +157,8 @@ DATA_START_ROW_PT2 = 3
 PT2_COL_IHLD = "A"                  # ID IHLD -> 1 baris = 1 LOP
 PT2_COL_LOKASI = "B"                # Nama Lokasi
 PT2_COL_STATUS_WO = "G"             # Status WO
-PT2_COL_BATCH = "H"                 # BATCH NDE
+PT2_COL_SOURCE_ORDER = "H"          # Source Order
+PT2_COL_BATCH = "D"                 # Batch
 PT2_COL_BRANCH = "J"                # BRANCH TA
 PT2_COL_REGIONAL = "L"              # REGIONAL TA
 PT2_COL_STATUS = "M"                # STATUS LOP -> status pekerjaan utama

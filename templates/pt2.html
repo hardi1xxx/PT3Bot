@@ -5,24 +5,24 @@
 
 {% block content %}
 
-<!-- Stat cards -->
+<!-- Stat cards (klik untuk lihat daftar) -->
 <div class="stat-grid" id="pt2StatGrid">
-  <div class="stat-card">
+  <div class="stat-card pt2-clickable-card" onclick="pt2CardClick('total_lop')" title="Klik untuk lihat daftar">
     <div class="stat-label">Total LOP</div>
     <div class="stat-value" id="pt2StatTotalLop">–</div>
     <div class="stat-foot">Jumlah baris terisi (kolom A)</div>
   </div>
-  <div class="stat-card alt">
+  <div class="stat-card alt pt2-clickable-card" onclick="pt2CardClick('total_port')" title="Klik untuk lihat daftar">
     <div class="stat-label">Total Port</div>
     <div class="stat-value" id="pt2StatTotalPort">–</div>
     <div class="stat-foot">Jumlah FINAL PORT (kolom AC)</div>
   </div>
-  <div class="stat-card green">
+  <div class="stat-card green pt2-clickable-card" onclick="pt2CardClick('golive_hi')" title="Klik untuk lihat daftar & download">
     <div class="stat-label">Golive Hari Ini</div>
     <div class="stat-value" id="pt2StatGoliveHi">–</div>
     <div class="stat-foot" id="pt2StatGoliveHiFoot">TGL CLOSE WO (kolom AE) = hari ini</div>
   </div>
-  <div class="stat-card amber">
+  <div class="stat-card amber pt2-clickable-card" onclick="pt2CardClick('pct_golive')" title="Klik untuk lihat daftar & download">
     <div class="stat-label">%GOLIVE</div>
     <div class="stat-value" id="pt2StatPctGolive">–</div>
     <div class="stat-foot">5.GOLIVE ÷ Total LOP tanpa Drop &amp; Kendala</div>
@@ -40,13 +40,23 @@
       <canvas id="pt2StatusDonut"></canvas>
     </div>
     <div class="chart-legend" id="pt2ChartLegend"></div>
+    <div class="pt2-mini-cards">
+      <div class="pt2-mini-card pt2-mini-drop" id="pt2DropMiniCard" onclick="pt2CardClick('status_drop')" title="Klik untuk lihat daftar & download">
+        <div class="pt2-mini-label">Status DROP</div>
+        <div class="pt2-mini-value">–</div>
+      </div>
+      <div class="pt2-mini-card pt2-mini-kendala" id="pt2KendalaMiniCard" onclick="pt2CardClick('status_kendala')" title="Klik untuk lihat daftar & download">
+        <div class="pt2-mini-label">Status KENDALA</div>
+        <div class="pt2-mini-value">–</div>
+      </div>
+    </div>
   </div>
 </div>
 
 <!-- Rekap Regional/Branch table -->
 <div class="section-title">
   Rekap LOP &amp; Port per Regional / Branch
-  <span class="hint">baris = REGIONAL (kolom L) &gt; BRANCH (kolom J) · status dari kolom M · LOP dihitung dari kolom A, Port dari kolom AC</span>
+  <span class="hint">klik angka di tabel untuk lihat daftar lokasinya — kolom GOLIVE bisa langsung didownload</span>
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pivot-table-wrap" id="pt2PivotWrap"><div class="skeleton">Memuat data...</div></div>
@@ -56,22 +66,31 @@
 <div class="section-title">Kendala</div>
 <div class="card" style="margin-bottom:22px;">
   <p style="color:var(--muted, #64748b); font-size:0.85rem; margin:0 0 12px;">
-    Kategori kendala dari kolom P (Klasifikasi Cancel). Klik kategori untuk lihat daftar lokasi, lalu klik lokasi untuk lihat detailnya (kolom Q — Detail Cancel).
+    Kategori kendala dari kolom P (Klasifikasi Cancel). Klik kategori untuk lihat daftar lokasi &amp; download.
   </p>
   <div class="bh-grid" id="pt2KendalaGrid"><div class="skeleton">Memuat data...</div></div>
 </div>
 
-<!-- Kendala modal: kategori -> list lokasi -> detail -->
-<div class="modal-overlay" id="pt2KendalaModalOverlay">
-  <div class="modal-box" id="pt2KendalaModalBox"></div>
+<!-- Modal generik: daftar lokasi (9 kolom) + download CSV -->
+<div class="modal-overlay" id="pt2ListModalOverlay">
+  <div class="modal-box" id="pt2ListModalBox" style="max-width:960px;"></div>
 </div>
 
 <style>
   .pt2-donut-wrap { display:flex; align-items:center; gap:28px; flex-wrap:wrap; }
   .pt2-donut-canvas-box { position:relative; width:230px; height:230px; flex:0 0 auto; }
-  .pt2-donut-wrap .chart-legend { flex:1 1 260px; display:flex; flex-direction:column; gap:8px; }
-  .pt2-donut-wrap .chart-legend span { display:flex; align-items:center; gap:8px; font-size:0.86rem; }
+  .pt2-donut-wrap .chart-legend { flex:1 1 220px; display:flex; flex-direction:column; gap:8px; }
+  .pt2-donut-wrap .chart-legend span { display:flex; align-items:center; gap:8px; font-size:0.86rem; cursor:pointer; border-radius:6px; padding:2px 4px; }
+  .pt2-donut-wrap .chart-legend span:hover { background:#f1f5f9; }
   .pt2-donut-wrap .chart-legend .dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+
+  .pt2-mini-cards { display:flex; flex-direction:column; gap:10px; flex:0 0 auto; }
+  .pt2-mini-card { min-width:150px; border-radius:10px; padding:10px 14px; cursor:pointer; border:1px solid var(--border, #e2e8f0); transition:transform .1s ease; }
+  .pt2-mini-card:hover { transform:translateY(-1px); }
+  .pt2-mini-drop { background:#f1f5f9; border-color:#cbd5e1; }
+  .pt2-mini-kendala { background:#fef2f2; border-color:#fecaca; }
+  .pt2-mini-label { font-size:0.72rem; letter-spacing:.03em; text-transform:uppercase; color:var(--muted, #64748b); font-weight:600; }
+  .pt2-mini-value { font-size:1.4rem; font-weight:700; color:var(--text, #1e293b); }
 
   .pt2-pivot { border-collapse:collapse; width:100%; font-size:0.82rem; white-space:nowrap; }
   .pt2-pivot th, .pt2-pivot td { border:1px solid var(--border, #e2e8f0); padding:6px 8px; text-align:right; }
@@ -80,8 +99,6 @@
   .pt2-pivot .regional-row td, .pt2-pivot .regional-row th { background:#dbe4f3; font-weight:700; }
   .pt2-pivot .regional-row .row-label { padding-left:8px; }
   .pt2-pivot .branch-row .row-label { padding-left:24px; color:var(--text, #1e293b); }
-  .pt2-pivot .regional-subtotal-row td, .pt2-pivot .regional-subtotal-row th { background:#f1f5f9; font-weight:600; font-style:italic; }
-  .pt2-pivot .regional-subtotal-row .row-label { padding-left:24px; }
   .pt2-pivot .grand-total-row td, .pt2-pivot .grand-total-row th { background:#1c2b4a; color:#fff; font-weight:700; }
   .pt2-pivot .col-golive-hi { background:#fff7ed; }
   .pt2-pivot .col-golive-month { background:#ecfdf5; }
@@ -89,12 +106,19 @@
   .pt2-pivot .grand-total-row .col-golive-hi,
   .pt2-pivot .grand-total-row .col-golive-month,
   .pt2-pivot .grand-total-row .col-pct { background:#1c2b4a; }
+  .pt2-pivot td.pt2-clickable { cursor:pointer; }
+  .pt2-pivot td.pt2-clickable:hover { outline:2px solid #6366f1; outline-offset:-2px; position:relative; }
+
+  .pt2-list-table { border-collapse:collapse; width:100%; font-size:0.8rem; }
+  .pt2-list-table th, .pt2-list-table td { border:1px solid var(--border, #e2e8f0); padding:5px 8px; text-align:left; white-space:nowrap; }
+  .pt2-list-table thead th { background:#f1f5f9; position:sticky; top:0; }
+  .pt2-download-btn { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:0.85rem; font-weight:600; cursor:pointer; }
+  .pt2-download-btn:hover { background:#15803d; }
 </style>
 
 <script>
 let pt2Cache = null;      // { statuses, status_colors, golive_status, exclude_from_denom, regionals, branches, current_month_label, rows }
 let pt2Donut = null;
-let pt2KendalaCurrentLabel = null;
 
 function pt2FmtNum(n) {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0);
@@ -105,6 +129,9 @@ function pt2Esc(s) {
 }
 function pt2ShortLabel(s) {
   return (s || '').replace(/^\d+(\.\d+)?\.\s*/, '');
+}
+function pt2FilterAttr(filter) {
+  return JSON.stringify(filter).replace(/'/g, '&#39;');
 }
 
 // ── Aggregation helpers ────────────────────────────────────────────
@@ -157,6 +184,30 @@ function pt2BuildPivot(data) {
   return { regionalMap, grand };
 }
 
+// ── Row filtering (dipakai oleh semua drill-down: card, donut, tabel) ─
+function pt2FilterRows(filter) {
+  filter = filter || {};
+  return pt2Cache.rows.filter(r => {
+    if (filter.regional !== undefined && r.regional !== filter.regional) return false;
+    if (filter.branch !== undefined && r.branch !== filter.branch) return false;
+    if (filter.status !== undefined && r.status !== filter.status) return false;
+    if (filter.golive_hi && !r.is_golive_today) return false;
+    if (filter.golive_month && !r.is_golive_month) return false;
+    return true;
+  });
+}
+
+function pt2FilterTitle(filter) {
+  const parts = [];
+  if (filter.regional) parts.push(filter.regional);
+  if (filter.branch) parts.push(filter.branch);
+  if (filter.status) parts.push(pt2ShortLabel(filter.status));
+  if (filter.golive_hi) parts.push('Golive Hari Ini');
+  if (filter.golive_month) parts.push('Golive ' + (pt2Cache.current_month_label || ''));
+  if (!parts.length) parts.push('Grand Total (Semua Data)');
+  return parts.join(' — ');
+}
+
 // ── Stat cards ─────────────────────────────────────────────────────
 function pt2RefreshStats(data, grand) {
   document.getElementById('pt2StatTotalLop').textContent = pt2FmtNum(grand.total.lop);
@@ -164,19 +215,46 @@ function pt2RefreshStats(data, grand) {
   document.getElementById('pt2StatGoliveHi').textContent = pt2FmtNum(grand.golive_hi.lop);
   document.getElementById('pt2StatGoliveHiFoot').textContent = `TGL CLOSE WO (kolom AE) = hari ini · ${pt2FmtNum(grand.golive_hi.port)} port`;
   document.getElementById('pt2StatPctGolive').textContent = grand.pct_golive.toFixed(2) + '%';
+
+  const dropCount = grand.values['0.DROP'] ? grand.values['0.DROP'].lop : 0;
+  const kendalaCount = grand.values['0.KENDALA'] ? grand.values['0.KENDALA'].lop : 0;
+  document.querySelector('#pt2DropMiniCard .pt2-mini-value').textContent = pt2FmtNum(dropCount);
+  document.querySelector('#pt2KendalaMiniCard .pt2-mini-value').textContent = pt2FmtNum(kendalaCount);
 }
 
-// ── Pivot table render ─────────────────────────────────────────────
-function pt2RenderPivotRow(label, agg, data, rowClass) {
+function pt2CardClick(kind) {
+  if (!pt2Cache) return;
+  if (kind === 'total_lop') pt2OpenFilteredList('Total LOP — Semua Data', pt2Cache.rows);
+  else if (kind === 'total_port') pt2OpenFilteredList('Total Port — Semua Data', pt2Cache.rows);
+  else if (kind === 'golive_hi') pt2OpenFilteredList('Golive Hari Ini', pt2FilterRows({ golive_hi: true }));
+  else if (kind === 'pct_golive') pt2OpenFilteredList(pt2ShortLabel(pt2Cache.golive_status), pt2FilterRows({ status: pt2Cache.golive_status }));
+  else if (kind === 'status_drop') pt2OpenFilteredList('0.DROP', pt2FilterRows({ status: '0.DROP' }));
+  else if (kind === 'status_kendala') pt2OpenFilteredList('0.KENDALA', pt2FilterRows({ status: '0.KENDALA' }));
+}
+
+// ── Pivot table render (setiap sel angka bisa diklik) ────────────────
+function pt2RenderPivotRow(label, agg, data, rowClass, rowKey) {
+  rowKey = rowKey || {};
   let html = `<tr class="${rowClass}"><td class="row-label">${pt2Esc(label)}</td>`;
+
   data.statuses.forEach(s => {
     const v = agg.values[s];
-    html += `<td>${pt2FmtNum(v.lop)}</td><td>${pt2FmtNum(v.port)}</td>`;
+    const f = pt2FilterAttr(Object.assign({}, rowKey, { status: s }));
+    html += `<td class="pt2-clickable" data-filter='${f}'>${pt2FmtNum(v.lop)}</td><td class="pt2-clickable" data-filter='${f}'>${pt2FmtNum(v.port)}</td>`;
   });
-  html += `<td>${pt2FmtNum(agg.total.lop)}</td><td>${pt2FmtNum(agg.total.port)}</td>`;
-  html += `<td class="col-golive-hi">${pt2FmtNum(agg.golive_hi.lop)}</td><td class="col-golive-hi">${pt2FmtNum(agg.golive_hi.port)}</td>`;
-  html += `<td class="col-golive-month">${pt2FmtNum(agg.golive_month.lop)}</td><td class="col-golive-month">${pt2FmtNum(agg.golive_month.port)}</td>`;
-  html += `<td class="col-pct">${agg.pct_golive.toFixed(2)}%</td>`;
+
+  const totalF = pt2FilterAttr(rowKey);
+  html += `<td class="pt2-clickable" data-filter='${totalF}'>${pt2FmtNum(agg.total.lop)}</td><td class="pt2-clickable" data-filter='${totalF}'>${pt2FmtNum(agg.total.port)}</td>`;
+
+  const hiF = pt2FilterAttr(Object.assign({}, rowKey, { golive_hi: true }));
+  html += `<td class="col-golive-hi pt2-clickable" data-filter='${hiF}'>${pt2FmtNum(agg.golive_hi.lop)}</td><td class="col-golive-hi pt2-clickable" data-filter='${hiF}'>${pt2FmtNum(agg.golive_hi.port)}</td>`;
+
+  const monF = pt2FilterAttr(Object.assign({}, rowKey, { golive_month: true }));
+  html += `<td class="col-golive-month pt2-clickable" data-filter='${monF}'>${pt2FmtNum(agg.golive_month.lop)}</td><td class="col-golive-month pt2-clickable" data-filter='${monF}'>${pt2FmtNum(agg.golive_month.port)}</td>`;
+
+  const pctF = pt2FilterAttr(Object.assign({}, rowKey, { status: data.golive_status }));
+  html += `<td class="col-pct pt2-clickable" data-filter='${pctF}'>${agg.pct_golive.toFixed(2)}%</td>`;
+
   html += '</tr>';
   return html;
 }
@@ -206,19 +284,26 @@ function pt2RenderPivotTable(data) {
     const branchKeys = Object.keys(regEntry.branchMap).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
     if (!branchKeys.length) return;
 
-    html += pt2RenderPivotRow(regionalKey, regEntry.agg, data, 'regional-row');
+    html += pt2RenderPivotRow(regionalKey, regEntry.agg, data, 'regional-row', { regional: regionalKey });
     branchKeys.forEach(branchKey => {
-      html += pt2RenderPivotRow(branchKey, regEntry.branchMap[branchKey], data, 'branch-row');
+      html += pt2RenderPivotRow(branchKey, regEntry.branchMap[branchKey], data, 'branch-row', { regional: regionalKey, branch: branchKey });
     });
   });
 
-  html += pt2RenderPivotRow('GRAND TOTAL', grand, data, 'grand-total-row');
+  html += pt2RenderPivotRow('GRAND TOTAL', grand, data, 'grand-total-row', {});
   html += '</tbody></table>';
   el.innerHTML = html;
 
   pt2RefreshStats(data, grand);
   pt2RenderDonut(data, grand);
 }
+
+document.getElementById('pt2PivotWrap').addEventListener('click', (e) => {
+  const td = e.target.closest('.pt2-clickable');
+  if (!td || !pt2Cache) return;
+  const filter = JSON.parse(td.dataset.filter);
+  pt2OpenFilteredList(pt2FilterTitle(filter), pt2FilterRows(filter));
+});
 
 // ── Donut chart ─────────────────────────────────────────────────────
 function pt2RenderDonut(data, grand) {
@@ -236,6 +321,11 @@ function pt2RenderDonut(data, grand) {
       options: {
         cutout: '62%',
         plugins: { legend: { display: false } },
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          const status = data.statuses[elements[0].index];
+          pt2OpenFilteredList(pt2ShortLabel(status), pt2FilterRows({ status }));
+        },
       },
     });
   } catch (e) {
@@ -245,20 +335,25 @@ function pt2RenderDonut(data, grand) {
   const total = values.reduce((a, b) => a + b, 0) || 1;
   const legend = document.getElementById('pt2ChartLegend');
   legend.innerHTML = data.statuses.map((s, i) => `
-    <span><span class="dot" style="background:${colors[i]}"></span>${pt2Esc(labels[i])}: <strong>${pt2FmtNum(values[i])}</strong> <span style="color:var(--muted,#64748b);">(${(values[i] / total * 100).toFixed(1)}%)</span></span>
+    <span data-status="${pt2Esc(s)}" title="Klik untuk lihat daftar"><span class="dot" style="background:${colors[i]}"></span>${pt2Esc(labels[i])}: <strong>${pt2FmtNum(values[i])}</strong> <span style="color:var(--muted,#64748b);">(${(values[i] / total * 100).toFixed(1)}%)</span></span>
   `).join('');
 }
 
-// ── Kendala (kolom P): kategori -> list lokasi -> detail (kolom Q) ──
+document.getElementById('pt2ChartLegend').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-status]');
+  if (!el || !pt2Cache) return;
+  const status = el.dataset.status;
+  pt2OpenFilteredList(pt2ShortLabel(status), pt2FilterRows({ status }));
+});
+
+// ── Kendala (kolom P): kategori -> daftar lokasi (9 kolom) + download ─
 function pt2ComputeKendalaTable(rows) {
   const counter = {};
   const rowsByLabel = {};
   rows.forEach(r => {
     if (!r.klasifikasi) return;
     counter[r.klasifikasi] = (counter[r.klasifikasi] || 0) + 1;
-    (rowsByLabel[r.klasifikasi] = rowsByLabel[r.klasifikasi] || []).push({
-      row: r.row, ihld: r.ihld, lokasi: r.lokasi, branch: r.branch, regional: r.regional, status_raw: r.status_raw,
-    });
+    (rowsByLabel[r.klasifikasi] = rowsByLabel[r.klasifikasi] || []).push(r);
   });
   return Object.keys(counter).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
     .map(label => ({ label, count: counter[label], rows: rowsByLabel[label] }));
@@ -270,7 +365,7 @@ function pt2RenderKendala(data) {
   const el = document.getElementById('pt2KendalaGrid');
   if (!kendalaTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data kendala (kolom P) di sheet ini.</div>'; return; }
   el.innerHTML = kendalaTable.map((item, i) => `
-    <div class="bh-chip" data-kendala-index="${i}" title="Klik untuk lihat daftar lokasi">
+    <div class="bh-chip" data-kendala-index="${i}" title="Klik untuk lihat daftar lokasi & download">
       <span>${pt2Esc(item.label)}</span><span class="bh-count">${pt2FmtNum(item.count)}</span>
     </div>
   `).join('');
@@ -280,84 +375,84 @@ document.getElementById('pt2KendalaGrid').addEventListener('click', (e) => {
   const chip = e.target.closest('.bh-chip');
   if (!chip || !pt2Cache) return;
   const item = pt2Cache.kendala_table[parseInt(chip.dataset.kendalaIndex, 10)];
-  if (item) pt2OpenKendalaCategory(item.label);
+  if (item) pt2OpenFilteredList(item.label, item.rows);
 });
 
-function pt2OpenKendalaCategory(label) {
-  pt2KendalaCurrentLabel = label;
-  const item = (pt2Cache.kendala_table || []).find(x => x.label === label);
-  const rows = item ? item.rows : [];
+// ── Modal generik: daftar 9 kolom + download CSV ──────────────────────
+const PT2_LIST_COLS = [
+  { key: 'ihld', label: 'IHLD' },
+  { key: 'lokasi', label: 'Lokasi' },
+  { key: 'source_order', label: 'Source Order' },
+  { key: 'batch', label: 'Batch' },
+  { key: 'regional', label: 'Regional' },
+  { key: 'branch', label: 'Branch' },
+  { key: 'status_raw', label: 'Status' },
+  { key: 'klasifikasi', label: 'Klasifikasi Cancel' },
+  { key: 'detail_cancel', label: 'Detail Cancel' },
+];
+const PT2_LIST_DISPLAY_CAP = 300;
 
-  const modalBox = document.getElementById('pt2KendalaModalBox');
-  modalBox.innerHTML = `
-    <div class="modal-header">
-      <div class="modal-title">${pt2Esc(label)} <span class="badge">${pt2FmtNum(rows.length)}</span></div>
-      <button class="btn-ghost modal-close" id="pt2KendalaModalCloseBtn">Tutup &#10005;</button>
-    </div>
-    <div class="loc-list" style="margin-top:10px;" id="pt2KendalaModalList">
-      ${rows.length ? rows.map(r => `
-        <div class="result-item" data-row="${r.row}">
-          <div class="ihld">${pt2Esc(r.ihld) || '(tanpa IHLD)'} — ${pt2Esc(r.lokasi) || '-'}</div>
-          <div class="meta">
-            <span class="badge">${pt2Esc(r.regional) || '-'}</span>
-            <span class="badge">${pt2Esc(r.branch) || '-'}</span>
-            ${r.status_raw ? `<span class="badge status">${pt2Esc(r.status_raw)}</span>` : ''}
-          </div>
-        </div>
-      `).join('') : '<div class="empty-state">Tidak ada data untuk kategori ini.</div>'}
-    </div>
-  `;
-  document.getElementById('pt2KendalaModalCloseBtn').addEventListener('click', pt2CloseKendalaModal);
-  const list = document.getElementById('pt2KendalaModalList');
-  if (list) {
-    list.addEventListener('click', (e) => {
-      const item = e.target.closest('.result-item');
-      if (item) pt2OpenKendalaRowDetail(parseInt(item.dataset.row, 10));
-    });
-  }
-  document.getElementById('pt2KendalaModalOverlay').classList.add('open');
-}
-
-async function pt2OpenKendalaRowDetail(rowNum) {
-  const modalBox = document.getElementById('pt2KendalaModalBox');
-  modalBox.innerHTML = `
-    <div class="modal-header">
-      <div class="modal-title">Detail Baris #${rowNum}</div>
-      <button class="btn-ghost modal-close" id="pt2KendalaModalCloseBtn">Tutup &#10005;</button>
-    </div>
-    <a href="#" class="modal-back" id="pt2KendalaBackLink">&larr; Kembali ke daftar</a>
-    <div class="skeleton">Memuat detail (kolom A s/d AQ)...</div>
-  `;
-  document.getElementById('pt2KendalaModalCloseBtn').addEventListener('click', pt2CloseKendalaModal);
-  document.getElementById('pt2KendalaBackLink').addEventListener('click', (e) => {
-    e.preventDefault();
-    if (pt2KendalaCurrentLabel) pt2OpenKendalaCategory(pt2KendalaCurrentLabel);
+function pt2RowsToCSV(rows) {
+  const escCsv = (v) => {
+    const s = (v === null || v === undefined) ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [PT2_LIST_COLS.map(c => escCsv(c.label)).join(',')];
+  rows.forEach(r => {
+    lines.push(PT2_LIST_COLS.map(c => escCsv(r[c.key])).join(','));
   });
-
-  try {
-    const res = await fetch(`/api/pt2-row/${rowNum}/detail`);
-    const json = await res.json();
-    const body = document.querySelector('#pt2KendalaModalBox');
-    if (!json.ok) {
-      body.insertAdjacentHTML('beforeend', `<div class="flash error">${pt2Esc(json.error)}</div>`);
-      return;
-    }
-    const table = `
-      <table class="detail-table">
-        ${json.fields.map(f => `<tr><th>${pt2Esc(f.header)}</th><td>${pt2Esc(f.value) || '-'}</td></tr>`).join('')}
-      </table>
-    `;
-    body.querySelector('.skeleton').outerHTML = table;
-  } catch (e) {
-    modalBox.insertAdjacentHTML('beforeend', `<div class="flash error">Gagal memuat detail: ${e}</div>`);
-  }
+  return lines.join('\n');
 }
 
-function pt2CloseKendalaModal() {
-  document.getElementById('pt2KendalaModalOverlay').classList.remove('open');
+function pt2DownloadCSV(rows, title) {
+  const csv = pt2RowsToCSV(rows);
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const safeName = (title || 'pt2-data').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pt2-${safeName || 'data'}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
-document.getElementById('pt2KendalaModalOverlay').addEventListener('click', (e) => {
-  if (e.target.id === 'pt2KendalaModalOverlay') pt2CloseKendalaModal();
+
+function pt2OpenFilteredList(title, rows) {
+  rows = rows || [];
+  const capped = rows.slice(0, PT2_LIST_DISPLAY_CAP);
+  const modalBox = document.getElementById('pt2ListModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">${pt2Esc(title)} <span class="badge">${pt2FmtNum(rows.length)}</span></div>
+      <button class="btn-ghost modal-close" id="pt2ListModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div style="display:flex; justify-content:flex-end; margin:10px 0;">
+      <button class="pt2-download-btn" id="pt2ListDownloadBtn" ${rows.length ? '' : 'disabled'}>&#11015; Download CSV (${pt2FmtNum(rows.length)} baris)</button>
+    </div>
+    ${rows.length ? `
+      <div style="overflow:auto; max-height:58vh; border:1px solid var(--border, #e2e8f0); border-radius:8px;">
+        <table class="pt2-list-table">
+          <thead><tr>${PT2_LIST_COLS.map(c => `<th>${pt2Esc(c.label)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${capped.map(r => `<tr>${PT2_LIST_COLS.map(c => `<td>${pt2Esc(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${rows.length > capped.length ? `<p style="color:var(--muted,#64748b); font-size:0.8rem; margin-top:8px;">Menampilkan ${pt2FmtNum(capped.length)} dari ${pt2FmtNum(rows.length)} baris di layar — download CSV untuk lihat semuanya.</p>` : ''}
+    ` : '<div class="empty-state">Tidak ada data untuk kategori ini.</div>'}
+  `;
+  document.getElementById('pt2ListModalCloseBtn').addEventListener('click', pt2CloseListModal);
+  const dlBtn = document.getElementById('pt2ListDownloadBtn');
+  if (dlBtn && rows.length) dlBtn.addEventListener('click', () => pt2DownloadCSV(rows, title));
+  document.getElementById('pt2ListModalOverlay').classList.add('open');
+}
+
+function pt2CloseListModal() {
+  document.getElementById('pt2ListModalOverlay').classList.remove('open');
+}
+document.getElementById('pt2ListModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'pt2ListModalOverlay') pt2CloseListModal();
 });
 
 // ── Load ─────────────────────────────────────────────────────────────
@@ -378,7 +473,7 @@ async function loadPt2Dashboard() {
     document.getElementById('pt2PivotWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
   }
 }
- 
+
 loadPt2Dashboard();
 </script>
 {% endblock %}
