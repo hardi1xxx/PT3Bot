@@ -331,7 +331,7 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str, whe
         if existing_date.strip():
             write_date = False
     if write_date:
-        ws.update_acell(f"{date_col}{row_num}", date_str)
+        ws.update(f"{date_col}{row_num}", [[date_str]], raw=True)
 
     return date_col, note_col
 
