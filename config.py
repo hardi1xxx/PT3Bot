@@ -95,6 +95,12 @@ AA_OPTIONS = [
 
 # ── Z value -> (date_col, note_col) routing ───────────────────────────
 # Several Z values share the same target pair (BE/BD group and BG/BF group).
+# Kolom tanggal yang HANYA ditulis sekali (saat pertama kali status masuk
+# ke sini, kalau kolomnya masih kosong) — bukan setiap kali ada update.
+# Sejauh ini cuma AZ (04. INSTALASI): mencatat tanggal MULAI masuk
+# instalasi, bukan tanggal update paling akhir.
+DATE_COLS_WRITE_ONCE = {"AZ"}
+
 STATUS_COLUMN_MAP = {
     "0.1 SURVEI":            {"date_col": "AR", "note_col": "AS"},
     "01. PERIJINAN":         {"date_col": "AT", "note_col": "AU"},
