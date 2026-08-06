@@ -146,6 +146,56 @@ NOTIFY_STATUS_DATE_MAP = {
     "04. INSTALASI":  "AZ",
 }
 
+# ══════════════════════════════════════════════════════════════════════
+# PT2 ("Detail PT2") — sheet & column mapping
+# ══════════════════════════════════════════════════════════════════════
+SHEET_NAME_PT2 = os.environ.get("SHEET_NAME_PT2", "Detail PT2")
+
+HEADER_ROW_PT2 = 2
+DATA_START_ROW_PT2 = 3
+
+PT2_COL_IHLD = "A"                  # ID IHLD -> 1 baris = 1 LOP
+PT2_COL_LOKASI = "B"                # Nama Lokasi
+PT2_COL_STATUS_WO = "G"             # Status WO
+PT2_COL_BATCH = "H"                 # BATCH NDE
+PT2_COL_BRANCH = "J"                # BRANCH TA
+PT2_COL_REGIONAL = "L"              # REGIONAL TA
+PT2_COL_STATUS = "M"                # STATUS LOP -> status pekerjaan utama
+PT2_COL_KLASIFIKASI_CANCEL = "P"    # Klasifikasi Cancel -> kategori kendala
+PT2_COL_DETAIL_CANCEL = "Q"         # Detail Cancel -> alasan/detail kendala
+PT2_COL_FINAL_PORT = "AC"           # FINAL PORT -> dipakai untuk hitung Port
+PT2_COL_TGL_CLOSE_WO = "AE"         # TGL CLOSE WO -> Golive Hari Ini / bulan ini
+
+PT2_DATE_FORMAT = "%d/%m/%Y"        # format tanggal di kolom AE
+
+# Urutan & label status pekerjaan (nilai kolom M / STATUS LOP)
+PT2_STATUSES = [
+    "0.DROP",
+    "0.KENDALA",
+    "1.DESIGN",
+    "2.APPROVAL",
+    "3.OGP DEPLOY",
+    "5.GOLIVE",
+]
+
+PT2_GOLIVE_STATUS = "5.GOLIVE"
+# Status yang DIKELUARKAN dari penyebut (denominator) rumus %GOLIVE
+PT2_GOLIVE_EXCLUDE_FROM_DENOM = {"0.DROP", "0.KENDALA"}
+
+PT2_STATUS_COLORS = {
+    "0.DROP": "#94a3b8",
+    "0.KENDALA": "#e30613",
+    "1.DESIGN": "#d97706",
+    "2.APPROVAL": "#29467a",
+    "3.OGP DEPLOY": "#0ea5e9",
+    "5.GOLIVE": "#16a34a",
+}
+
+PT2_MONTH_NAMES_ID = {
+    1: "JANUARI", 2: "FEBRUARI", 3: "MARET", 4: "APRIL", 5: "MEI", 6: "JUNI",
+    7: "JULI", 8: "AGUSTUS", 9: "SEPTEMBER", 10: "OKTOBER", 11: "NOVEMBER", 12: "DESEMBER",
+}
+
 # ── Env / secrets ──────────────────────────────────────────────────────
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")

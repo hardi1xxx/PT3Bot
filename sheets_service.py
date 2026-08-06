@@ -21,6 +21,7 @@ SCOPES = [
 _client_lock = threading.Lock()
 _gspread_client = None
 _worksheet = None
+_worksheet_pt2 = None
 
 
 def _col_to_index(col_letters: str) -> int:
@@ -54,6 +55,15 @@ def get_worksheet():
         sh = client.open_by_key(config.SPREADSHEET_ID)
         _worksheet = sh.worksheet(config.SHEET_NAME)
     return _worksheet
+
+
+def get_pt2_worksheet():
+    global _worksheet_pt2
+    if _worksheet_pt2 is None:
+        client = get_client()
+        sh = client.open_by_key(config.SPREADSHEET_ID)
+        _worksheet_pt2 = sh.worksheet(config.SHEET_NAME_PT2)
+    return _worksheet_pt2
 
 
 def find_row(ihld: str, lokasi: str):
@@ -526,3 +536,133 @@ def get_pending_updates():
 
     pending.sort(key=lambda r: (r["branch"], r["batch"]))
     return pending
+
+
+# ══════════════════════════════════════════════════════════════════════
+# PT2 ("Detail PT2")
+# ══════════════════════════════════════════════════════════════════════
+
+_STATUS_LOOKUP_PT2 = {s.strip().upper(): s for s in config.PT2_STATUSES}
+
+
+def _match_pt2_status(raw: str):
+    """Return the canonical PT2_STATUSES value matching `raw`, or None."""
+    return _STATUS_LOOKUP_PT2.get((raw or "").strip().upper())
+
+
+def get_pt2_dashboard_data():
+    """
+    One-shot read of the whole "Detail PT2" sheet, returned as a flat list
+    of per-row records (raw, unaggregated) so the dashboard can compute the
+    regional/branch pivot, the donut chart, and the Kendala (Klasifikasi
+    Cancel) grouping on the client from the same data set.
+
+      LOP      = count of rows (kolom A / ID IHLD terisi)
+      Port     = jumlah kolom AC (FINAL PORT)
+      Status   = kolom M (STATUS LOP): 0.DROP / 0.KENDALA / 1.DESIGN /
+                 2.APPROVAL / 3.OGP DEPLOY / 5.GOLIVE
+      Branch   = kolom J (BRANCH TA)
+      Regional = kolom L (REGIONAL TA)
+      Golive Hari Ini  = kolom AE (TGL CLOSE WO) == hari ini
+      Golive Bulan Ini = kolom AE (TGL CLOSE WO) di bulan & tahun berjalan
+    """
+    ws = get_pt2_worksheet()
+    all_values = ws.get_all_values()
+
+    idx = {
+        "ihld": _col_to_index(config.PT2_COL_IHLD) - 1,
+        "lokasi": _col_to_index(config.PT2_COL_LOKASI) - 1,
+        "status_wo": _col_to_index(config.PT2_COL_STATUS_WO) - 1,
+        "batch": _col_to_index(config.PT2_COL_BATCH) - 1,
+        "branch": _col_to_index(config.PT2_COL_BRANCH) - 1,
+        "regional": _col_to_index(config.PT2_COL_REGIONAL) - 1,
+        "status": _col_to_index(config.PT2_COL_STATUS) - 1,
+        "klasifikasi": _col_to_index(config.PT2_COL_KLASIFIKASI_CANCEL) - 1,
+        "port": _col_to_index(config.PT2_COL_FINAL_PORT) - 1,
+        "tgl_close": _col_to_index(config.PT2_COL_TGL_CLOSE_WO) - 1,
+    }
+
+    data_rows = all_values[config.DATA_START_ROW_PT2 - 1:]
+    today = datetime.date.today()
+
+    rows = []
+    regional_set = set()
+    branch_set = set()
+
+    for offset, row in enumerate(data_rows):
+        row_num = config.DATA_START_ROW_PT2 + offset
+
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+
+        ihld_val = cell("ihld")
+        lokasi_val = cell("lokasi")
+        if not ihld_val and not lokasi_val and not cell("batch"):
+            continue  # fully empty row, skip
+
+        status_raw = cell("status")
+        status_val = _match_pt2_status(status_raw)  # canonical PT2_STATUSES value or None
+
+        regional_val = cell("regional") or "(Tanpa Regional)"
+        branch_val = cell("branch") or "(Tanpa Branch)"
+        regional_set.add(regional_val)
+        branch_set.add(branch_val)
+
+        tgl_close_raw = cell("tgl_close")
+        tgl_close_date = _parse_date(tgl_close_raw)
+        is_golive_today = bool(tgl_close_date and tgl_close_date == today)
+        is_golive_month = bool(
+            tgl_close_date
+            and tgl_close_date.year == today.year
+            and tgl_close_date.month == today.month
+        )
+
+        rows.append({
+            "row": row_num,
+            "ihld": ihld_val,
+            "lokasi": lokasi_val,
+            "status_wo": cell("status_wo"),
+            "batch": cell("batch") or "(Tanpa Batch)",
+            "branch": branch_val,
+            "regional": regional_val,
+            "status": status_val,        # canonical value, or null if not one of the 6
+            "status_raw": status_raw,
+            "klasifikasi": cell("klasifikasi"),
+            "port": _to_number(cell("port")),
+            "tgl_close_wo": tgl_close_raw,
+            "is_golive_today": is_golive_today,
+            "is_golive_month": is_golive_month,
+        })
+
+    return {
+        "statuses": config.PT2_STATUSES,
+        "status_colors": config.PT2_STATUS_COLORS,
+        "golive_status": config.PT2_GOLIVE_STATUS,
+        "exclude_from_denom": sorted(config.PT2_GOLIVE_EXCLUDE_FROM_DENOM),
+        "regionals": sorted(regional_set, key=lambda x: x.lower()),
+        "branches": sorted(branch_set, key=lambda x: x.lower()),
+        "current_month_label": config.PT2_MONTH_NAMES_ID.get(today.month, str(today.month)),
+        "rows": rows,
+    }
+
+
+def get_pt2_row_detail(row_num: int):
+    """
+    Return header/value pairs for every column A..AQ of the given PT2 row,
+    used by the "Kendala" (Klasifikasi Cancel) list -> detail view.
+    """
+    ws = get_pt2_worksheet()
+    start_idx = _col_to_index("A")
+    end_idx = _col_to_index("AQ")
+    header_range = ws.get(f"A{config.HEADER_ROW_PT2}:AQ{config.HEADER_ROW_PT2}")
+    value_range = ws.get(f"A{row_num}:AQ{row_num}")
+    headers = header_range[0] if header_range else []
+    values = value_range[0] if value_range else []
+
+    fields = []
+    for i in range(end_idx - start_idx + 1):
+        h = headers[i].strip() if i < len(headers) and headers[i].strip() else f"Kolom {i + 1}"
+        v = values[i] if i < len(values) else ""
+        fields.append({"header": h, "value": v})
+    return fields

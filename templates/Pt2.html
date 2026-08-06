@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block menu_pt2 %}active{% endblock %}
+{% block page_title %}Dashboard PT2{% endblock %}
+{% block page_sub %}Rekap LOP & Port per Regional/Branch — status pekerjaan terkini{% endblock %}
+
+{% block content %}
+
+<!-- Stat cards -->
+<div class="stat-grid" id="pt2StatGrid">
+  <div class="stat-card">
+    <div class="stat-label">Total LOP</div>
+    <div class="stat-value" id="pt2StatTotalLop">–</div>
+    <div class="stat-foot">Jumlah baris terisi (kolom A)</div>
+  </div>
+  <div class="stat-card alt">
+    <div class="stat-label">Total Port</div>
+    <div class="stat-value" id="pt2StatTotalPort">–</div>
+    <div class="stat-foot">Jumlah FINAL PORT (kolom AC)</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Golive Hari Ini</div>
+    <div class="stat-value" id="pt2StatGoliveHi">–</div>
+    <div class="stat-foot" id="pt2StatGoliveHiFoot">TGL CLOSE WO (kolom AE) = hari ini</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">%GOLIVE</div>
+    <div class="stat-value" id="pt2StatPctGolive">–</div>
+    <div class="stat-foot">5.GOLIVE ÷ Total LOP tanpa Drop &amp; Kendala</div>
+  </div>
+</div>
+
+<!-- Donut chart: distribusi status pekerjaan -->
+<div class="section-title">
+  Distribusi Status Pekerjaan (LOP)
+  <button class="refresh-btn" style="margin-left:auto;" onclick="loadPt2Dashboard()">&#8635; Refresh</button>
+</div>
+<div class="card chart-card" style="margin-bottom:22px;">
+  <div class="pt2-donut-wrap">
+    <div class="pt2-donut-canvas-box">
+      <canvas id="pt2StatusDonut"></canvas>
+    </div>
+    <div class="chart-legend" id="pt2ChartLegend"></div>
+  </div>
+</div>
+
+<!-- Rekap Regional/Branch table -->
+<div class="section-title">
+  Rekap LOP &amp; Port per Regional / Branch
+  <span class="hint">baris = REGIONAL (kolom L) &gt; BRANCH (kolom J) · status dari kolom M · LOP dihitung dari kolom A, Port dari kolom AC</span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="pt2PivotWrap"><div class="skeleton">Memuat data...</div></div>
+</div>
+
+<!-- Kendala (Klasifikasi Cancel, kolom P) -->
+<div class="section-title">Kendala</div>
+<div class="card" style="margin-bottom:22px;">
+  <p style="color:var(--muted, #64748b); font-size:0.85rem; margin:0 0 12px;">
+    Kategori kendala dari kolom P (Klasifikasi Cancel). Klik kategori untuk lihat daftar lokasi, lalu klik lokasi untuk lihat detailnya (kolom Q — Detail Cancel).
+  </p>
+  <div class="bh-grid" id="pt2KendalaGrid"><div class="skeleton">Memuat data...</div></div>
+</div>
+
+<!-- Kendala modal: kategori -> list lokasi -> detail -->
+<div class="modal-overlay" id="pt2KendalaModalOverlay">
+  <div class="modal-box" id="pt2KendalaModalBox"></div>
+</div>
+
+<style>
+  .pt2-donut-wrap { display:flex; align-items:center; gap:28px; flex-wrap:wrap; }
+  .pt2-donut-canvas-box { position:relative; width:230px; height:230px; flex:0 0 auto; }
+  .pt2-donut-wrap .chart-legend { flex:1 1 260px; display:flex; flex-direction:column; gap:8px; }
+  .pt2-donut-wrap .chart-legend span { display:flex; align-items:center; gap:8px; font-size:0.86rem; }
+  .pt2-donut-wrap .chart-legend .dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+
+  .pt2-pivot { border-collapse:collapse; width:100%; font-size:0.82rem; white-space:nowrap; }
+  .pt2-pivot th, .pt2-pivot td { border:1px solid var(--border, #e2e8f0); padding:6px 8px; text-align:right; }
+  .pt2-pivot thead th { background:var(--brand-blue, #29467a); color:#fff; text-align:center; position:sticky; top:0; z-index:1; }
+  .pt2-pivot .row-label { text-align:left; }
+  .pt2-pivot .regional-row td, .pt2-pivot .regional-row th { background:#dbe4f3; font-weight:700; }
+  .pt2-pivot .regional-row .row-label { padding-left:8px; }
+  .pt2-pivot .branch-row .row-label { padding-left:24px; color:var(--text, #1e293b); }
+  .pt2-pivot .regional-subtotal-row td, .pt2-pivot .regional-subtotal-row th { background:#f1f5f9; font-weight:600; font-style:italic; }
+  .pt2-pivot .regional-subtotal-row .row-label { padding-left:24px; }
+  .pt2-pivot .grand-total-row td, .pt2-pivot .grand-total-row th { background:#1c2b4a; color:#fff; font-weight:700; }
+  .pt2-pivot .col-golive-hi { background:#fff7ed; }
+  .pt2-pivot .col-golive-month { background:#ecfdf5; }
+  .pt2-pivot .col-pct { background:#eef2ff; text-align:center; }
+  .pt2-pivot .grand-total-row .col-golive-hi,
+  .pt2-pivot .grand-total-row .col-golive-month,
+  .pt2-pivot .grand-total-row .col-pct { background:#1c2b4a; }
+</style>
+
+<script>
+let pt2Cache = null;      // { statuses, status_colors, golive_status, exclude_from_denom, regionals, branches, current_month_label, rows }
+let pt2Donut = null;
+let pt2KendalaCurrentLabel = null;
+
+function pt2FmtNum(n) {
+  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0);
+}
+function pt2Esc(s) {
+  return (s === null || s === undefined ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function pt2ShortLabel(s) {
+  return (s || '').replace(/^\d+(\.\d+)?\.\s*/, '');
+}
+
+// ── Aggregation helpers ────────────────────────────────────────────
+function pt2EmptyAgg(statuses) {
+  const values = {};
+  statuses.forEach(s => { values[s] = { lop: 0, port: 0 }; });
+  return { values, total: { lop: 0, port: 0 }, golive_hi: { lop: 0, port: 0 }, golive_month: { lop: 0, port: 0 }, pct_golive: 0 };
+}
+
+function pt2Finalize(agg, data) {
+  let totalLop = 0, totalPort = 0;
+  data.statuses.forEach(s => { totalLop += agg.values[s].lop; totalPort += agg.values[s].port; });
+  agg.total = { lop: totalLop, port: totalPort };
+
+  const golive = agg.values[data.golive_status] || { lop: 0, port: 0 };
+  let denomLop = totalLop;
+  data.exclude_from_denom.forEach(s => { if (agg.values[s]) denomLop -= agg.values[s].lop; });
+  agg.pct_golive = denomLop > 0 ? (golive.lop / denomLop * 100) : 0;
+}
+
+function pt2BuildPivot(data) {
+  const regionalMap = {};
+  data.regionals.forEach(r => { regionalMap[r] = { agg: pt2EmptyAgg(data.statuses), branchMap: {} }; });
+  const grand = pt2EmptyAgg(data.statuses);
+
+  data.rows.forEach(r => {
+    const regionalKey = r.regional || '(Tanpa Regional)';
+    if (!regionalMap[regionalKey]) regionalMap[regionalKey] = { agg: pt2EmptyAgg(data.statuses), branchMap: {} };
+    const regEntry = regionalMap[regionalKey];
+    const branchKey = r.branch || '(Tanpa Branch)';
+    if (!regEntry.branchMap[branchKey]) regEntry.branchMap[branchKey] = pt2EmptyAgg(data.statuses);
+    const branchAgg = regEntry.branchMap[branchKey];
+
+    [branchAgg, regEntry.agg, grand].forEach(agg => {
+      if (r.status) {
+        agg.values[r.status].lop += 1;
+        agg.values[r.status].port += (r.port || 0);
+      }
+      if (r.is_golive_today) { agg.golive_hi.lop += 1; agg.golive_hi.port += (r.port || 0); }
+      if (r.is_golive_month) { agg.golive_month.lop += 1; agg.golive_month.port += (r.port || 0); }
+    });
+  });
+
+  Object.values(regionalMap).forEach(regEntry => {
+    Object.values(regEntry.branchMap).forEach(b => pt2Finalize(b, data));
+    pt2Finalize(regEntry.agg, data);
+  });
+  pt2Finalize(grand, data);
+
+  return { regionalMap, grand };
+}
+
+// ── Stat cards ─────────────────────────────────────────────────────
+function pt2RefreshStats(data, grand) {
+  document.getElementById('pt2StatTotalLop').textContent = pt2FmtNum(grand.total.lop);
+  document.getElementById('pt2StatTotalPort').textContent = pt2FmtNum(grand.total.port);
+  document.getElementById('pt2StatGoliveHi').textContent = pt2FmtNum(grand.golive_hi.lop);
+  document.getElementById('pt2StatGoliveHiFoot').textContent = `TGL CLOSE WO (kolom AE) = hari ini · ${pt2FmtNum(grand.golive_hi.port)} port`;
+  document.getElementById('pt2StatPctGolive').textContent = grand.pct_golive.toFixed(2) + '%';
+}
+
+// ── Pivot table render ─────────────────────────────────────────────
+function pt2RenderPivotRow(label, agg, data, rowClass) {
+  let html = `<tr class="${rowClass}"><td class="row-label">${pt2Esc(label)}</td>`;
+  data.statuses.forEach(s => {
+    const v = agg.values[s];
+    html += `<td>${pt2FmtNum(v.lop)}</td><td>${pt2FmtNum(v.port)}</td>`;
+  });
+  html += `<td>${pt2FmtNum(agg.total.lop)}</td><td>${pt2FmtNum(agg.total.port)}</td>`;
+  html += `<td class="col-golive-hi">${pt2FmtNum(agg.golive_hi.lop)}</td><td class="col-golive-hi">${pt2FmtNum(agg.golive_hi.port)}</td>`;
+  html += `<td class="col-golive-month">${pt2FmtNum(agg.golive_month.lop)}</td><td class="col-golive-month">${pt2FmtNum(agg.golive_month.port)}</td>`;
+  html += `<td class="col-pct">${agg.pct_golive.toFixed(2)}%</td>`;
+  html += '</tr>';
+  return html;
+}
+
+function pt2RenderPivotTable(data) {
+  const el = document.getElementById('pt2PivotWrap');
+  if (!data.rows.length) { el.innerHTML = '<div class="empty-state">Belum ada data di sheet Detail PT2.</div>'; return; }
+
+  const { regionalMap, grand } = pt2BuildPivot(data);
+  const monthLabel = 'GOLIVE ' + (data.current_month_label || '');
+
+  let html = '<table class="pt2-pivot"><thead><tr>';
+  html += '<th rowspan="2" class="row-label">REGIONAL / BRANCH</th>';
+  data.statuses.forEach(s => { html += `<th colspan="2">${pt2Esc(pt2ShortLabel(s))}</th>`; });
+  html += '<th colspan="2">GRAND TOTAL</th>';
+  html += '<th colspan="2">GOLIVE HI</th>';
+  html += `<th colspan="2">${pt2Esc(monthLabel)}</th>`;
+  html += '<th rowspan="2">%GOLIVE</th>';
+  html += '</tr><tr>';
+  data.statuses.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th>LOP</th><th>Port</th><th>LOP</th><th>Port</th><th>LOP</th><th>Port</th>';
+  html += '</tr></thead><tbody>';
+
+  data.regionals.forEach(regionalKey => {
+    const regEntry = regionalMap[regionalKey];
+    if (!regEntry) return;
+    const branchKeys = Object.keys(regEntry.branchMap).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    if (!branchKeys.length) return;
+
+    html += pt2RenderPivotRow(regionalKey, regEntry.agg, data, 'regional-row');
+    branchKeys.forEach(branchKey => {
+      html += pt2RenderPivotRow(branchKey, regEntry.branchMap[branchKey], data, 'branch-row');
+    });
+  });
+
+  html += pt2RenderPivotRow('GRAND TOTAL', grand, data, 'grand-total-row');
+  html += '</tbody></table>';
+  el.innerHTML = html;
+
+  pt2RefreshStats(data, grand);
+  pt2RenderDonut(data, grand);
+}
+
+// ── Donut chart ─────────────────────────────────────────────────────
+function pt2RenderDonut(data, grand) {
+  const labels = data.statuses.map(pt2ShortLabel);
+  const values = data.statuses.map(s => grand.values[s].lop);
+  const colors = data.statuses.map(s => (data.status_colors && data.status_colors[s]) || '#94a3b8');
+
+  try {
+    if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
+    const ctx = document.getElementById('pt2StatusDonut').getContext('2d');
+    if (pt2Donut) pt2Donut.destroy();
+    pt2Donut = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
+      options: {
+        cutout: '62%',
+        plugins: { legend: { display: false } },
+      },
+    });
+  } catch (e) {
+    document.querySelector('.pt2-donut-canvas-box').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
+  }
+
+  const total = values.reduce((a, b) => a + b, 0) || 1;
+  const legend = document.getElementById('pt2ChartLegend');
+  legend.innerHTML = data.statuses.map((s, i) => `
+    <span><span class="dot" style="background:${colors[i]}"></span>${pt2Esc(labels[i])}: <strong>${pt2FmtNum(values[i])}</strong> <span style="color:var(--muted,#64748b);">(${(values[i] / total * 100).toFixed(1)}%)</span></span>
+  `).join('');
+}
+
+// ── Kendala (kolom P): kategori -> list lokasi -> detail (kolom Q) ──
+function pt2ComputeKendalaTable(rows) {
+  const counter = {};
+  const rowsByLabel = {};
+  rows.forEach(r => {
+    if (!r.klasifikasi) return;
+    counter[r.klasifikasi] = (counter[r.klasifikasi] || 0) + 1;
+    (rowsByLabel[r.klasifikasi] = rowsByLabel[r.klasifikasi] || []).push({
+      row: r.row, ihld: r.ihld, lokasi: r.lokasi, branch: r.branch, regional: r.regional, status_raw: r.status_raw,
+    });
+  });
+  return Object.keys(counter).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(label => ({ label, count: counter[label], rows: rowsByLabel[label] }));
+}
+
+function pt2RenderKendala(data) {
+  const kendalaTable = pt2ComputeKendalaTable(data.rows);
+  pt2Cache.kendala_table = kendalaTable;
+  const el = document.getElementById('pt2KendalaGrid');
+  if (!kendalaTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data kendala (kolom P) di sheet ini.</div>'; return; }
+  el.innerHTML = kendalaTable.map((item, i) => `
+    <div class="bh-chip" data-kendala-index="${i}" title="Klik untuk lihat daftar lokasi">
+      <span>${pt2Esc(item.label)}</span><span class="bh-count">${pt2FmtNum(item.count)}</span>
+    </div>
+  `).join('');
+}
+
+document.getElementById('pt2KendalaGrid').addEventListener('click', (e) => {
+  const chip = e.target.closest('.bh-chip');
+  if (!chip || !pt2Cache) return;
+  const item = pt2Cache.kendala_table[parseInt(chip.dataset.kendalaIndex, 10)];
+  if (item) pt2OpenKendalaCategory(item.label);
+});
+
+function pt2OpenKendalaCategory(label) {
+  pt2KendalaCurrentLabel = label;
+  const item = (pt2Cache.kendala_table || []).find(x => x.label === label);
+  const rows = item ? item.rows : [];
+
+  const modalBox = document.getElementById('pt2KendalaModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">${pt2Esc(label)} <span class="badge">${pt2FmtNum(rows.length)}</span></div>
+      <button class="btn-ghost modal-close" id="pt2KendalaModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="loc-list" style="margin-top:10px;" id="pt2KendalaModalList">
+      ${rows.length ? rows.map(r => `
+        <div class="result-item" data-row="${r.row}">
+          <div class="ihld">${pt2Esc(r.ihld) || '(tanpa IHLD)'} — ${pt2Esc(r.lokasi) || '-'}</div>
+          <div class="meta">
+            <span class="badge">${pt2Esc(r.regional) || '-'}</span>
+            <span class="badge">${pt2Esc(r.branch) || '-'}</span>
+            ${r.status_raw ? `<span class="badge status">${pt2Esc(r.status_raw)}</span>` : ''}
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state">Tidak ada data untuk kategori ini.</div>'}
+    </div>
+  `;
+  document.getElementById('pt2KendalaModalCloseBtn').addEventListener('click', pt2CloseKendalaModal);
+  const list = document.getElementById('pt2KendalaModalList');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) pt2OpenKendalaRowDetail(parseInt(item.dataset.row, 10));
+    });
+  }
+  document.getElementById('pt2KendalaModalOverlay').classList.add('open');
+}
+
+async function pt2OpenKendalaRowDetail(rowNum) {
+  const modalBox = document.getElementById('pt2KendalaModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Detail Baris #${rowNum}</div>
+      <button class="btn-ghost modal-close" id="pt2KendalaModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <a href="#" class="modal-back" id="pt2KendalaBackLink">&larr; Kembali ke daftar</a>
+    <div class="skeleton">Memuat detail (kolom A s/d AQ)...</div>
+  `;
+  document.getElementById('pt2KendalaModalCloseBtn').addEventListener('click', pt2CloseKendalaModal);
+  document.getElementById('pt2KendalaBackLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (pt2KendalaCurrentLabel) pt2OpenKendalaCategory(pt2KendalaCurrentLabel);
+  });
+
+  try {
+    const res = await fetch(`/api/pt2-row/${rowNum}/detail`);
+    const json = await res.json();
+    const body = document.querySelector('#pt2KendalaModalBox');
+    if (!json.ok) {
+      body.insertAdjacentHTML('beforeend', `<div class="flash error">${pt2Esc(json.error)}</div>`);
+      return;
+    }
+    const table = `
+      <table class="detail-table">
+        ${json.fields.map(f => `<tr><th>${pt2Esc(f.header)}</th><td>${pt2Esc(f.value) || '-'}</td></tr>`).join('')}
+      </table>
+    `;
+    body.querySelector('.skeleton').outerHTML = table;
+  } catch (e) {
+    modalBox.insertAdjacentHTML('beforeend', `<div class="flash error">Gagal memuat detail: ${e}</div>`);
+  }
+}
+
+function pt2CloseKendalaModal() {
+  document.getElementById('pt2KendalaModalOverlay').classList.remove('open');
+}
+document.getElementById('pt2KendalaModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'pt2KendalaModalOverlay') pt2CloseKendalaModal();
+});
+
+// ── Load ─────────────────────────────────────────────────────────────
+async function loadPt2Dashboard() {
+  document.getElementById('pt2PivotWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
+  document.getElementById('pt2KendalaGrid').innerHTML = '<div class="skeleton">Memuat data...</div>';
+  try {
+    const res = await fetch('/api/pt2-dashboard');
+    const json = await res.json();
+    if (!json.ok) {
+      document.getElementById('pt2PivotWrap').innerHTML = `<div class="flash error">${pt2Esc(json.error)}</div>`;
+      return;
+    }
+    pt2Cache = json.data;
+    pt2RenderPivotTable(pt2Cache);
+    pt2RenderKendala(pt2Cache);
+  } catch (e) {
+    document.getElementById('pt2PivotWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
+  }
+}
+
+loadPt2Dashboard();
+</script>
+{% endblock %}

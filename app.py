@@ -88,6 +88,30 @@ def api_pending_updates():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/pt2")
+def pt2_page():
+    return render_template("pt2.html")
+
+
+@app.route("/api/pt2-dashboard")
+def api_pt2_dashboard():
+    try:
+        data = sheets_service.get_pt2_dashboard_data()
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/pt2-row/<int:row_num>/detail")
+def api_pt2_row_detail(row_num):
+    """Kolom A s/d AQ untuk satu baris — dipakai oleh panel 'Kendala'."""
+    try:
+        fields = sheets_service.get_pt2_row_detail(row_num)
+        return jsonify({"ok": True, "fields": fields})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/aging")
 def aging_page():
     return render_template("aging.html")
