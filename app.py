@@ -90,7 +90,12 @@ def api_pending_updates():
 
 @app.route("/pt2")
 def pt2_page():
-    return render_template("pt2.html")
+    from jinja2 import TemplateNotFound
+    try:
+        return render_template("pt2.html")
+    except TemplateNotFound as e:
+        app.logger.exception("PT2 template missing")
+        return (f"Template not found: {e}. Check templates folder and filename casing."), 500
 
 
 @app.route("/api/pt2-dashboard")
