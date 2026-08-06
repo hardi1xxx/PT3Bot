@@ -31,10 +31,6 @@
               &#128276;
               <span class="notif-badge" id="notifBadge" style="display:none;">0</span>
             </button>
-            <div class="notif-panel" id="notifPanel" style="display:none;">
-              <div class="notif-panel-header">LOP belum update hari ini</div>
-              <div class="notif-panel-list" id="notifList"><div class="skeleton">Memuat...</div></div>
-            </div>
           </div>
           <div class="logo-badge telkom">
             <img src="{{ url_for('static', filename='logo-telkomakses.png') }}" alt="Telkom Akses"
@@ -62,92 +58,137 @@
     </div>
   </div>
 
+  <!-- Notifikasi: modal besar, list -> detail (bukan dropdown kecil lagi) -->
+  <div class="modal-overlay" id="notifModalOverlay">
+    <div class="modal-box" id="notifModalBox" style="max-width:640px;"></div>
+  </div>
+
   <script>
   (function () {
     const bellBtn = document.getElementById('notifBellBtn');
-    const panel = document.getElementById('notifPanel');
     const badge = document.getElementById('notifBadge');
-    const list = document.getElementById('notifList');
+    const overlay = document.getElementById('notifModalOverlay');
+    const box = document.getElementById('notifModalBox');
+    let notifItems = [];
 
     function escN(s) {
       return (s === null || s === undefined ? '' : String(s))
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    function closePanel() { panel.style.display = 'none'; }
-    function openPanel() { panel.style.display = 'block'; }
+    function closeModal() { overlay.classList.remove('open'); }
 
     function goToRow(rowNum) {
+      closeModal();
       const onDashboard = window.location.pathname === '/';
       if (onDashboard && typeof openRow === 'function') {
         openRow(rowNum);
         const panelEl = document.getElementById('updatePanel');
         if (panelEl) panelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        closePanel();
       } else {
         window.location.href = '/?openRow=' + rowNum;
       }
+    }
+
+    function renderListView() {
+      if (!notifItems.length) {
+        box.innerHTML = `
+          <div class="modal-header">
+            <div class="modal-title">LOP Belum Update Hari Ini</div>
+            <button class="btn-ghost modal-close" id="notifCloseBtn">Tutup &#10005;</button>
+          </div>
+          <div class="empty-state">Semua sudah update hari ini &#127881;</div>
+        `;
+        document.getElementById('notifCloseBtn').addEventListener('click', closeModal);
+        return;
+      }
+
+      const groups = [];
+      let lastBranch = null;
+      notifItems.forEach(it => {
+        if (it.branch !== lastBranch) { groups.push({ branch: it.branch, items: [] }); lastBranch = it.branch; }
+        groups[groups.length - 1].items.push(it);
+      });
+
+      box.innerHTML = `
+        <div class="modal-header">
+          <div class="modal-title">LOP Belum Update Hari Ini <span class="badge">${notifItems.length}</span></div>
+          <button class="btn-ghost modal-close" id="notifCloseBtn">Tutup &#10005;</button>
+        </div>
+        <div class="loc-list" style="margin-top:10px;" id="notifListBody">
+          ${groups.map(g => `
+            <div class="notif-branch-label">${escN(g.branch)}</div>
+            ${g.items.map(it => `
+              <div class="result-item" data-row="${it.row}">
+                <div class="ihld">${escN(it.ihld) || '(tanpa IHLD)'} — ${escN(it.lokasi) || '-'}</div>
+                <div class="meta">
+                  <span class="badge status">${escN(it.status_z)}</span>
+                  <span class="badge">${it.last_date ? 'terakhir ' + escN(it.last_date) : 'belum pernah diisi'}</span>
+                </div>
+              </div>
+            `).join('')}
+          `).join('')}
+        </div>
+      `;
+      document.getElementById('notifCloseBtn').addEventListener('click', closeModal);
+      document.getElementById('notifListBody').addEventListener('click', (e) => {
+        const item = e.target.closest('.result-item');
+        if (item) renderDetailView(parseInt(item.dataset.row, 10));
+      });
+    }
+
+    function renderDetailView(rowNum) {
+      const it = notifItems.find(x => x.row === rowNum);
+      if (!it) return;
+      box.innerHTML = `
+        <div class="modal-header">
+          <div class="modal-title">${escN(it.ihld) || '(tanpa IHLD)'} — ${escN(it.lokasi) || '-'}</div>
+          <button class="btn-ghost modal-close" id="notifCloseBtn">Tutup &#10005;</button>
+        </div>
+        <a href="#" class="modal-back" id="notifBackLink">&larr; Kembali ke daftar</a>
+        <table class="detail-table" style="margin-top:10px;">
+          <tr><th>Batch</th><td>${escN(it.batch)}</td></tr>
+          <tr><th>Branch</th><td>${escN(it.branch)}</td></tr>
+          <tr><th>Nama Mitra</th><td>${escN(it.mitra) || '-'}</td></tr>
+          <tr><th>Status (Z)</th><td>${escN(it.status_z)}</td></tr>
+          <tr><th>Sub Status (AA)</th><td>${escN(it.status_aa) || '-'}</td></tr>
+          <tr><th>Kolom dipantau</th><td>${escN(it.date_col)}</td></tr>
+          <tr><th>Tanggal terakhir</th><td>${it.last_date ? escN(it.last_date) : '<span style="color:var(--danger);">Belum pernah diisi</span>'}</td></tr>
+        </table>
+        <div style="margin-top:12px;">
+          <button type="button" id="notifUpdateBtn">Update Status</button>
+        </div>
+      `;
+      document.getElementById('notifCloseBtn').addEventListener('click', closeModal);
+      document.getElementById('notifBackLink').addEventListener('click', (e) => { e.preventDefault(); renderListView(); });
+      document.getElementById('notifUpdateBtn').addEventListener('click', () => goToRow(it.row));
     }
 
     async function loadNotifications() {
       try {
         const res = await fetch('/api/pending-updates');
         const json = await res.json();
-        if (!json.ok) {
-          list.innerHTML = `<div class="notif-empty">${escN(json.error)}</div>`;
-          return;
-        }
+        if (!json.ok) { notifItems = []; badge.style.display = 'none'; return; }
+        notifItems = json.items;
         if (json.count > 0) {
           badge.style.display = 'flex';
           badge.textContent = json.count > 99 ? '99+' : json.count;
         } else {
           badge.style.display = 'none';
         }
-        if (!json.items.length) {
-          list.innerHTML = '<div class="notif-empty">Semua sudah update hari ini &#127881;</div>';
-          return;
-        }
-        // Sudah terurut per branch dari backend — dikelompokkan dengan
-        // judul branch supaya kelihatan jelas sebagai daftar dropdown.
-        const groups = [];
-        let lastBranch = null;
-        json.items.forEach(it => {
-          if (it.branch !== lastBranch) { groups.push({ branch: it.branch, items: [] }); lastBranch = it.branch; }
-          groups[groups.length - 1].items.push(it);
-        });
-        list.innerHTML = groups.map(g => `
-          <div class="notif-branch-label">${escN(g.branch)}</div>
-          ${g.items.map(it => `
-            <div class="notif-item" data-row="${it.row}">
-              <div class="notif-item-info">
-                <div class="ihld">${escN(it.ihld) || '(tanpa IHLD)'} — ${escN(it.lokasi) || '-'}</div>
-                <div class="meta">${escN(it.status_z)} &middot; terakhir ${escN(it.last_date)}</div>
-              </div>
-              <button type="button" class="btn-sm">Edit</button>
-            </div>
-          `).join('')}
-        `).join('');
       } catch (e) {
-        list.innerHTML = `<div class="notif-empty">Gagal memuat: ${e}</div>`;
+        notifItems = [];
       }
     }
 
-    list.addEventListener('click', (e) => {
-      const item = e.target.closest('.notif-item');
-      if (item) goToRow(parseInt(item.dataset.row, 10));
+    bellBtn.addEventListener('click', () => {
+      overlay.classList.add('open');
+      renderListView();
     });
-
-    bellBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (panel.style.display === 'none' || !panel.style.display) openPanel();
-      else closePanel();
-    });
-    document.addEventListener('click', (e) => {
-      if (!document.getElementById('notifWrap').contains(e.target)) closePanel();
-    });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
     loadNotifications();
-    setInterval(loadNotifications, 180000); // refresh tiap 3 menit
+    setInterval(loadNotifications, 180000); // refresh badge tiap 3 menit
   })();
   </script>
 </body>

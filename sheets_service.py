@@ -435,9 +435,9 @@ def get_aging_data():
 def get_pending_updates():
     """
     LOP yang statusnya (kolom Z) ada di config.NOTIFY_STATUS_DATE_MAP dan
-    kolom tanggal pasangannya (AR/AT/AV/AX/AZ) BUKAN hari ini. Kolom yang
-    masih kosong (belum pernah diisi sama sekali) dilewati — dianggap
-    lokasi baru, bukan "belum update".
+    kolom tanggal pasangannya (AR/AT/AV/AX/AZ) BUKAN hari ini — TERMASUK
+    kalau kolomnya masih kosong sama sekali (dulu dilewati, sekarang tetap
+    ditampilkan, ditandai "Belum pernah diisi").
 
     Perbandingan tanggal pakai string exact-match ke format "%d/%m/%y",
     karena kolom-kolom ini SELALU ditulis oleh update_status() di app ini
@@ -450,10 +450,12 @@ def get_pending_updates():
     date_cols = sorted(set(config.NOTIFY_STATUS_DATE_MAP.values()))
     idx = {
         "status_z": _col_to_index(config.COL_STATUS_Z) - 1,
+        "status_aa": _col_to_index(config.COL_STATUS_AA) - 1,
         "ihld": _col_to_index(config.COL_IHLD) - 1,
         "lokasi": _col_to_index(config.COL_LOKASI) - 1,
         "batch": _col_to_index(config.COL_BATCH) - 1,
         "branch": _col_to_index(config.COL_BRANCH) - 1,
+        "mitra": _col_to_index(config.COL_MITRA) - 1,
     }
     for col in date_cols:
         idx[f"date_{col}"] = _col_to_index(col) - 1
@@ -474,8 +476,6 @@ def get_pending_updates():
             continue
 
         date_val = cell(f"date_{date_col}")
-        if not date_val:
-            continue  # kosong -> lokasi baru, wajar, dilewati
         if date_val == today_str:
             continue  # sudah update hari ini
 
@@ -485,9 +485,11 @@ def get_pending_updates():
             "lokasi": cell("lokasi"),
             "batch": cell("batch") or "(Tanpa Batch)",
             "branch": cell("branch") or "(Tanpa Branch)",
+            "mitra": cell("mitra"),
             "status_z": status_raw,
+            "status_aa": cell("status_aa"),
             "date_col": date_col,
-            "last_date": date_val,
+            "last_date": date_val,  # bisa string kosong = belum pernah diisi
         })
 
     pending.sort(key=lambda r: (r["branch"], r["batch"]))
