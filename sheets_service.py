@@ -430,3 +430,65 @@ def get_aging_data():
         "critical_days": config.AGING_CRITICAL_DAYS,
         "rows": rows,
     }
+
+
+def get_pending_updates():
+    """
+    LOP yang statusnya (kolom Z) ada di config.NOTIFY_STATUS_DATE_MAP dan
+    kolom tanggal pasangannya (AR/AT/AV/AX/AZ) BUKAN hari ini. Kolom yang
+    masih kosong (belum pernah diisi sama sekali) dilewati — dianggap
+    lokasi baru, bukan "belum update".
+
+    Perbandingan tanggal pakai string exact-match ke format "%d/%m/%y",
+    karena kolom-kolom ini SELALU ditulis oleh update_status() di app ini
+    dengan format itu persis — jadi tidak perlu parsing tanggal yang berat.
+    """
+    ws = get_worksheet()
+    all_values = ws.get_all_values()
+    today_str = datetime.date.today().strftime("%d/%m/%y")
+
+    date_cols = sorted(set(config.NOTIFY_STATUS_DATE_MAP.values()))
+    idx = {
+        "status_z": _col_to_index(config.COL_STATUS_Z) - 1,
+        "ihld": _col_to_index(config.COL_IHLD) - 1,
+        "lokasi": _col_to_index(config.COL_LOKASI) - 1,
+        "batch": _col_to_index(config.COL_BATCH) - 1,
+        "branch": _col_to_index(config.COL_BRANCH) - 1,
+    }
+    for col in date_cols:
+        idx[f"date_{col}"] = _col_to_index(col) - 1
+
+    data_rows = all_values[config.DATA_START_ROW - 1:]
+    pending = []
+
+    for offset, row in enumerate(data_rows):
+        row_num = config.DATA_START_ROW + offset
+
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+
+        status_raw = cell("status_z")
+        date_col = config.NOTIFY_STATUS_DATE_MAP.get(status_raw)
+        if not date_col:
+            continue
+
+        date_val = cell(f"date_{date_col}")
+        if not date_val:
+            continue  # kosong -> lokasi baru, wajar, dilewati
+        if date_val == today_str:
+            continue  # sudah update hari ini
+
+        pending.append({
+            "row": row_num,
+            "ihld": cell("ihld"),
+            "lokasi": cell("lokasi"),
+            "batch": cell("batch") or "(Tanpa Batch)",
+            "branch": cell("branch") or "(Tanpa Branch)",
+            "status_z": status_raw,
+            "date_col": date_col,
+            "last_date": date_val,
+        })
+
+    pending.sort(key=lambda r: (r["branch"], r["batch"]))
+    return pending

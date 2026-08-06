@@ -591,5 +591,20 @@ async function saveUpdate(rowNum) {
 }
 
 loadDashboard();
+
+// Kalau datang dari notifikasi di halaman lain (?openRow=123), langsung
+// buka panel update untuk baris itu dan scroll ke sana.
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const openRowParam = params.get('openRow');
+  if (!openRowParam) return;
+  const rowNum = parseInt(openRowParam, 10);
+  if (!rowNum) return;
+  openRow(rowNum);
+  setTimeout(() => {
+    const panelEl = document.getElementById('updatePanel');
+    if (panelEl) panelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 300);
+})();
 </script>
 {% endblock %}

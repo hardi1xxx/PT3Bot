@@ -26,6 +26,16 @@
           <p class="topbar-sub">{% block page_sub %}Monitoring status fisik & update lapangan{% endblock %}</p>
         </div>
         <div class="topbar-logos">
+          <div class="notif-wrap" id="notifWrap">
+            <button type="button" class="notif-bell" id="notifBellBtn" title="LOP belum update hari ini">
+              &#128276;
+              <span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+            </button>
+            <div class="notif-panel" id="notifPanel">
+              <div class="notif-panel-header">LOP belum update hari ini</div>
+              <div class="notif-panel-list" id="notifList"><div class="skeleton">Memuat...</div></div>
+            </div>
+          </div>
           <div class="logo-badge telkom">
             <img src="{{ url_for('static', filename='logo-telkomakses.png') }}" alt="Telkom Akses"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
@@ -51,5 +61,79 @@
       </main>
     </div>
   </div>
+
+  <script>
+  (function () {
+    const bellBtn = document.getElementById('notifBellBtn');
+    const panel = document.getElementById('notifPanel');
+    const badge = document.getElementById('notifBadge');
+    const list = document.getElementById('notifList');
+
+    function escN(s) {
+      return (s === null || s === undefined ? '' : String(s))
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function goToRow(rowNum) {
+      const onDashboard = window.location.pathname === '/';
+      if (onDashboard && typeof openRow === 'function') {
+        openRow(rowNum);
+        const panelEl = document.getElementById('updatePanel');
+        if (panelEl) panelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        panel.classList.remove('open');
+      } else {
+        window.location.href = '/?openRow=' + rowNum;
+      }
+    }
+
+    async function loadNotifications() {
+      try {
+        const res = await fetch('/api/pending-updates');
+        const json = await res.json();
+        if (!json.ok) {
+          list.innerHTML = `<div class="notif-empty">${escN(json.error)}</div>`;
+          return;
+        }
+        if (json.count > 0) {
+          badge.style.display = 'flex';
+          badge.textContent = json.count > 99 ? '99+' : json.count;
+        } else {
+          badge.style.display = 'none';
+        }
+        if (!json.items.length) {
+          list.innerHTML = '<div class="notif-empty">Semua sudah update hari ini &#127881;</div>';
+          return;
+        }
+        list.innerHTML = json.items.map(it => `
+          <div class="notif-item" data-row="${it.row}">
+            <div class="notif-item-info">
+              <div class="ihld">${escN(it.ihld) || '(tanpa IHLD)'} — ${escN(it.lokasi) || '-'}</div>
+              <div class="meta">${escN(it.status_z)} &middot; terakhir ${escN(it.last_date)} &middot; ${escN(it.branch)}</div>
+            </div>
+            <button type="button" class="btn-sm">Edit</button>
+          </div>
+        `).join('');
+      } catch (e) {
+        list.innerHTML = `<div class="notif-empty">Gagal memuat: ${e}</div>`;
+      }
+    }
+
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.notif-item');
+      if (item) goToRow(parseInt(item.dataset.row, 10));
+    });
+
+    bellBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      panel.classList.toggle('open');
+    });
+    document.addEventListener('click', (e) => {
+      if (!document.getElementById('notifWrap').contains(e.target)) panel.classList.remove('open');
+    });
+
+    loadNotifications();
+    setInterval(loadNotifications, 180000); // refresh tiap 3 menit
+  })();
+  </script>
 </body>
 </html>

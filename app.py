@@ -79,6 +79,15 @@ def api_row_update(row_num):
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/pending-updates")
+def api_pending_updates():
+    try:
+        items = sheets_service.get_pending_updates()
+        return jsonify({"ok": True, "count": len(items), "items": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/aging")
 def aging_page():
     return render_template("aging.html")

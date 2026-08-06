@@ -128,6 +128,18 @@ AGING_FIXED_END_COLUMNS = {
     "10. BAST":        "BD",
 }
 
+# ── Notifikasi "belum update hari ini" ─────────────────────────────────
+# Status Z yang dipantau + kolom tanggal pasangannya. Kalau status LOP ada
+# di sini dan kolom tanggalnya BUKAN hari ini (dan tidak kosong — kosong
+# dianggap lokasi baru, wajar, tidak dihitung), LOP itu muncul di notifikasi.
+NOTIFY_STATUS_DATE_MAP = {
+    "0.1 SURVEI":     "AR",
+    "01. PERIJINAN":  "AT",
+    "02. PERSIAPAN":  "AV",
+    "03. MATDEV":     "AX",
+    "04. INSTALASI":  "AZ",
+}
+
 # ── Env / secrets ──────────────────────────────────────────────────────
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
