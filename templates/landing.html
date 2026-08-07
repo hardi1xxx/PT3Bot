@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PT3 Analytics — Real-time Field Status Intelligence</title>
+  <meta name="description" content="SaaS analytics dashboard for monitoring field status, order flow, and installation progress in real time.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='landing.css') }}">
+  <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+</head>
+<body>
+  <!-- Ambient orbs -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+
+  <!-- ── Navbar ─────────────────────────────────────────────────── -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#top" class="brand">
+        <span class="logo-badge">PT3</span>
+        <span>PT3 Analytics<small>Real-time Field Intelligence</small></span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#product">Product</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#testimonials">Customers</a>
+      </div>
+      <div class="nav-cta">
+        <a href="#pricing" class="btn btn-ghost">Sign in</a>
+        <a href="#cta" class="btn btn-primary">Get started</a>
+      </div>
+    </div>
+  </nav>
+
+  <a id="top"></a>
+
+  <!-- ── Hero ───────────────────────────────────────────────────── -->
+  <header class="hero" id="top">
+    <div class="wrap">
+      <span class="hero-eyebrow"><span class="dot"></span> Live field operations, one dashboard</span>
+      <h1>See every project status in <span class="grad-text">real&nbsp;time</span>.</h1>
+      <p class="lead">
+        PT3 Analytics turns messy spreadsheets into a clear, shareable command
+        center — tracking orders, ports, and installation progress the moment
+        your field team updates them.
+      </p>
+      <div class="hero-ctas">
+        <a href="#cta" class="btn btn-primary btn-lg">Start free trial</a>
+        <a href="#product" class="btn btn-ghost btn-lg">&#9655; Watch demo</a>
+      </div>
+      <div class="hero-note">No credit card required &middot; Set up in under 5 minutes</div>
+    </div>
+
+    <!-- Live real-time chart in a glass card -->
+    <div class="wrap">
+      <div class="hero-chart-card">
+        <div class="chart-head">
+          <div class="title">Installation progress &mdash; live</div>
+          <div class="live"><span class="pulse"></span> LIVE</div>
+        </div>
+        <div class="chart-stats">
+          <div class="chart-stat"><div class="k">Active locations</div><div class="v"><span id="hrActive">—</span></div></div>
+          <div class="chart-stat"><div class="k">Finish Installed</div><div class="v up"><span id="hrDone">—</span></div></div>
+          <div class="chart-stat"><div class="k">Ports deployed</div><div class="v"><span id="hrPorts">—</span></div></div>
+          <div class="chart-stat"><div class="k">Total orders</div><div class="v"><span id="hrTotal">—</span></div></div>
+        </div>
+        <canvas id="heroChart"></canvas>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Trust badges / logos ───────────────────────────────────── -->
+  <section class="trust">
+    <div class="wrap">
+      <div class="label">Trusted by operations teams at</div>
+      <div class="trust-row">
+        <div class="trust-item"><span class="ic">TA</span> Telkom Akses</div>
+        <div class="trust-item"><span class="ic">IX</span> Infranexia</div>
+        <div class="trust-item"><span class="ic">NK</span> Nusantara Connect</div>
+        <div class="trust-item"><span class="ic">FT</span> FiberTech Networks</div>
+        <div class="trust-item"><span class="ic">DL</span> Digital Link Asia</div>
+        <div class="trust-item"><span class="ic">PU</span> Putra Nusa Infra</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Animated stats strip ───────────────────────────────────── -->
+  <section class="stats">
+    <div class="wrap">
+      <div class="stats-grid" id="statCounters">
+        <div class="stat"><div class="num" data-count="12840">0</div><div class="lbl">Locations monitored</div></div>
+        <div class="stat"><div class="num" data-count="540">0</div><div class="lbl">Active field crews</div></div>
+        <div class="stat"><div class="num" data-count="99.98" data-dec="2">0</div><div class="lbl">Uptime SLA</div></div>
+        <div class="stat"><div class="num" data-count="92" data-dec="0">0</div><div class="lbl">% On-time installs</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Features ───────────────────────────────────────────────── -->
+  <section class="sec" id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="tag">Features</span>
+        <h2>Everything your operations team needs</h2>
+        <p>Purpose-built to turn daily status updates into decisions — no manual pivoting, endless sheets, or stale numbers.</p>
+      </div>
+      <div class="feature-grid">
+        <div class="fcard">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg></div>
+          <h3>Real-time dashboards</h3>
+          <p>Live-updating KPIs and charts reflect field updates the moment they're saved — no refresh required.</p>
+        </div>
+        <div class="fcard">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 14h6"/></svg></div>
+          <h3>Spreadsheet sync</h3>
+          <p>Connect your existing Google Sheets. Changes flow both ways automatically, keeping everyone in lockstep.</p>
+        </div>
+        <div class="fcard">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h6"/><path d="M9 12h6"/><path d="M9 18h6"/><rect x="4" y="3" width="16" height="18" rx="2"/></svg></div>
+          <h3>Automated reporting</h3>
+          <p>Group by branch, batch, or status and share clean summaries instead of raw sheets filled with edge cases.</p>
+        </div>
+        <div class="fcard">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+          <h3>Status workflows</h3>
+          <p>Track the full journey from perijinan to finish instalasi with structured statuses and audit-ready notes.</p>
+        </div>
+        <div class="fcard">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V16a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-1.3A7 7 0 0 0 12 2z"/><path d="M9 22h6"/></svg></div>
+          <h3>Smart alerts</h3>
+          <p>Get notified the moment a location falls behind, hasn't been updated, or hits a drop in the funnel.</p>
+        </div>
+        <div class="fcard">
+          <div class="f-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="6" height="14" rx="1"/><rect x="11" y="8" width="6" height="11" rx="1"/><rect x="19" y="3" width="6" height="16" rx="1"/></svg></div>
+          <h3>Secure &amp; role-based</h3>
+          <p>Granular access controls keep confidential field data in the right hands across teams and partners.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Product / dashboard preview ────────────────────────────── -->
+  <section class="preview" id="product">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="tag">Product</span>
+        <h2>A command center your field team will actually use</h2>
+        <p>From high-level KPIs to row-level updates, every layer of your operation is one glance away.</p>
+      </div>
+      <div class="preview-card">
+        <div class="pv-browser"><i></i><i></i><i></i></div>
+        <div class="pv-grid">
+          <div class="pv-main">
+            <div class="pv-kpis">
+              <div class="pv-kpi"><div class="k">Total Orders</div><div class="v">1,248</div></div>
+              <div class="pv-kpi"><div class="k">Active</div><div class="v">312</div></div>
+              <div class="pv-kpi"><div class="k">Finish Instalasi</div><div class="v up">86%</div></div>
+            </div>
+            <div class="pv-bar-row"><span class="nm">Perijinan</span><div class="track"><div class="fill" style="width:22%;background:linear-gradient(90deg,#e30613,#ff5f57)"></div></div><span style="font-size:.74rem;color:var(--ink-soft)">275</span></div>
+            <div class="pv-bar-row"><span class="nm">Persiapan</span><div class="track"><div class="fill" style="width:18%;background:linear-gradient(90deg,#d97706,#ffc14d)"></div></div><span style="font-size:.74rem;color:var(--ink-soft)">226</span></div>
+            <div class="pv-bar-row"><span class="nm">Matdev</span><div class="track"><div class="fill" style="width:29%;background:linear-gradient(90deg,#29467a,#7b8fd6)"></div></div><span style="font-size:.74rem;color:var(--ink-soft)">365</span></div>
+            <div class="pv-bar-row"><span class="nm">Instalasi</span><div class="track"><div class="fill" style="width:16%;background:linear-gradient(90deg,#0ea5e9,#67d6ff)"></div></div><span style="font-size:.74rem;color:var(--ink-soft)">202</span></div>
+            <div class="pv-bar-row"><span class="nm">Finish</span><div class="track"><div class="fill" style="width:35%;background:linear-gradient(90deg,#16a34a,#7bffb0)"></div></div><span style="font-size:.74rem;color:var(--ink-soft)">436</span></div>
+          </div>
+          <div class="pv-side">
+            <div class="pv-line"><span class="st">Branch &middot; Makassar</span><span class="val g">+18%</span></div>
+            <div class="pv-line"><span class="st">Ports deployed today</span><span class="val">1,024</span></div>
+            <div class="pv-line"><span class="st">Pending updates</span><span class="val r">14</span></div>
+            <div class="pv-line"><span class="st">Drop rate</span><span class="val r">3.2%</span></div>
+            <div class="pv-line"><span class="st">Earliest alert</span><span class="val">2h ago</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Pricing ────────────────────────────────────────────────── -->
+  <section class="sec" id="pricing">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="tag">Pricing</span>
+        <h2>Simple pricing that scales with you</h2>
+        <p>Start free, upgrade when your team grows. Every plan includes core real-time analytics.</p>
+      </div>
+      <div class="pricing-grid">
+        <div class="price-card">
+          <h3>Starter</h3>
+          <div class="desc">For small teams getting organized.</div>
+          <div class="price"><span class="amount"><span class="cur">$0</span><span class="per">/month</span></span></div>
+          <ul>
+            <li><span class="tick">&#10003;</span> 1 dashboard workspace</li>
+            <li><span class="tick">&#10003;</span> Up to 500 locations</li>
+            <li><span class="tick">&#10003;</span> Real-time charts</li>
+            <li><span class="tick">&#10003;</span> Email support</li>
+            <li class="off"><span class="tick">&#10005;</span> Role-based access</li>
+            <li class="off"><span class="tick">&#10005;</span> Smart alerts</li>
+          </ul>
+          <a href="#cta" class="btn btn-ghost">Start free</a>
+        </div>
+
+        <div class="price-card hot">
+          <span class="price-badge">Most popular</span>
+          <h3>Professional</h3>
+          <div class="desc">For growing operations teams.</div>
+          <div class="price"><span class="amount"><span class="cur">$49</span><span class="per">/month</span></span></div>
+          <ul>
+            <li><span class="tick">&#10003;</span> Unlimited workspaces</li>
+            <li><span class="tick">&#10003;</span> Up to 10,000 locations</li>
+            <li><span class="tick">&#10003;</span> Real-time dashboards</li>
+            <li><span class="tick">&#10003;</span> Role-based access</li>
+            <li><span class="tick">&#10003;</span> Smart alerts &amp; notifications</li>
+            <li><span class="tick">&#10003;</span> Priority support</li>
+          </ul>
+          <a href="#cta" class="btn btn-primary">Start 14-day trial</a>
+        </div>
+
+        <div class="price-card">
+          <h3>Enterprise</h3>
+          <div class="desc">For multi-region deployments.</div>
+          <div class="price"><span class="amount"><span class="cur">Custom</span></span></div>
+          <ul>
+            <li><span class="tick">&#10003;</span> Everything in Professional</li>
+            <li><span class="tick">&#10003;</span> Unlimited locations</li>
+            <li><span class="tick">&#10003;</span> SSO &amp; audit logs</li>
+            <li><span class="tick">&#10003;</span> Dedicated account manager</li>
+            <li><span class="tick">&#10003;</span> SLA &amp; custom onboarding</li>
+            <li class="off"><span class="tick">&#10005;</span></li>
+          </ul>
+          <a href="#cta" class="btn btn-ghost">Contact sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Testimonials ───────────────────────────────────────────── -->
+  <section class="sec" id="testimonials">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="tag">Customers</span>
+        <h2>Loved by operations leaders</h2>
+      </div>
+      <div class="testimonial-grid">
+        <div class="tcard">
+          <div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+          <p class="quote">&ldquo;We replaced three weekly report spreadsheets with one live dashboard. Stand-ups now start with facts, not guesswork.&rdquo;</p>
+          <div class="who"><div class="avatar">RA</div><div><b>Rina Amelia</b><span>Head of Field Ops, PT3</span></div></div>
+        </div>
+        <div class="tcard">
+          <div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+          <p class="quote">&ldquo;The real-time sync means our field crews and the back office finally see the exact same numbers, instantly.&rdquo;</p>
+          <div class="who"><div class="avatar">DS</div><div><b>Dedi Santoso</b><span>Regional Manager</span></div></div>
+        </div>
+        <div class="tcard">
+          <div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+          <p class="quote">&ldquo;Setup took minutes. The smart alerts alone saved us from missing a critical delay on a major rollout.&rdquo;</p>
+          <div class="who"><div class="avatar">MW</div><div><b>Melda Wijaya</b><span>Project Director</span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CTA ────────────────────────────────────────────────────── -->
+  <section class="cta-band" id="cta">
+    <div class="wrap">
+      <div class="cta-card">
+        <h2>Ready to see your operations clearly?</h2>
+        <p>Join operations teams using PT3 Analytics to monitor every location, branch, and install in real time.</p>
+        <div class="hero-ctas" style="justify-content:center;">
+          <a href="#" class="btn btn-primary btn-lg">Start free trial</a>
+          <a href="#pricing" class="btn btn-ghost btn-lg">Compare plans</a>
+        </div>
+        <div class="hero-note">Free 14-day Pro trial &middot; Cancel anytime</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ─────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <span class="copy">&copy; 2024 PT3 Analytics. All rights reserved.</span>
+      <div class="links">
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Security</a>
+        <a href="#">Contact</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      // ── Animated counters ───────────────────────────────────
+      function animateCounters() {
+        var els = document.querySelectorAll('#statCounters .num');
+        els.forEach(function (el) {
+          var target = parseFloat(el.dataset.count);
+          var dec = parseInt(el.dataset.dec || '0', 10);
+          var dur = 1400, start = null;
+          function step(ts) {
+            if (!start) start = ts;
+            var p = Math.min((ts - start) / dur, 1);
+            var eased = 1 - Math.pow(1 - p, 3);
+            var val = (target * eased).toFixed(dec).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            if (!dec) val = val.split('.')[0];
+            // For 99.98 keep suffix
+            el.textContent = val + (el.parentElement.querySelector('.lbl').textContent.indexOf('Uptime') > -1 ? '%' : '');
+            if (p < 1) requestAnimationFrame(step);
+          }
+          requestAnimationFrame(step);
+        });
+      }
+
+      var statSeen = false;
+      function onScroll() {
+        var els = document.querySelector('#statCounters');
+        if (els && !statSeen) {
+          var r = els.getBoundingClientRect();
+          if (r.top < window.innerHeight - 60) { statSeen = true; animateCounters(); }
+        }
+      }
+      window.addEventListener('scroll', onScroll);
+      onScroll();
+
+      // ── Hero live chart (simulated real-time) ───────────────
+      var ctx = document.getElementById('heroChart');
+      if (!ctx) return;
+      var labels = [], data = [];
+      for (var i = 0; i < 20; i++) {
+        labels.push(i < 10 ? '' : ('W' + Math.min(i, 18)));
+        data.push(30 + Math.round(Math.sin(i / 3) * 14) + i * 2);
+      }
+      var chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Active locations',
+            data: data,
+            borderColor: '#4f7dff',
+            backgroundColor: 'rgba(79,125,255,0.18)',
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+            pointBackgroundColor: '#8fb0ff',
+            borderWidth: 3,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: false, grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#aab8d4', precision: 0 } },
+            x: { grid: { display: false }, ticks: { color: '#aab8d4' } }
+          }
+        }
+      });
+
+      // Live-ish updates
+      var i = 20;
+      setInterval(function () {
+        var last = data[data.length - 1];
+        var n = Math.max(10, last + Math.round(Math.random() * 22 - 11));
+        data.push(n);
+        labels.push('W' + (i % 24));
+        data.shift(); labels.shift();
+        chart.update('none');
+
+        // update the headline KPI numbers too
+        document.getElementById('hrActive').textContent = (120 + Math.round(Math.random() * 40)).toLocaleString();
+        document.getElementById('hrDone').textContent = (860 + Math.round(Math.random() * 90)).toLocaleString();
+        document.getElementById('hrPorts').textContent = (1240 + Math.round(Math.random() * 120)).toLocaleString();
+        document.getElementById('hrTotal').textContent = (1520 + Math.round(Math.random() * 80)).toLocaleString();
+        i++;
+      }, 2200);
+    })();
+  </script>
+</body>
+</html>

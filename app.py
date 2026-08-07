@@ -15,6 +15,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/landing")
+def landing():
+    return render_template("landing.html")
+
+
 @app.route("/api/search")
 def api_search():
     q = request.args.get("q", "")
