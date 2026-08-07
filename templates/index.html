@@ -510,6 +510,10 @@ document.getElementById('q').addEventListener('input', (e) => {
   if (dashboardCache) renderLocList(getFilteredRows().filter(r => r.status), e.target.value);
 });
 
+let currentExtraValues = {};
+let currentExtraFieldsByStatus = {};
+let currentExtraFieldMeta = {};
+
 async function openRow(rowNum) {
   selectedRow = rowNum;
   if (dashboardCache) renderLocList(getFilteredRows().filter(r => r.status), document.getElementById('q').value);
@@ -522,7 +526,11 @@ async function openRow(rowNum) {
     const json = await res.json();
     if (!json.ok) { panel.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
 
-    const { snapshot, label, z_options, aa_options } = json;
+    const { snapshot, label, z_options, aa_options, extra_fields_by_status, extra_field_meta } = json;
+    currentExtraValues = snapshot.extra_fields || {};
+    currentExtraFieldsByStatus = extra_fields_by_status || {};
+    currentExtraFieldMeta = extra_field_meta || {};
+
     panel.innerHTML = `
       <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${esc(label.ihld)} · ${esc(label.lokasi)}</div>
       <div style="margin-bottom: 10px;">
@@ -539,7 +547,7 @@ async function openRow(rowNum) {
       ` : ''}
       <div class="field" style="margin-top:14px;">
         <label for="status_z">Status (kolom Z)</label>
-        <select id="status_z">
+        <select id="status_z" onchange="renderExtraFields(this.value)">
           <option value="">-- pilih status --</option>
           ${z_options.map(o => `<option value="${o}" ${o === snapshot.status_z ? 'selected' : ''}>${o}</option>`).join('')}
         </select>
@@ -551,6 +559,7 @@ async function openRow(rowNum) {
           ${aa_options.map(o => `<option value="${o}" ${o === snapshot.status_aa ? 'selected' : ''}>${o}</option>`).join('')}
         </select>
       </div>
+      <div id="extraFieldsContainer"></div>
       <div class="field">
         <label for="note_text">Keterangan update</label>
         <textarea id="note_text" placeholder="cth: penarikan kabel selesai 80%..."></textarea>
@@ -559,9 +568,42 @@ async function openRow(rowNum) {
       <button onclick="saveUpdate(${rowNum})">Simpan Update</button>
       &nbsp; <a href="#" onclick="document.getElementById('q').focus(); return false;">&larr; Cari lagi</a>
     `;
+    renderExtraFields(snapshot.status_z);
   } catch (e) {
     panel.innerHTML = `<div class="flash error">Gagal memuat baris: ${e}</div>`;
   }
+}
+
+// Field tambahan (BL-BQ) muncul tergantung status yang DIPILIH (bukan
+// status tersimpan) — jadi ganti dropdown Status langsung mengganti field
+// yang tampil. Selalu di-prefill dari nilai yang sudah ada di sheet,
+// supaya (mis.) Jumlah ODP/Port yang sudah diisi saat Finish Instalasi
+// otomatis kelihatan lagi saat status diganti ke Golive.
+function renderExtraFields(statusZ) {
+  const container = document.getElementById('extraFieldsContainer');
+  if (!container) return;
+  const keys = currentExtraFieldsByStatus[statusZ] || [];
+  if (!keys.length) { container.innerHTML = ''; return; }
+
+  container.innerHTML = `
+    <div class="card" style="background:var(--panel-alt); margin: 4px 0 14px; padding: 12px;">
+      <div style="font-size:0.78rem; font-weight:700; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.03em;">
+        Data tambahan untuk ${esc(statusZ)}
+      </div>
+      ${keys.map(key => {
+        const meta = currentExtraFieldMeta[key] || {};
+        const value = currentExtraValues[key] || '';
+        const inputType = meta.type === 'number' ? 'text' : (meta.type === 'currency' ? 'text' : 'text');
+        return `
+          <div class="field">
+            <label for="extra_${key}">${esc(meta.label || key)}${meta.type === 'currency' ? ' (Rp)' : ''} <span style="color:var(--muted); font-weight:400;">(opsional)</span></label>
+            <input type="${inputType}" id="extra_${key}" class="extra-field-input" data-key="${key}"
+                   placeholder="${esc(meta.placeholder || '')}" value="${esc(value)}">
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
 async function saveUpdate(rowNum) {
@@ -573,12 +615,17 @@ async function saveUpdate(rowNum) {
   if (!status_z) { msg.innerHTML = '<div class="flash error">Status (kolom Z) wajib dipilih.</div>'; return; }
   if (!note_text.trim()) { msg.innerHTML = '<div class="flash error">Keterangan tidak boleh kosong.</div>'; return; }
 
+  const extra_fields = {};
+  document.querySelectorAll('.extra-field-input').forEach(input => {
+    extra_fields[input.dataset.key] = input.value;
+  });
+
   msg.innerHTML = '<div class="skeleton">Menyimpan...</div>';
   try {
     const res = await fetch(`/api/row/${rowNum}/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status_z, status_aa, note_text }),
+      body: JSON.stringify({ status_z, status_aa, note_text, extra_fields }),
     });
     const json = await res.json();
     if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }

@@ -16,6 +16,42 @@ COL_STATUS_Z = "Z"    # Status Fisik (main status)
 COL_STATUS_AA = "AA"  # SUB Status Fisik (sub status)
 COL_KETERANGAN_AB = "AB"  # auto-merge formula, never written by the bot
 
+# ── Kolom tambahan BL-BQ (isian opsional, muncul tergantung status Z) ──
+COL_NILAI_PERIJINAN = "BL"  # rupiah
+COL_NILAI_BOQ = "BM"        # rupiah
+COL_IDSW = "BN"             # wajib ada '#', contoh: 9671760#9671766
+COL_ODP_GOLIVE = "BO"       # wajib ada '-' dan '/', contoh: FBE/D08/068 - FBE/D08/071
+COL_JUMLAH_ODP = "BP"       # angka saja
+COL_JUMLAH_PORT = "BQ"      # angka saja
+
+# Status Z -> field tambahan mana yang dimunculkan di form update.
+# Semua field ini OPSIONAL: kalau dikosongkan saat update, nilai lama di
+# sheet TIDAK ditimpa (beda dari kolom Z/AA/keterangan yang selalu ditulis).
+EXTRA_FIELDS_BY_STATUS = {
+    "01. PERIJINAN": ["nilai_perijinan", "nilai_boq"],
+    "05. FINISH INSTALASI": ["jumlah_odp", "jumlah_port"],
+    "06. GOLIVE": ["jumlah_odp", "jumlah_port", "idsw", "odp_golive"],
+}
+
+EXTRA_FIELD_COLUMNS = {
+    "nilai_perijinan": COL_NILAI_PERIJINAN,
+    "nilai_boq": COL_NILAI_BOQ,
+    "idsw": COL_IDSW,
+    "odp_golive": COL_ODP_GOLIVE,
+    "jumlah_odp": COL_JUMLAH_ODP,
+    "jumlah_port": COL_JUMLAH_PORT,
+}
+
+# Metadata per field supaya frontend tinggal render, tidak perlu hardcode.
+EXTRA_FIELD_META = {
+    "nilai_perijinan": {"label": "Nilai Perijinan", "col": COL_NILAI_PERIJINAN, "type": "currency", "placeholder": "misal: 5000000"},
+    "nilai_boq":       {"label": "Nilai BOQ", "col": COL_NILAI_BOQ, "type": "currency", "placeholder": "misal: 3500000"},
+    "idsw":            {"label": "IDSW", "col": COL_IDSW, "type": "text", "placeholder": "9671760#9671766"},
+    "odp_golive":      {"label": "ODP GOLIVE", "col": COL_ODP_GOLIVE, "type": "text", "placeholder": "FBE/D08/068 - FBE/D08/071"},
+    "jumlah_odp":      {"label": "Jumlah ODP", "col": COL_JUMLAH_ODP, "type": "number", "placeholder": "misal: 24"},
+    "jumlah_port":     {"label": "Jumlah Port", "col": COL_JUMLAH_PORT, "type": "number", "placeholder": "misal: 96"},
+}
+
 # ── Dashboard columns ───────────────────────────────────────────────────
 COL_ORDER = "A"    # 1 baris = 1 order -> dipakai untuk hitung Total Order
 COL_BATCH = "C"    # Batch, dipakai sebagai baris (row) pada tabel pivot
@@ -144,58 +180,6 @@ NOTIFY_STATUS_DATE_MAP = {
     "02. PERSIAPAN":  "AV",
     "03. MATDEV":     "AX",
     "04. INSTALASI":  "AZ",
-}
-
-# ══════════════════════════════════════════════════════════════════════
-# PT2 ("Detail PT2") — sheet & column mapping
-# ══════════════════════════════════════════════════════════════════════
-SHEET_NAME_PT2 = os.environ.get("SHEET_NAME_PT2", "Detail PT2")
-
-HEADER_ROW_PT2 = 2
-DATA_START_ROW_PT2 = 3
-
-PT2_COL_IHLD = "A"                  # ID IHLD -> 1 baris = 1 LOP
-PT2_COL_LOKASI = "B"                # Nama Lokasi
-PT2_COL_STATUS_WO = "G"             # Status WO
-PT2_COL_SOURCE_ORDER = "H"          # Source Order
-PT2_COL_BATCH = "D"                 # Batch
-PT2_COL_BRANCH = "J"                # BRANCH TA
-PT2_COL_REGIONAL = "L"              # REGIONAL TA
-PT2_COL_STATUS = "M"                # STATUS LOP -> status pekerjaan utama
-PT2_COL_KLASIFIKASI_CANCEL = "P"    # Klasifikasi Cancel -> kategori kendala
-PT2_COL_DETAIL_CANCEL = "Q"         # Detail Cancel -> alasan/detail kendala
-PT2_COL_ODP_GOLIVE = "U"            # ODP GOLIVE -> ditampilkan di daftar golive
-PT2_COL_FINAL_PORT = "AC"           # FINAL PORT -> dipakai untuk hitung Port
-PT2_COL_TGL_CLOSE_WO = "AE"         # TGL CLOSE WO -> Golive Hari Ini / bulan ini / Tanggal Golive
-
-PT2_DATE_FORMAT = "%d/%m/%Y"        # format tanggal di kolom AE
-
-# Urutan & label status pekerjaan (nilai kolom M / STATUS LOP)
-PT2_STATUSES = [
-    "0.DROP",
-    "0.KENDALA",
-    "1.DESIGN",
-    "2.APPROVAL",
-    "3.OGP DEPLOY",
-    "5.GOLIVE",
-]
-
-PT2_GOLIVE_STATUS = "5.GOLIVE"
-# Status yang DIKELUARKAN dari penyebut (denominator) rumus %GOLIVE
-PT2_GOLIVE_EXCLUDE_FROM_DENOM = {"0.DROP", "0.KENDALA"}
-
-PT2_STATUS_COLORS = {
-    "0.DROP": "#94a3b8",
-    "0.KENDALA": "#e30613",
-    "1.DESIGN": "#d97706",
-    "2.APPROVAL": "#29467a",
-    "3.OGP DEPLOY": "#0ea5e9",
-    "5.GOLIVE": "#16a34a",
-}
-
-PT2_MONTH_NAMES_ID = {
-    1: "JANUARI", 2: "FEBRUARI", 3: "MARET", 4: "APRIL", 5: "MEI", 6: "JUNI",
-    7: "JULI", 8: "AGUSTUS", 9: "SEPTEMBER", 10: "OKTOBER", 11: "NOVEMBER", 12: "DESEMBER",
 }
 
 # ── Env / secrets ──────────────────────────────────────────────────────

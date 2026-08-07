@@ -45,6 +45,8 @@ def api_row(row_num):
             "label": label,
             "z_options": config.Z_OPTIONS,
             "aa_options": config.AA_OPTIONS,
+            "extra_fields_by_status": config.EXTRA_FIELDS_BY_STATUS,
+            "extra_field_meta": config.EXTRA_FIELD_META,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -66,14 +68,24 @@ def api_row_update(row_num):
     z_value = (payload.get("status_z") or "").strip()
     aa_value = (payload.get("status_aa") or "").strip()
     note_text = (payload.get("note_text") or "").strip()
+    extra_fields = payload.get("extra_fields") or {}
 
     if not z_value:
         return jsonify({"ok": False, "error": "Status (kolom Z) wajib dipilih."}), 400
     if not note_text:
         return jsonify({"ok": False, "error": "Keterangan tidak boleh kosong."}), 400
 
+    # Validasi field tambahan (BL-BQ) — kosong selalu valid (opsional).
+    for key, raw_value in extra_fields.items():
+        ok, message = sheets_service.validate_extra_field(key, raw_value)
+        if not ok:
+            label = config.EXTRA_FIELD_META.get(key, {}).get("label", key)
+            return jsonify({"ok": False, "error": f"{label}: {message}"}), 400
+
     try:
-        date_col, note_col = sheets_service.update_status(row_num, z_value, aa_value, note_text)
+        date_col, note_col = sheets_service.update_status(
+            row_num, z_value, aa_value, note_text, extra_fields=extra_fields
+        )
         return jsonify({"ok": True, "date_col": date_col, "note_col": note_col})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -84,35 +96,6 @@ def api_pending_updates():
     try:
         items = sheets_service.get_pending_updates()
         return jsonify({"ok": True, "count": len(items), "items": items})
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-
-
-@app.route("/pt2")
-def pt2_page():
-    from jinja2 import TemplateNotFound
-    try:
-        return render_template("pt2.html")
-    except TemplateNotFound as e:
-        app.logger.exception("PT2 template missing")
-        return (f"Template not found: {e}. Check templates folder and filename casing."), 500
-
-
-@app.route("/api/pt2-dashboard")
-def api_pt2_dashboard():
-    try:
-        data = sheets_service.get_pt2_dashboard_data()
-        return jsonify({"ok": True, "data": data})
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-
-
-@app.route("/api/pt2-row/<int:row_num>/detail")
-def api_pt2_row_detail(row_num):
-    """Kolom A s/d AQ untuk satu baris — dipakai oleh panel 'Kendala'."""
-    try:
-        fields = sheets_service.get_pt2_row_detail(row_num)
-        return jsonify({"ok": True, "fields": fields})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 

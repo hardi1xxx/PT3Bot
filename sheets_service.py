@@ -4,6 +4,7 @@ Used by both the Flask web app and the Telegram bot so the update
 logic (routing + prepend + date-overwrite) lives in exactly one place.
 """
 import json
+import re
 import datetime
 import threading
 
@@ -21,7 +22,6 @@ SCOPES = [
 _client_lock = threading.Lock()
 _gspread_client = None
 _worksheet = None
-_worksheet_pt2 = None
 
 
 def _col_to_index(col_letters: str) -> int:
@@ -55,15 +55,6 @@ def get_worksheet():
         sh = client.open_by_key(config.SPREADSHEET_ID)
         _worksheet = sh.worksheet(config.SHEET_NAME)
     return _worksheet
-
-
-def get_pt2_worksheet():
-    global _worksheet_pt2
-    if _worksheet_pt2 is None:
-        client = get_client()
-        sh = client.open_by_key(config.SPREADSHEET_ID)
-        _worksheet_pt2 = sh.worksheet(config.SHEET_NAME_PT2)
-    return _worksheet_pt2
 
 
 def find_row(ihld: str, lokasi: str):
@@ -258,7 +249,9 @@ def get_row_snapshot(row_num: int):
     """Return current Z, AA and the keterangan cell content for the row's current Z status.
     `last_note` is just the topmost single entry (the most recent one, since
     entries are prepended newest-first) — used by the update panel to show
-    "Keterangan sebelumnya" without the whole history."""
+    "Keterangan sebelumnya" without the whole history.
+    Also returns current BL-BQ values (extra_fields) so the update panel can
+    show what's already saved without forcing the user to re-enter it."""
     ws = get_worksheet()
     z_val = ws.acell(f"{config.COL_STATUS_Z}{row_num}").value or ""
     aa_val = ws.acell(f"{config.COL_STATUS_AA}{row_num}").value or ""
@@ -267,12 +260,18 @@ def get_row_snapshot(row_num: int):
         note_col = config.STATUS_COLUMN_MAP[z_val]["note_col"]
         note_preview = ws.acell(f"{note_col}{row_num}").value or ""
     last_note = note_preview.split("\n")[0].strip() if note_preview.strip() else ""
+
+    extra_fields = {}
+    for key, col in config.EXTRA_FIELD_COLUMNS.items():
+        extra_fields[key] = ws.acell(f"{col}{row_num}").value or ""
+
     return {
         "row": row_num,
         "status_z": z_val,
         "status_aa": aa_val,
         "note_preview": note_preview,
         "last_note": last_note,
+        "extra_fields": extra_fields,
     }
 
 
@@ -299,7 +298,47 @@ def get_row_detail(row_num: int):
     return fields
 
 
-def update_status(row_num: int, z_value: str, aa_value: str, note_text: str, when: datetime.date = None):
+def _clean_number(raw: str) -> str:
+    """Strip thousands separators (. or ,) and whitespace from a numeric
+    string, e.g. 'Rp 1.500.000' -> '1500000'. Returns '' if nothing left."""
+    digits = re.sub(r"[^\d]", "", raw or "")
+    return digits
+
+
+def validate_extra_field(key: str, raw: str):
+    """
+    Validate one BL-BQ field's raw input. Returns (ok: bool, message: str).
+    Empty string is always valid (field is optional — means "don't touch").
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return True, ""
+
+    if key in ("nilai_perijinan", "nilai_boq"):
+        if not _clean_number(raw):
+            return False, "Harus berupa angka (rupiah)."
+        return True, ""
+
+    if key in ("jumlah_odp", "jumlah_port"):
+        if not raw.isdigit():
+            return False, "Harus berupa angka saja."
+        return True, ""
+
+    if key == "idsw":
+        if "#" not in raw:
+            return False, "Format IDSW harus mengandung '#', contoh: 9671760#9671766"
+        return True, ""
+
+    if key == "odp_golive":
+        if "-" not in raw or "/" not in raw:
+            return False, "Format ODP Golive harus mengandung '-' dan '/', contoh: FBE/D08/068 - FBE/D08/071"
+        return True, ""
+
+    return True, ""
+
+
+def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
+                   extra_fields: dict = None, when: datetime.date = None):
     """
     Apply one update to a row:
       1. Write Z and AA dropdown values.
@@ -341,7 +380,23 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str, whe
         if existing_date.strip():
             write_date = False
     if write_date:
-        ws.update(f"{date_col}{row_num}", [[date_str]], raw=True)
+        ws.update_acell(f"{date_col}{row_num}", date_str)
+
+    # 4. Field tambahan BL-BQ — OPSIONAL: cuma ditulis kalau ada isinya.
+    #    Kosong = tidak diubah, nilai lama di sheet tetap dipertahankan.
+    if extra_fields:
+        for key, raw_value in extra_fields.items():
+            raw_value = (raw_value or "").strip()
+            if not raw_value:
+                continue
+            col = config.EXTRA_FIELD_COLUMNS.get(key)
+            if not col:
+                continue
+            if key in ("nilai_perijinan", "nilai_boq"):
+                raw_value = _clean_number(raw_value)  # simpan angka polos, tanpa "Rp"/titik ribuan
+                if not raw_value:
+                    continue
+            ws.update_acell(f"{col}{row_num}", raw_value)
 
     return date_col, note_col
 
@@ -536,144 +591,3 @@ def get_pending_updates():
 
     pending.sort(key=lambda r: (r["branch"], r["batch"]))
     return pending
-
-
-# ══════════════════════════════════════════════════════════════════════
-# PT2 ("Detail PT2")
-# ══════════════════════════════════════════════════════════════════════
-
-_STATUS_LOOKUP_PT2 = {s.strip().upper(): s for s in config.PT2_STATUSES}
-
-
-def _match_pt2_status(raw: str):
-    """Return the canonical PT2_STATUSES value matching `raw`, or None."""
-    return _STATUS_LOOKUP_PT2.get((raw or "").strip().upper())
-
-
-def get_pt2_dashboard_data():
-    """
-    One-shot read of the whole "Detail PT2" sheet, returned as a flat list
-    of per-row records (raw, unaggregated) so the dashboard can compute the
-    regional/branch pivot, the donut chart, and the Kendala (Klasifikasi
-    Cancel) grouping on the client from the same data set.
-
-      LOP      = count of rows (kolom A / ID IHLD terisi)
-      Port     = jumlah kolom AC (FINAL PORT)
-      Status   = kolom M (STATUS LOP): 0.DROP / 0.KENDALA / 1.DESIGN /
-                 2.APPROVAL / 3.OGP DEPLOY / 5.GOLIVE
-      Branch   = kolom J (BRANCH TA)
-      Regional = kolom L (REGIONAL TA)
-      Golive Hari Ini  = kolom AE (TGL CLOSE WO) == hari ini
-      Golive Bulan Ini = kolom AE (TGL CLOSE WO) di bulan & tahun berjalan
-    """
-    ws = get_pt2_worksheet()
-    all_values = ws.get_all_values()
-
-    idx = {
-        "ihld": _col_to_index(config.PT2_COL_IHLD) - 1,
-        "lokasi": _col_to_index(config.PT2_COL_LOKASI) - 1,
-        "status_wo": _col_to_index(config.PT2_COL_STATUS_WO) - 1,
-        "source_order": _col_to_index(config.PT2_COL_SOURCE_ORDER) - 1,
-        "batch": _col_to_index(config.PT2_COL_BATCH) - 1,
-        "branch": _col_to_index(config.PT2_COL_BRANCH) - 1,
-        "regional": _col_to_index(config.PT2_COL_REGIONAL) - 1,
-        "status": _col_to_index(config.PT2_COL_STATUS) - 1,
-        "klasifikasi": _col_to_index(config.PT2_COL_KLASIFIKASI_CANCEL) - 1,
-        "detail_cancel": _col_to_index(config.PT2_COL_DETAIL_CANCEL) - 1,
-        "odp_golive": _col_to_index(config.PT2_COL_ODP_GOLIVE) - 1,
-        "port": _col_to_index(config.PT2_COL_FINAL_PORT) - 1,
-        "tgl_close": _col_to_index(config.PT2_COL_TGL_CLOSE_WO) - 1,
-    }
-
-    data_rows = all_values[config.DATA_START_ROW_PT2 - 1:]
-    today = datetime.date.today()
-
-    rows = []
-    regional_set = set()
-    branch_set = set()
-
-    for offset, row in enumerate(data_rows):
-        row_num = config.DATA_START_ROW_PT2 + offset
-
-        def cell(key):
-            i = idx[key]
-            return row[i].strip() if i < len(row) else ""
-
-        ihld_val = cell("ihld")
-        lokasi_val = cell("lokasi")
-        if not ihld_val and not lokasi_val and not cell("batch"):
-            continue  # fully empty row, skip
-
-        status_raw = cell("status")
-        status_val = _match_pt2_status(status_raw)  # canonical PT2_STATUSES value or None
-
-        regional_val = cell("regional") or "(Tanpa Regional)"
-        branch_val = cell("branch") or "(Tanpa Branch)"
-        regional_set.add(regional_val)
-        branch_set.add(branch_val)
-
-        tgl_close_raw = cell("tgl_close")
-        tgl_close_date = _parse_date(tgl_close_raw)
-        is_golive_today = bool(tgl_close_date and tgl_close_date == today)
-        is_golive_month = bool(
-            tgl_close_date
-            and tgl_close_date.year == today.year
-            and tgl_close_date.month == today.month
-        )
-        tgl_close_formatted = ""
-        if tgl_close_date:
-            month_name = config.PT2_MONTH_NAMES_ID.get(tgl_close_date.month, "").title()
-            tgl_close_formatted = f"{tgl_close_date.day:02d} {month_name} {tgl_close_date.year}"
-
-        rows.append({
-            "row": row_num,
-            "ihld": ihld_val,
-            "lokasi": lokasi_val,
-            "status_wo": cell("status_wo"),
-            "source_order": cell("source_order"),
-            "batch": cell("batch") or "(Tanpa Batch)",
-            "branch": branch_val,
-            "regional": regional_val,
-            "status": status_val,        # canonical value, or null if not one of the 6
-            "status_raw": status_raw,
-            "klasifikasi": cell("klasifikasi"),
-            "detail_cancel": cell("detail_cancel"),
-            "odp_golive": cell("odp_golive"),
-            "port": _to_number(cell("port")),
-            "tgl_close_wo": tgl_close_raw,
-            "tgl_close_wo_formatted": tgl_close_formatted,
-            "is_golive_today": is_golive_today,
-            "is_golive_month": is_golive_month,
-        })
-
-    return {
-        "statuses": config.PT2_STATUSES,
-        "status_colors": config.PT2_STATUS_COLORS,
-        "golive_status": config.PT2_GOLIVE_STATUS,
-        "exclude_from_denom": sorted(config.PT2_GOLIVE_EXCLUDE_FROM_DENOM),
-        "regionals": sorted(regional_set, key=lambda x: x.lower()),
-        "branches": sorted(branch_set, key=lambda x: x.lower()),
-        "current_month_label": config.PT2_MONTH_NAMES_ID.get(today.month, str(today.month)),
-        "rows": rows,
-    }
-
-
-def get_pt2_row_detail(row_num: int):
-    """
-    Return header/value pairs for every column A..AQ of the given PT2 row,
-    used by the "Kendala" (Klasifikasi Cancel) list -> detail view.
-    """
-    ws = get_pt2_worksheet()
-    start_idx = _col_to_index("A")
-    end_idx = _col_to_index("AQ")
-    header_range = ws.get(f"A{config.HEADER_ROW_PT2}:AQ{config.HEADER_ROW_PT2}")
-    value_range = ws.get(f"A{row_num}:AQ{row_num}")
-    headers = header_range[0] if header_range else []
-    values = value_range[0] if value_range else []
-
-    fields = []
-    for i in range(end_idx - start_idx + 1):
-        h = headers[i].strip() if i < len(headers) and headers[i].strip() else f"Kolom {i + 1}"
-        v = values[i] if i < len(values) else ""
-        fields.append({"header": h, "value": v})
-    return fields
