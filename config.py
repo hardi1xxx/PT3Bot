@@ -67,8 +67,9 @@ COL_PORT_M = "M"   # PORT
 COL_BOQ_N = "N"    # BoQ
 COL_CPP_O = "O"    # CPP
 
-# Status yang dianggap "sedang berjalan" -> dipakai sebagai kolom pada
-# kedua tabel pivot dashboard (Port & LOP) dan untuk filter list lokasi aktif.
+# Status yang dianggap "sedang berjalan" -> dipakai untuk KPI "Lokasi
+# Sedang Berjalan", chart distribusi status, dan notifikasi harian.
+# JANGAN tambahkan GOLIVE/DROP ke sini — itu status akhir, bukan "berjalan".
 DASHBOARD_STATUSES = [
     "01. PERIJINAN",
     "02. PERSIAPAN",
@@ -76,6 +77,18 @@ DASHBOARD_STATUSES = [
     "04. INSTALASI",
     "05. FINISH INSTALASI",
 ]
+
+# Kolom ke-6 & ke-7 KHUSUS di tabel "Rekap Port & LOP per Batch" — beberapa
+# nilai Z digabung jadi satu kolom. Tidak memengaruhi DASHBOARD_STATUSES/KPI
+# "Lokasi Sedang Berjalan" di atas, cuma dipakai di tabel pivot ini saja.
+PIVOT_STATUS_GROUPS = {
+    "GOLIVE": ["06. GOLIVE", "07. UT", "09. REKON", "10. BAST"],
+    "DROP": ["00. DROP", "10.1 BAST 2025"],
+}
+
+# Nilai di kolom BH yang tidak ditampilkan di "Kategori Drop" (nyasar dari
+# input manual, duplikat status Z).
+BH_EXCLUDE_VALUES = ["10. BAST"]
 
 # ── Z (Status Fisik) dropdown options ─────────────────────────────────
 Z_OPTIONS = [
@@ -181,6 +194,28 @@ NOTIFY_STATUS_DATE_MAP = {
     "03. MATDEV":     "AX",
     "04. INSTALASI":  "AZ",
 }
+
+# ── Sheet "Semesta" (gabungan PT2+PT3, dipakai halaman FBB) ────────────
+SHEET_NAME_SEMESTA = os.environ.get("SHEET_NAME_SEMESTA", "Semesta")
+HEADER_ROW_SEMESTA = 1     # asumsi: header di baris 1 (beda dari Detail PT3 yg di baris 2)
+DATA_START_ROW_SEMESTA = 2  # asumsi: data mulai baris 2 -- konfirmasi & ubah kalau beda
+
+# Kolom A-O di sheet Semesta
+COL_SEMESTA_TANGGAL_NDE = "A"
+COL_SEMESTA_PROGRAM = "B"       # PT2 / PT3
+COL_SEMESTA_ID_IHLD = "C"
+COL_SEMESTA_NAMA_LOKASI = "D"
+COL_SEMESTA_STO = "E"
+COL_SEMESTA_BATCH = "F"
+COL_SEMESTA_BRANCH = "G"
+COL_SEMESTA_REGIONAL = "H"      # BANTEN / JAKARTA / Eastern Jabotabek / Jabar / dst
+COL_SEMESTA_STATUS_LOP = "I"
+COL_SEMESTA_FINAL_PORT = "J"
+COL_SEMESTA_TGL_FI = "K"
+COL_SEMESTA_TGL_GOLIVE = "L"
+COL_SEMESTA_UMUR = "M"
+COL_SEMESTA_ODP_GOLIVE = "N"
+COL_SEMESTA_KETERANGAN = "O"
 
 # ── Env / secrets ──────────────────────────────────────────────────────
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")

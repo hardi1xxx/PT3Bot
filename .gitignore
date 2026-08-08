@@ -4,3 +4,6 @@ __pycache__/
 *.json
 !package.json
 venv/
+
+# UI/UX Pro Max skill (cloned external tool, not part of this app)
+ui-ux-pro-max-skill/

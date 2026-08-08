@@ -2,22 +2,26 @@
    PT3 Analytics — SaaS Landing Page
    Modern glassmorphism marketing page.
    Kept separate from the dashboard style.css on purpose.
+   Design system: Data-Dense Dashboard (blue data + amber accents).
    ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+
 :root {
-  --bg-0: #0b1020;
-  --bg-1: #101a33;
-  --bg-2: #1a2a4a;
+  --bg-0: #0a1128;
+  --bg-1: #0f1b3f;
+  --bg-2: #16294f;
   --ink: #eaf0fb;
-  --ink-soft: #aab8d4;
+  --ink-soft: #aebcd8;
   --ink-faint: #7d8db0;
   --glass: rgba(255, 255, 255, 0.06);
   --glass-strong: rgba(255, 255, 255, 0.1);
   --glass-border: rgba(255, 255, 255, 0.14);
-  --accent: #4f7dff;
+  --accent: #3b82f6;      /* secondary blue */
   --accent-2: #16a34a;
-  --brand-red: #e30613;
-  --brand-blue: #4f7dff;
-  --grad: linear-gradient(135deg, #6a8dff 0%, #4f7dff 45%, #7b5cff 100%);
+  --brand-blue: #3b82f6;  /* data blue */
+  --brand-blue-deep: #1e40af; /* primary */
+  --amber: #d97706;       /* CTA / highlight accent */
+  --grad: linear-gradient(135deg, #1e40af 0%, #3b82f6 55%, #60a5fa 100%);
   --radius: 20px;
   --maxw: 1180px;
 }
@@ -28,7 +32,7 @@ html { scroll-behavior: smooth; }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Fira Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--ink);
   background:
     radial-gradient(900px 480px at 8% -5%, rgba(79, 125, 255, 0.22), transparent 60%),
@@ -136,8 +140,12 @@ img { display: block; max-width: 100%; }
   letter-spacing: -0.02em;
 }
 .hero h1 .grad-text {
-  background: linear-gradient(90deg, #8fb0ff, #c9a6ff 55%, #7bffb0);
+  background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 45%, #7bffb0 110%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+/* data-dense dashboard: monospace numerals */
+.chart-stat .v, .stat .num, .pv-kpi .v, .pv-line .val, .price .amount .cur {
+  font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .hero p.lead {
   max-width: 640px; margin: 0 auto 30px;

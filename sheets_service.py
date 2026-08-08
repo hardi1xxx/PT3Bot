@@ -57,6 +57,19 @@ def get_worksheet():
     return _worksheet
 
 
+_semesta_worksheet = None
+
+
+def get_semesta_worksheet():
+    """Sheet 'Semesta' (gabungan PT2+PT3) — tab lain, spreadsheet yang sama."""
+    global _semesta_worksheet
+    if _semesta_worksheet is None:
+        client = get_client()
+        sh = client.open_by_key(config.SPREADSHEET_ID)
+        _semesta_worksheet = sh.worksheet(config.SHEET_NAME_SEMESTA)
+    return _semesta_worksheet
+
+
 def find_row(ihld: str, lokasi: str):
     """
     Find the sheet row matching IHLD (col I) + LOKASI IHLD (col J).
@@ -160,6 +173,19 @@ def _match_status(raw: str):
     return _STATUS_LOOKUP.get((raw or "").strip().upper())
 
 
+# Reverse lookup: raw Z value (normalized) -> pivot group label ("GOLIVE"/"DROP").
+# Kolom ke-6/ke-7 di tabel Rekap Port & LOP — lihat config.PIVOT_STATUS_GROUPS.
+_PIVOT_GROUP_LOOKUP = {}
+for _group_label, _raw_values in config.PIVOT_STATUS_GROUPS.items():
+    for _raw in _raw_values:
+        _PIVOT_GROUP_LOOKUP[_raw.strip().upper()] = _group_label
+
+
+def _match_pivot_group(raw: str):
+    """Return 'GOLIVE'/'DROP' if `raw` belongs to one of PIVOT_STATUS_GROUPS, else None."""
+    return _PIVOT_GROUP_LOOKUP.get((raw or "").strip().upper())
+
+
 def get_dashboard_data():
     """
     One-shot read of the whole sheet, returned as a flat list of per-row
@@ -207,6 +233,7 @@ def get_dashboard_data():
         batch_val = cell("batch") or "(Tanpa Batch)"
         status_raw = cell("status_z")
         status_val = _match_status(status_raw)  # canonical DASHBOARD_STATUSES value or None
+        pivot_group_val = status_val or _match_pivot_group(status_raw)  # + GOLIVE/DROP untuk tabel
         ihld_val = cell("ihld")
 
         if not order_val and not ihld_val and not cell("batch"):
@@ -224,6 +251,7 @@ def get_dashboard_data():
             "branch": branch_val,
             "batch": batch_val,
             "status": status_val,          # canonical value, or null if not one of the 5
+            "pivot_group": pivot_group_val,  # status_val, atau "GOLIVE"/"DROP", atau null
             "status_raw": status_raw,
             "status_aa": cell("status_aa"),
             "port": _to_number(cell("port")),
@@ -234,11 +262,12 @@ def get_dashboard_data():
             "port_m": cell("port_m"),
             "boq_n": cell("boq_n"),
             "cpp_o": cell("cpp_o"),
-            "bh": cell("bh"),
+            "bh": cell("bh") if cell("bh").strip().upper() not in {v.strip().upper() for v in config.BH_EXCLUDE_VALUES} else "",
         })
 
     return {
         "statuses": config.DASHBOARD_STATUSES,
+        "pivot_columns": config.DASHBOARD_STATUSES + list(config.PIVOT_STATUS_GROUPS.keys()),
         "batches": batch_order,
         "branches": sorted(branch_set, key=lambda b: b.lower()),
         "rows": rows,
@@ -591,3 +620,84 @@ def get_pending_updates():
 
     pending.sort(key=lambda r: (r["branch"], r["batch"]))
     return pending
+
+
+def get_fbb_data():
+    """
+    Tahap 1 halaman FBB (gabungan PT2+PT3 dari sheet 'Semesta'): baca semua
+    baris mentah, tidak ada agregasi berat di sini — supaya filter
+    Program/Regional/Branch bisa dihitung ulang bebas di client, sama
+    seperti pola dashboard PT3. Target/ACH/GAP/Outlook belum ada di sini,
+    menyusul setelah rumusnya dikonfirmasi.
+    """
+    ws = get_semesta_worksheet()
+    all_values = ws.get_all_values()
+
+    idx = {
+        "tanggal_nde": _col_to_index(config.COL_SEMESTA_TANGGAL_NDE) - 1,
+        "program": _col_to_index(config.COL_SEMESTA_PROGRAM) - 1,
+        "ihld": _col_to_index(config.COL_SEMESTA_ID_IHLD) - 1,
+        "lokasi": _col_to_index(config.COL_SEMESTA_NAMA_LOKASI) - 1,
+        "sto": _col_to_index(config.COL_SEMESTA_STO) - 1,
+        "batch": _col_to_index(config.COL_SEMESTA_BATCH) - 1,
+        "branch": _col_to_index(config.COL_SEMESTA_BRANCH) - 1,
+        "regional": _col_to_index(config.COL_SEMESTA_REGIONAL) - 1,
+        "status_lop": _col_to_index(config.COL_SEMESTA_STATUS_LOP) - 1,
+        "final_port": _col_to_index(config.COL_SEMESTA_FINAL_PORT) - 1,
+        "tgl_fi": _col_to_index(config.COL_SEMESTA_TGL_FI) - 1,
+        "tgl_golive": _col_to_index(config.COL_SEMESTA_TGL_GOLIVE) - 1,
+        "umur": _col_to_index(config.COL_SEMESTA_UMUR) - 1,
+        "odp_golive": _col_to_index(config.COL_SEMESTA_ODP_GOLIVE) - 1,
+        "keterangan": _col_to_index(config.COL_SEMESTA_KETERANGAN) - 1,
+    }
+
+    data_rows = all_values[config.DATA_START_ROW_SEMESTA - 1:]
+    rows = []
+    programs = set()
+    regionals = set()
+    branches = set()
+
+    for offset, row in enumerate(data_rows):
+        row_num = config.DATA_START_ROW_SEMESTA + offset
+
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+
+        ihld_val = cell("ihld")
+        lokasi_val = cell("lokasi")
+        if not ihld_val and not lokasi_val:
+            continue  # baris kosong total, skip
+
+        program_val = cell("program") or "(Tanpa Program)"
+        regional_val = cell("regional") or "(Tanpa Regional)"
+        branch_val = cell("branch") or "(Tanpa Branch)"
+        programs.add(program_val)
+        regionals.add(regional_val)
+        branches.add(branch_val)
+
+        rows.append({
+            "row": row_num,
+            "tanggal_nde": cell("tanggal_nde"),
+            "program": program_val,
+            "ihld": ihld_val,
+            "lokasi": lokasi_val,
+            "sto": cell("sto"),
+            "batch": cell("batch") or "(Tanpa Batch)",
+            "branch": branch_val,
+            "regional": regional_val,
+            "status_lop": cell("status_lop") or "(Tanpa Status)",
+            "final_port": _to_number(cell("final_port")),
+            "tgl_fi": cell("tgl_fi"),
+            "tgl_golive": cell("tgl_golive"),
+            "umur": cell("umur"),
+            "odp_golive": cell("odp_golive"),
+            "keterangan": cell("keterangan"),
+        })
+
+    return {
+        "programs": sorted(programs, key=lambda p: p.lower()),
+        "regionals": sorted(regionals, key=lambda r: r.lower()),
+        "branches": sorted(branches, key=lambda b: b.lower()),
+        "rows": rows,
+    }

@@ -15,11 +15,6 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/landing")
-def landing():
-    return render_template("landing.html")
-
-
 @app.route("/api/search")
 def api_search():
     q = request.args.get("q", "")
@@ -101,6 +96,20 @@ def api_pending_updates():
     try:
         items = sheets_service.get_pending_updates()
         return jsonify({"ok": True, "count": len(items), "items": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/fbb")
+def fbb_page():
+    return render_template("fbb.html")
+
+
+@app.route("/api/fbb-data")
+def api_fbb_data():
+    try:
+        data = sheets_service.get_fbb_data()
+        return jsonify({"ok": True, "data": data})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 

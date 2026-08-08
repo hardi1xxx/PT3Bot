@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block menu_fbb %}active{% endblock %}
+{% block page_title %}FBB — Ringkasan PT2 & PT3{% endblock %}
+{% block page_sub %}Tahap 1: total Order/Port, breakdown Regional & Program (dari sheet Semesta) — Target/ACH/GAP menyusul{% endblock %}
+
+{% block content %}
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total Order</div>
+    <div class="stat-value" id="fbbTotalOrder">–</div>
+    <div class="stat-foot">jumlah baris terisi</div>
+  </div>
+  <div class="stat-card alt">
+    <div class="stat-label">Total Port</div>
+    <div class="stat-value" id="fbbTotalPort">–</div>
+    <div class="stat-foot">jumlah FINAL PORT</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">PT2</div>
+    <div class="stat-value" id="fbbCountPT2">–</div>
+    <div class="stat-foot">order (terfilter)</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">PT3</div>
+    <div class="stat-value" id="fbbCountPT3">–</div>
+    <div class="stat-foot">order (terfilter)</div>
+  </div>
+</div>
+
+<!-- Filter Program (collapsible) -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="branch-filter-head" id="fbbProgramFilterHeader" style="cursor:pointer; margin-bottom:0;">
+    <label style="cursor:pointer;">Filter Program — <span id="fbbProgramFilterSummary">memuat...</span></label>
+    <div class="branch-filter-actions">
+      <button type="button" class="btn-ghost btn-sm" id="fbbProgramToggleBtn">Tampilkan &#9662;</button>
+    </div>
+  </div>
+  <div id="fbbProgramFilterBody" style="display:none; margin-top:12px;">
+    <div class="branch-filter-actions" style="margin-bottom:8px;">
+      <button type="button" class="btn-ghost btn-sm" id="fbbProgramSelectAll">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="fbbProgramClearAll">Kosongkan</button>
+    </div>
+    <div class="branch-filter-grid" id="fbbProgramGrid"><div class="skeleton">Memuat...</div></div>
+  </div>
+</div>
+
+<!-- Filter Regional (collapsible) -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="branch-filter-head" id="fbbRegionalFilterHeader" style="cursor:pointer; margin-bottom:0;">
+    <label style="cursor:pointer;">Filter Regional — <span id="fbbRegionalFilterSummary">memuat...</span></label>
+    <div class="branch-filter-actions">
+      <button type="button" class="btn-ghost btn-sm" id="fbbRegionalToggleBtn">Tampilkan &#9662;</button>
+    </div>
+  </div>
+  <div id="fbbRegionalFilterBody" style="display:none; margin-top:12px;">
+    <div class="branch-filter-actions" style="margin-bottom:8px;">
+      <button type="button" class="btn-ghost btn-sm" id="fbbRegionalSelectAll">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="fbbRegionalClearAll">Kosongkan</button>
+    </div>
+    <div class="branch-filter-grid" id="fbbRegionalGrid"><div class="skeleton">Memuat...</div></div>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <div class="tables-col">
+    <div>
+      <div class="section-title">Order &amp; Port per Regional &times; Program</div>
+      <div class="card">
+        <div class="pivot-table-wrap"><table class="pivot pivot-combined" id="fbbRegionalTable"></table></div>
+      </div>
+    </div>
+  </div>
+  <div class="card chart-card">
+    <div class="section-title">Distribusi Status LOP</div>
+    <canvas id="fbbStatusChart" height="220"></canvas>
+    <div class="chart-legend" id="fbbStatusLegend"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+let fbbCache = null;   // { programs, regionals, branches, rows }
+let fbbChart = null;
+
+function escF(s) {
+  return (s === null || s === undefined ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function fmtNumF(n) { return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0); }
+
+function getFbbFilteredRows() {
+  if (!fbbCache) return [];
+  const programs = new Set(Array.from(document.querySelectorAll('.fbb-program-checkbox:checked')).map(cb => cb.value));
+  const regionals = new Set(Array.from(document.querySelectorAll('.fbb-regional-checkbox:checked')).map(cb => cb.value));
+  return fbbCache.rows.filter(r => programs.has(r.program) && regionals.has(r.regional));
+}
+
+function renderCheckGrid(elId, values, cls) {
+  const el = document.getElementById(elId);
+  if (!values.length) { el.innerHTML = '<div class="empty-state">Tidak ada data.</div>'; return; }
+  el.innerHTML = values.map(v => `
+    <label class="branch-check">
+      <input type="checkbox" class="${cls}" value="${escF(v)}" checked>
+      <span>${escF(v)}</span>
+    </label>
+  `).join('');
+}
+function updateFilterSummary(cls, summaryId) {
+  const all = document.querySelectorAll('.' + cls);
+  const checked = document.querySelectorAll('.' + cls + ':checked');
+  const el = document.getElementById(summaryId);
+  if (all.length === 0) { el.textContent = 'tidak ada data'; return; }
+  if (checked.length === all.length) el.textContent = `semua dipilih (${all.length})`;
+  else if (checked.length === 0) el.textContent = 'tidak ada yang dipilih';
+  else el.textContent = `${checked.length} dari ${all.length} dipilih`;
+}
+
+function wireFilterGroup(gridId, cls, selectAllId, clearAllId, summaryId, headerId, bodyId, toggleBtnId) {
+  document.getElementById(gridId).addEventListener('change', (e) => {
+    if (e.target.classList.contains(cls)) refreshFbb();
+  });
+  document.getElementById(selectAllId).addEventListener('click', () => {
+    document.querySelectorAll('.' + cls).forEach(cb => { cb.checked = true; });
+    refreshFbb();
+  });
+  document.getElementById(clearAllId).addEventListener('click', () => {
+    document.querySelectorAll('.' + cls).forEach(cb => { cb.checked = false; });
+    refreshFbb();
+  });
+  const body = document.getElementById(bodyId);
+  const toggleBtn = document.getElementById(toggleBtnId);
+  function setOpen(open) {
+    body.style.display = open ? 'block' : 'none';
+    toggleBtn.innerHTML = open ? 'Sembunyikan &#9652;' : 'Tampilkan &#9662;';
+  }
+  toggleBtn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(body.style.display === 'none'); });
+  document.getElementById(headerId).addEventListener('click', () => setOpen(body.style.display === 'none'));
+  setOpen(false);
+}
+
+wireFilterGroup('fbbProgramGrid', 'fbb-program-checkbox', 'fbbProgramSelectAll', 'fbbProgramClearAll', 'fbbProgramFilterSummary', 'fbbProgramFilterHeader', 'fbbProgramFilterBody', 'fbbProgramToggleBtn');
+wireFilterGroup('fbbRegionalGrid', 'fbb-regional-checkbox', 'fbbRegionalSelectAll', 'fbbRegionalClearAll', 'fbbRegionalFilterSummary', 'fbbRegionalFilterHeader', 'fbbRegionalFilterBody', 'fbbRegionalToggleBtn');
+
+function refreshFbb() {
+  if (!fbbCache) return;
+  const filtered = getFbbFilteredRows();
+  updateFilterSummary('fbb-program-checkbox', 'fbbProgramFilterSummary');
+  updateFilterSummary('fbb-regional-checkbox', 'fbbRegionalFilterSummary');
+
+  document.getElementById('fbbTotalOrder').textContent = fmtNumF(filtered.length);
+  document.getElementById('fbbTotalPort').textContent = fmtNumF(filtered.reduce((s, r) => s + (r.final_port || 0), 0));
+  document.getElementById('fbbCountPT2').textContent = fmtNumF(filtered.filter(r => r.program.toUpperCase() === 'PT2').length);
+  document.getElementById('fbbCountPT3').textContent = fmtNumF(filtered.filter(r => r.program.toUpperCase() === 'PT3').length);
+
+  renderRegionalTable(filtered);
+  renderStatusChart(filtered);
+}
+
+function renderRegionalTable(filteredRows) {
+  const table = document.getElementById('fbbRegionalTable');
+  const programs = fbbCache.programs;
+  const regionals = Array.from(new Set(filteredRows.map(r => r.regional))).sort((a, b) => a.localeCompare(b));
+
+  if (!regionals.length) { table.innerHTML = '<tr><td class="empty-state">Tidak ada data.</td></tr>'; return; }
+
+  const grid = {};
+  regionals.forEach(reg => {
+    grid[reg] = {};
+    programs.forEach(p => { grid[reg][p] = { order: 0, port: 0 }; });
+  });
+  filteredRows.forEach(r => {
+    if (!grid[r.regional]) return;
+    if (!grid[r.regional][r.program]) grid[r.regional][r.program] = { order: 0, port: 0 };
+    grid[r.regional][r.program].order += 1;
+    grid[r.regional][r.program].port += (r.final_port || 0);
+  });
+
+  let html = '<thead><tr><th rowspan="2">Regional</th>';
+  programs.forEach(p => { html += `<th colspan="2">${escF(p)}</th>`; });
+  html += '<th colspan="2" class="total-col">TOTAL</th></tr><tr>';
+  programs.forEach(() => { html += '<th>Order</th><th>Port</th>'; });
+  html += '<th class="total-col">Order</th><th class="total-col">Port</th></tr></thead><tbody>';
+
+  const colTotals = {};
+  programs.forEach(p => { colTotals[p] = { order: 0, port: 0 }; });
+  let grandOrder = 0, grandPort = 0;
+
+  regionals.forEach(reg => {
+    html += `<tr><th style="text-align:left;">${escF(reg)}</th>`;
+    let rowOrder = 0, rowPort = 0;
+    programs.forEach(p => {
+      const cell = grid[reg][p] || { order: 0, port: 0 };
+      colTotals[p].order += cell.order; colTotals[p].port += cell.port;
+      rowOrder += cell.order; rowPort += cell.port;
+      html += `<td>${fmtNumF(cell.order)}</td><td>${fmtNumF(cell.port)}</td>`;
+    });
+    grandOrder += rowOrder; grandPort += rowPort;
+    html += `<td class="total-col">${fmtNumF(rowOrder)}</td><td class="total-col">${fmtNumF(rowPort)}</td></tr>`;
+  });
+
+  html += '<tr class="grand-total-row"><th style="text-align:left;">TOTAL</th>';
+  programs.forEach(p => {
+    html += `<td>${fmtNumF(colTotals[p].order)}</td><td>${fmtNumF(colTotals[p].port)}</td>`;
+  });
+  html += `<td class="total-col">${fmtNumF(grandOrder)}</td><td class="total-col">${fmtNumF(grandPort)}</td></tr>`;
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+function renderStatusChart(filteredRows) {
+  const counts = {};
+  filteredRows.forEach(r => { counts[r.status_lop] = (counts[r.status_lop] || 0) + 1; });
+  const labels = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  const values = labels.map(l => counts[l]);
+  const palette = ['#e30613', '#29467a', '#16a34a', '#d97706', '#0ea5e9', '#a855f7', '#64748b', '#f43f5e'];
+  const colors = labels.map((_, i) => palette[i % palette.length]);
+
+  const ctx = document.getElementById('fbbStatusChart').getContext('2d');
+  if (fbbChart) fbbChart.destroy();
+  if (!labels.length) {
+    document.getElementById('fbbStatusLegend').innerHTML = '<div class="empty-state">Tidak ada data.</div>';
+    return;
+  }
+  fbbChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
+    options: { plugins: { legend: { display: false } }, cutout: '55%' },
+  });
+  const total = values.reduce((a, b) => a + b, 0);
+  document.getElementById('fbbStatusLegend').innerHTML = labels.map((l, i) => `
+    <span><span class="dot" style="background:${colors[i]}"></span>${escF(l)}: <strong>${fmtNumF(values[i])}</strong> (${total ? Math.round(values[i] / total * 100) : 0}%)</span>
+  `).join('');
+}
+
+async function loadFbb() {
+  document.getElementById('fbbRegionalTable').innerHTML = '<tr><td class="skeleton">Memuat data...</td></tr>';
+  try {
+    const res = await fetch('/api/fbb-data');
+    const json = await res.json();
+    if (!json.ok) {
+      document.getElementById('fbbRegionalTable').innerHTML = `<tr><td class="flash error">${escF(json.error)}</td></tr>`;
+      return;
+    }
+    fbbCache = json.data;
+    renderCheckGrid('fbbProgramGrid', fbbCache.programs, 'fbb-program-checkbox');
+    renderCheckGrid('fbbRegionalGrid', fbbCache.regionals, 'fbb-regional-checkbox');
+    refreshFbb();
+  } catch (e) {
+    document.getElementById('fbbRegionalTable').innerHTML = `<tr><td class="flash error">Gagal memuat: ${e}</td></tr>`;
+  }
+}
+
+loadFbb();
+</script>
+{% endblock %}
