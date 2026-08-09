@@ -209,13 +209,41 @@ COL_SEMESTA_STO = "E"
 COL_SEMESTA_BATCH = "F"
 COL_SEMESTA_BRANCH = "G"
 COL_SEMESTA_REGIONAL = "H"      # BANTEN / JAKARTA / Eastern Jabotabek / Jabar / dst
-COL_SEMESTA_STATUS_LOP = "I"
+COL_SEMESTA_STATUS_LOP = "V"    # diubah dari I -> V
+COL_SEMESTA_POTENSI = "W"       # baru: isian "P1 AUG", "P2 SEP", dst
 COL_SEMESTA_FINAL_PORT = "J"
 COL_SEMESTA_TGL_FI = "K"
 COL_SEMESTA_TGL_GOLIVE = "L"
 COL_SEMESTA_UMUR = "M"
 COL_SEMESTA_ODP_GOLIVE = "N"
 COL_SEMESTA_KETERANGAN = "O"
+
+# Status LOP (kolom V) yang jadi acuan formula FBB — dicocokkan case-insensitive.
+STATUS_LOP_GOLIVE = "5. Golive"
+STATUS_LOP_DROP_MOM = "6.3. Drop MOM"
+
+# ── Sheet "TARGET" ───────────────────────────────────────────────────
+SHEET_NAME_TARGET = os.environ.get("SHEET_NAME_TARGET", "TARGET")
+HEADER_ROW_TARGET = 1
+DATA_START_ROW_TARGET = 2
+# 1 baris = 1 Regional + 1 Bulan. TARGET PORT = total; PT2/PT3 = pembagiannya.
+COL_TARGET_REGIONAL = "A"
+COL_TARGET_BULAN = "B"
+COL_TARGET_PORT = "C"
+COL_TARGET_PT2 = "D"
+COL_TARGET_PT3 = "E"
+
+MONTH_NAMES_ID = [
+    "januari", "februari", "maret", "april", "mei", "juni",
+    "juli", "agustus", "september", "oktober", "november", "desember",
+]
+MONTH_LABEL_ID = [m.capitalize() for m in MONTH_NAMES_ID]
+MONTH_ABBR_EN = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+# Ambang warna ACH (%) — hijau >90, kuning >50, oranye >25, sisanya merah.
+ACH_THRESHOLD_GREEN = 90
+ACH_THRESHOLD_YELLOW = 50
+ACH_THRESHOLD_ORANGE = 25
 
 # ── Env / secrets ──────────────────────────────────────────────────────
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")

@@ -114,6 +114,16 @@ def api_fbb_data():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/fbb-summary")
+def api_fbb_summary():
+    date_param = request.args.get("date") or None
+    try:
+        data = sheets_service.get_fbb_summary(date_param)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/aging")
 def aging_page():
     return render_template("aging.html")

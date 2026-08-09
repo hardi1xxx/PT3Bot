@@ -649,6 +649,7 @@ def get_fbb_data():
         "umur": _col_to_index(config.COL_SEMESTA_UMUR) - 1,
         "odp_golive": _col_to_index(config.COL_SEMESTA_ODP_GOLIVE) - 1,
         "keterangan": _col_to_index(config.COL_SEMESTA_KETERANGAN) - 1,
+        "potensi": _col_to_index(config.COL_SEMESTA_POTENSI) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW_SEMESTA - 1:]
@@ -693,6 +694,7 @@ def get_fbb_data():
             "umur": cell("umur"),
             "odp_golive": cell("odp_golive"),
             "keterangan": cell("keterangan"),
+            "potensi": cell("potensi"),
         })
 
     return {
@@ -700,4 +702,246 @@ def get_fbb_data():
         "regionals": sorted(regionals, key=lambda r: r.lower()),
         "branches": sorted(branches, key=lambda b: b.lower()),
         "rows": rows,
+    }
+
+
+# ── Sheet TARGET ─────────────────────────────────────────────────────
+_target_worksheet = None
+
+
+def get_target_worksheet():
+    global _target_worksheet
+    if _target_worksheet is None:
+        client = get_client()
+        sh = client.open_by_key(config.SPREADSHEET_ID)
+        _target_worksheet = sh.worksheet(config.SHEET_NAME_TARGET)
+    return _target_worksheet
+
+
+def _parse_month_to_num(raw):
+    """'Agustus' / 'Agu' / '8' / '08' -> 8. None kalau tidak dikenali."""
+    raw = (raw or "").strip().lower()
+    if not raw:
+        return None
+    if raw.isdigit():
+        n = int(raw)
+        return n if 1 <= n <= 12 else None
+    for i, name in enumerate(config.MONTH_NAMES_ID, start=1):
+        if raw == name or (len(raw) >= 3 and raw[:3] == name[:3]):
+            return i
+    return None
+
+
+def get_target_data():
+    """List of {regional, month(1-12), target_port, pt2, pt3} dari sheet TARGET."""
+    ws = get_target_worksheet()
+    all_values = ws.get_all_values()
+    idx = {
+        "regional": _col_to_index(config.COL_TARGET_REGIONAL) - 1,
+        "bulan": _col_to_index(config.COL_TARGET_BULAN) - 1,
+        "target_port": _col_to_index(config.COL_TARGET_PORT) - 1,
+        "pt2": _col_to_index(config.COL_TARGET_PT2) - 1,
+        "pt3": _col_to_index(config.COL_TARGET_PT3) - 1,
+    }
+    data_rows = all_values[config.DATA_START_ROW_TARGET - 1:]
+    targets = []
+    for row in data_rows:
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+        regional = cell("regional")
+        month_num = _parse_month_to_num(cell("bulan"))
+        if not regional or not month_num:
+            continue
+        targets.append({
+            "regional": regional,
+            "month": month_num,
+            "target_port": _to_number(cell("target_port")),
+            "pt2": _to_number(cell("pt2")),
+            "pt3": _to_number(cell("pt3")),
+        })
+    return targets
+
+
+# ── FBB summary (Tahap 2): DOD/MTD/Potensi/ACH/YTD/Outlook/GAP ────────
+def _is_golive(status_lop: str) -> bool:
+    return (status_lop or "").strip().lower() == config.STATUS_LOP_GOLIVE.strip().lower()
+
+
+def _is_drop_mom(status_lop: str) -> bool:
+    return (status_lop or "").strip().lower() == config.STATUS_LOP_DROP_MOM.strip().lower()
+
+
+def _potensi_matches_month(potensi_raw: str, month_num: int) -> bool:
+    """'P1 AUG' cocok bulan 8 (Agustus)?"""
+    if not potensi_raw:
+        return False
+    abbr = config.MONTH_ABBR_EN[month_num - 1]
+    return abbr in potensi_raw.strip().upper()
+
+
+def _load_semesta_rows_for_summary():
+    """Baca sheet Semesta dengan tanggal Golive (kolom L) sudah di-parse ke date object."""
+    ws = get_semesta_worksheet()
+    all_values = ws.get_all_values()
+    idx = {
+        "program": _col_to_index(config.COL_SEMESTA_PROGRAM) - 1,
+        "ihld": _col_to_index(config.COL_SEMESTA_ID_IHLD) - 1,
+        "regional": _col_to_index(config.COL_SEMESTA_REGIONAL) - 1,
+        "status_lop": _col_to_index(config.COL_SEMESTA_STATUS_LOP) - 1,
+        "final_port": _col_to_index(config.COL_SEMESTA_FINAL_PORT) - 1,
+        "tgl_golive": _col_to_index(config.COL_SEMESTA_TGL_GOLIVE) - 1,
+        "potensi": _col_to_index(config.COL_SEMESTA_POTENSI) - 1,
+    }
+    data_rows = all_values[config.DATA_START_ROW_SEMESTA - 1:]
+    rows = []
+    for row in data_rows:
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+        ihld_val = cell("ihld")
+        regional_val = cell("regional")
+        if not ihld_val and not regional_val:
+            continue
+        rows.append({
+            "program": cell("program") or "(Tanpa Program)",
+            "regional": regional_val or "(Tanpa Regional)",
+            "status_lop": cell("status_lop"),
+            "port": _to_number(cell("final_port")),
+            "golive_date": _parse_date(cell("tgl_golive")),
+            "potensi": cell("potensi"),
+        })
+    return rows
+
+
+def _compute_actuals(subset_rows, reference_date, current_month, jan1, jun30, jul31):
+    golive_rows = [r for r in subset_rows if _is_golive(r["status_lop"]) and r["golive_date"]]
+    month_start = reference_date.replace(day=1)
+
+    dod = sum(r["port"] for r in golive_rows if r["golive_date"] == reference_date)
+    mtd = sum(r["port"] for r in golive_rows if month_start <= r["golive_date"] <= reference_date)
+    potensi_month = sum(r["port"] for r in subset_rows if _potensi_matches_month(r["potensi"], current_month))
+    ytd = sum(r["port"] for r in golive_rows if jan1 <= r["golive_date"] <= reference_date)
+    real_ytd_juni = sum(r["port"] for r in golive_rows if jan1 <= r["golive_date"] <= jun30)
+    real_ytd_juli = sum(r["port"] for r in golive_rows if jan1 <= r["golive_date"] <= jul31)
+    total_order_port = sum(r["port"] for r in subset_rows if not _is_drop_mom(r["status_lop"]))
+
+    return {
+        "dod": dod, "mtd": mtd, "potensi": potensi_month, "ytd": ytd,
+        "real_ytd_juni": real_ytd_juni, "real_ytd_juli": real_ytd_juli,
+        "total_order_port": total_order_port,
+    }
+
+
+def _combine_with_target(actuals, target_month, target_ytd):
+    ach_mtd = (actuals["mtd"] / target_month * 100) if target_month else 0
+    outlook_ytd = actuals["ytd"] + actuals["potensi"]
+    ach_ytd = (actuals["ytd"] / target_ytd * 100) if target_ytd else 0
+    gap_ytd = actuals["ytd"] - target_ytd
+    ach_total_order = (actuals["ytd"] / actuals["total_order_port"] * 100) if actuals["total_order_port"] else 0
+
+    return {
+        **actuals,
+        "target_month": target_month,
+        "target_ytd": target_ytd,
+        "ach_mtd": ach_mtd,
+        "outlook_ytd": outlook_ytd,
+        "ach_ytd": ach_ytd,
+        "gap_ytd": gap_ytd,
+        # Sesuai konfirmasi: ACH/GAP "Q3" rumusnya sama dengan ACH/GAP YTD
+        # (akumulatif dari awal tahun, bukan target khusus kuartal).
+        "ach_ytd_q3": ach_ytd,
+        "gap_q3": gap_ytd,
+        "ach_total_order": ach_total_order,
+    }
+
+
+def get_fbb_summary(reference_date_str: str = None):
+    """
+    Tahap 2 halaman FBB: DOD/MTD/Potensi/ACH/YTD/Outlook/GAP per Regional,
+    dipecah lagi per Program (PT2/PT3), plus baris total PT2/PT3 gabungan-
+    semua-regional dan TOTAL keseluruhan.
+    """
+    if reference_date_str:
+        reference_date = _parse_date(reference_date_str)
+        if not reference_date:
+            raise ValueError(f"Tanggal tidak valid: {reference_date_str!r}")
+    else:
+        reference_date = datetime.date.today()
+
+    year = reference_date.year
+    current_month = reference_date.month
+    jan1 = datetime.date(year, 1, 1)
+    jun30 = datetime.date(year, 6, 30)
+    jul31 = datetime.date(year, 7, 31)
+
+    rows = _load_semesta_rows_for_summary()
+    targets = get_target_data()
+
+    # Normalisasi case-insensitive: kalau "Banten" di satu sheet dan "BANTEN"
+    # di sheet lain, tetap harus ketemu -- bukan diam-diam jadi target 0.
+    target_lookup = {}  # REGIONAL_UPPER -> month -> {target_port, pt2, pt3}
+    for t in targets:
+        target_lookup.setdefault(t["regional"].strip().upper(), {})[t["month"]] = t
+
+    def target_value(regional, month, program=None):
+        t = target_lookup.get((regional or "").strip().upper(), {}).get(month)
+        if not t:
+            return 0
+        prog_norm = (program or "").strip().upper()
+        if prog_norm == "PT2":
+            return t["pt2"]
+        if prog_norm == "PT3":
+            return t["pt3"]
+        return t["target_port"]
+
+    def target_value_all_regions(month, program=None):
+        return sum(target_value(reg, month, program) for reg in target_lookup.keys())
+
+    def cumulative_target(value_fn, upto_month):
+        return sum(value_fn(m) for m in range(1, upto_month + 1))
+
+    regionals = sorted(set(r["regional"] for r in rows), key=lambda s: s.lower())
+    programs_present = sorted(set(r["program"] for r in rows), key=lambda s: s.lower())
+
+    def build_entry(subset_rows, regional_key, program_key):
+        actuals = _compute_actuals(subset_rows, reference_date, current_month, jan1, jun30, jul31)
+        if regional_key is None:
+            t_month = target_value_all_regions(current_month, program_key)
+            t_ytd = cumulative_target(lambda m: target_value_all_regions(m, program_key), current_month)
+        else:
+            t_month = target_value(regional_key, current_month, program_key)
+            t_ytd = cumulative_target(lambda m: target_value(regional_key, m, program_key), current_month)
+        return _combine_with_target(actuals, t_month, t_ytd)
+
+    regional_results = []
+    for reg in regionals:
+        reg_rows = [r for r in rows if r["regional"] == reg]
+        combined = build_entry(reg_rows, reg, None)
+        by_program = {}
+        for prog in programs_present:
+            prog_rows = [r for r in reg_rows if r["program"] == prog]
+            by_program[prog] = build_entry(prog_rows, reg, prog)
+        regional_results.append({"regional": reg, "combined": combined, "programs": by_program})
+
+    totals_by_program = {}
+    for prog in programs_present:
+        prog_rows = [r for r in rows if r["program"] == prog]
+        totals_by_program[prog] = build_entry(prog_rows, None, prog)
+
+    grand_total = build_entry(rows, None, None)
+
+    return {
+        "reference_date": reference_date.isoformat(),
+        "current_month": current_month,
+        "current_month_label": config.MONTH_LABEL_ID[current_month - 1],
+        "programs": programs_present,
+        "regionals": regional_results,
+        "totals_by_program": totals_by_program,
+        "grand_total": grand_total,
+        "ach_thresholds": {
+            "green": config.ACH_THRESHOLD_GREEN,
+            "yellow": config.ACH_THRESHOLD_YELLOW,
+            "orange": config.ACH_THRESHOLD_ORANGE,
+        },
     }

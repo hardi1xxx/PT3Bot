@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block menu_fbb %}active{% endblock %}
 {% block page_title %}FBB — Ringkasan PT2 & PT3{% endblock %}
-{% block page_sub %}Tahap 1: total Order/Port, breakdown Regional & Program (dari sheet Semesta) — Target/ACH/GAP menyusul{% endblock %}
+{% block page_sub %}Ringkasan Order/Port &amp; pencapaian (DOD/MTD/YTD/ACH/GAP) per Regional &amp; Program{% endblock %}
 
 {% block content %}
 
@@ -62,6 +62,23 @@
   </div>
 </div>
 
+<!-- Ringkasan Pencapaian: DOD/MTD/Potensi/ACH/YTD/Outlook/GAP -->
+<div class="section-title">
+  Ringkasan Pencapaian per Regional &amp; Program
+  <span class="hint">satuan PORT · status tercapai = "5. Golive"</span>
+</div>
+<div class="card" style="margin-bottom:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+  <label for="fbbRefDate" style="margin:0;">Tanggal acuan (DOD/MTD/YTD dihitung s/d tanggal ini)</label>
+  <input type="date" id="fbbRefDate" style="width:auto; margin:0;">
+  <button type="button" id="fbbRefDateApply">Terapkan</button>
+  <span class="sub" id="fbbRefDateLabel"></span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="fbbSummaryTableWrap" style="overflow-x:auto;">
+    <div class="skeleton">Memuat ringkasan...</div>
+  </div>
+</div>
+
 <div class="dashboard-grid">
   <div class="tables-col">
     <div>
@@ -82,12 +99,33 @@
 <script>
 let fbbCache = null;   // { programs, regionals, branches, rows }
 let fbbChart = null;
+let fbbSummaryCache = null;
 
 function escF(s) {
   return (s === null || s === undefined ? '' : String(s))
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 function fmtNumF(n) { return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0); }
+function fmtPctF(n) { return (n === null || n === undefined) ? '-' : Math.round(n * 10) / 10 + '%'; }
+
+// Ambang warna ACH: hijau >90, kuning >50, oranye >25, sisanya (>=0) merah.
+function achColor(pct) {
+  if (pct === null || pct === undefined) return '#9ca3af';
+  if (pct > 90) return '#16a34a';
+  if (pct > 50) return '#eab308';
+  if (pct > 25) return '#f97316';
+  return '#dc2626';
+}
+function achCellStyle(pct) {
+  const c = achColor(pct);
+  return `background:${c}22; color:${c}; font-weight:700;`;
+}
+function gapCellStyle(gap) {
+  if (gap === null || gap === undefined) return '';
+  return gap >= 0
+    ? 'background:#ecfdf3; color:#14532d; font-weight:700;'
+    : 'background:#fdecec; color:#7f1d1d; font-weight:700;';
+}
 
 function getFbbFilteredRows() {
   if (!fbbCache) return [];
@@ -233,6 +271,98 @@ function renderStatusChart(filteredRows) {
   `).join('');
 }
 
+// ── Tabel Ringkasan Pencapaian (DOD/MTD/Potensi/ACH/YTD/Outlook/GAP) ──
+function summaryRowHtml(label, m, opts) {
+  opts = opts || {};
+  const rowClass = opts.rowClass || '';
+  const labelStyle = opts.labelStyle || 'text-align:left;';
+  return `
+    <tr class="${rowClass}">
+      <th style="${labelStyle}">${escF(label)}</th>
+      <td>${fmtNumF(m.total_order_port)}</td>
+      <td>${fmtNumF(m.dod)}</td>
+      <td>${fmtNumF(m.mtd)}</td>
+      <td>${fmtNumF(m.potensi)}</td>
+      <td style="${achCellStyle(m.ach_mtd)}">${fmtPctF(m.ach_mtd)}</td>
+      <td>${fmtNumF(m.ytd)}</td>
+      <td>${fmtNumF(m.real_ytd_juni)}</td>
+      <td>${fmtNumF(m.real_ytd_juli)}</td>
+      <td>${fmtNumF(m.outlook_ytd)}</td>
+      <td style="${achCellStyle(m.ach_ytd_q3)}">${fmtPctF(m.ach_ytd_q3)}</td>
+      <td style="${gapCellStyle(m.gap_ytd)}">${fmtNumF(m.gap_ytd)}</td>
+      <td style="${gapCellStyle(m.gap_q3)}">${fmtNumF(m.gap_q3)}</td>
+      <td style="${achCellStyle(m.ach_total_order)}">${fmtPctF(m.ach_total_order)}</td>
+    </tr>
+  `;
+}
+
+function renderSummaryTable(data) {
+  const wrap = document.getElementById('fbbSummaryTableWrap');
+  const monthLabel = data.current_month_label;
+
+  document.getElementById('fbbRefDateLabel').textContent =
+    `Bulan berjalan: ${monthLabel} · acuan: ${data.reference_date}`;
+
+  let html = '<table class="pivot pivot-combined"><thead><tr>';
+  html += '<th rowspan="2" style="text-align:left;">Regional / Program</th>';
+  html += '<th rowspan="2">Total Port<br>(non-Drop)</th>';
+  html += '<th rowspan="2">DOD</th>';
+  html += `<th rowspan="2">MTD<br>${escF(monthLabel)}</th>`;
+  html += `<th rowspan="2">Potensi<br>${escF(monthLabel)}</th>`;
+  html += `<th rowspan="2">ACH MTD<br>${escF(monthLabel)}</th>`;
+  html += `<th rowspan="2">YTD<br>${escF(monthLabel)}</th>`;
+  html += '<th rowspan="2">Real YTD<br>Juni</th>';
+  html += '<th rowspan="2">Real YTD<br>Juli</th>';
+  html += `<th rowspan="2">Outlook YTD<br>${escF(monthLabel)}</th>`;
+  html += '<th rowspan="2">ACH YTD<br>Q3</th>';
+  html += `<th rowspan="2">GAP YTD<br>${escF(monthLabel)}</th>`;
+  html += '<th rowspan="2">GAP Q3</th>';
+  html += '<th rowspan="2">ACH Total<br>Order</th>';
+  html += '</tr><tr></tr></thead><tbody>';
+
+  data.regionals.forEach(reg => {
+    html += summaryRowHtml(reg.regional, reg.combined, { rowClass: 'regional-row' });
+    data.programs.forEach(prog => {
+      const m = reg.programs[prog];
+      if (m) html += summaryRowHtml('&nbsp;&nbsp;&nbsp;&nbsp;' + prog, m, { labelStyle: 'text-align:left; font-weight:400; color:var(--muted);' });
+    });
+  });
+
+  data.programs.forEach(prog => {
+    html += summaryRowHtml('TOTAL ' + prog, data.totals_by_program[prog], { rowClass: 'subtotal-row' });
+  });
+  html += summaryRowHtml('TOTAL', data.grand_total, { rowClass: 'grand-total-row' });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+async function loadFbbSummary(dateStr) {
+  const wrap = document.getElementById('fbbSummaryTableWrap');
+  wrap.innerHTML = '<div class="skeleton">Memuat ringkasan...</div>';
+  try {
+    const url = '/api/fbb-summary' + (dateStr ? ('?date=' + encodeURIComponent(dateStr)) : '');
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.ok) { wrap.innerHTML = `<div class="flash error">${escF(json.error)}</div>`; return; }
+    fbbSummaryCache = json.data;
+    renderSummaryTable(fbbSummaryCache);
+  } catch (e) {
+    wrap.innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
+  }
+}
+
+document.getElementById('fbbRefDateApply').addEventListener('click', () => {
+  const val = document.getElementById('fbbRefDate').value;
+  loadFbbSummary(val || null);
+});
+
+(function () {
+  const today = new Date();
+  const iso = today.toISOString().slice(0, 10);
+  document.getElementById('fbbRefDate').value = iso;
+})();
+
 async function loadFbb() {
   document.getElementById('fbbRegionalTable').innerHTML = '<tr><td class="skeleton">Memuat data...</td></tr>';
   try {
@@ -252,5 +382,6 @@ async function loadFbb() {
 }
 
 loadFbb();
+loadFbbSummary(document.getElementById('fbbRefDate').value);
 </script>
 {% endblock %}

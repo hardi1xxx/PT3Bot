@@ -336,8 +336,20 @@ table.pivot td.total-col, table.pivot th.total-col {
 table.pivot-combined thead tr:first-child th { border-bottom: 2px solid rgba(255, 255, 255, 0.35); }
 table.pivot-combined tbody tr.grand-total-row td,
 table.pivot-combined tbody tr.grand-total-row th {
-  background: var(--brand-blue-mid) !important;
+  background: var(--brand-blue-mid);
   font-weight: 700;
+}
+table.pivot-combined tbody tr.regional-row td,
+table.pivot-combined tbody tr.regional-row th {
+  background: var(--brand-blue-light);
+  font-weight: 700;
+  border-top: 2px solid var(--brand-blue);
+}
+table.pivot-combined tbody tr.subtotal-row td,
+table.pivot-combined tbody tr.subtotal-row th {
+  background: #fdecec;
+  font-weight: 700;
+  border-top: 2px solid var(--brand-red);
 }
 
 .chart-card canvas { max-height: 300px; }
