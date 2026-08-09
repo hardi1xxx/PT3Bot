@@ -324,7 +324,7 @@ function renderSummaryTable(data) {
     html += summaryRowHtml(reg.regional, reg.combined, { rowClass: 'regional-row' });
     data.programs.forEach(prog => {
       const m = reg.programs[prog];
-      if (m) html += summaryRowHtml('&nbsp;&nbsp;&nbsp;&nbsp;' + prog, m, { labelStyle: 'text-align:left; font-weight:400; color:var(--muted);' });
+      if (m) html += summaryRowHtml(prog, m, { labelStyle: 'text-align:left; font-weight:400; color:var(--muted); padding-left:28px;' });
     });
   });
 

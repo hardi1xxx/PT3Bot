@@ -622,6 +622,12 @@ def get_pending_updates():
     return pending
 
 
+def _norm_label(raw: str):
+    """Normalisasi Regional/Program: trim + uppercase, supaya 'banten'/'Banten'/
+    'BANTEN' dianggap satu grup yang sama, bukan 3 baris terpisah."""
+    return (raw or "").strip().upper()
+
+
 def get_fbb_data():
     """
     Tahap 1 halaman FBB (gabungan PT2+PT3 dari sheet 'Semesta'): baca semua
@@ -670,8 +676,11 @@ def get_fbb_data():
         if not ihld_val and not lokasi_val:
             continue  # baris kosong total, skip
 
-        program_val = cell("program") or "(Tanpa Program)"
-        regional_val = cell("regional") or "(Tanpa Regional)"
+        program_val = _norm_label(cell("program"))
+        regional_val = _norm_label(cell("regional"))
+        if not program_val or not regional_val:
+            continue  # Program/Regional kosong -> tidak ditampilkan sama sekali
+
         branch_val = cell("branch") or "(Tanpa Branch)"
         programs.add(program_val)
         regionals.add(regional_val)
@@ -800,12 +809,15 @@ def _load_semesta_rows_for_summary():
             i = idx[key]
             return row[i].strip() if i < len(row) else ""
         ihld_val = cell("ihld")
-        regional_val = cell("regional")
+        regional_val = _norm_label(cell("regional"))
+        program_val = _norm_label(cell("program"))
         if not ihld_val and not regional_val:
             continue
+        if not program_val or not regional_val:
+            continue  # Program/Regional kosong -> tidak dimasukkan ke ringkasan
         rows.append({
-            "program": cell("program") or "(Tanpa Program)",
-            "regional": regional_val or "(Tanpa Regional)",
+            "program": program_val,
+            "regional": regional_val,
             "status_lop": cell("status_lop"),
             "port": _to_number(cell("final_port")),
             "golive_date": _parse_date(cell("tgl_golive")),
