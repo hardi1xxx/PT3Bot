@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Laporan Eksekutif FBB{% endblock %}
 {% block page_title %}Laporan Eksekutif FBB{% endblock %}
-{% block page_sub %}Ringkasan eksekutif, data detail, dan catatan kendala/ATBT — dibuat dari data &amp; filter halaman FBB{% endblock %}
+{% block page_sub %}Ringkasan eksekutif dan catatan kendala/ATBT — dibuat dari data &amp; filter halaman FBB{% endblock %}
 
 {% block content %}
 
@@ -15,20 +15,8 @@
   .note-field label { display:block; font-weight:600; color:var(--text); margin-bottom:4px; font-size:0.86rem; }
   .note-field textarea { min-height:90px; }
   .note-saved-hint { font-size:0.72rem; color:var(--muted); margin-top:6px; }
-  .detail-scroll { max-height:520px; overflow-y:auto; }
   .lap-stat-value-sm { font-size: 1.5rem; }
-
-  @media print {
-    .sidebar, .notif-wrap, .no-print { display:none !important; }
-    .main { margin:0; }
-    .content { padding:0; max-width:100%; }
-    body { background:#fff; }
-    .card { box-shadow:none; border:1px solid #ccc; break-inside:avoid; }
-    .detail-scroll { max-height:none; overflow:visible; }
-    table.pivot { font-size:0.72rem; }
-    textarea { border:1px solid #ccc; background:#fff; }
-    .section-title { break-after:avoid; }
-  }
+  #lapDownloadBtn:disabled { opacity: 0.7; cursor: wait; }
 </style>
 
 <div class="card laporan-meta">
@@ -36,11 +24,13 @@
     <div style="font-weight:700; font-size:0.95rem;">Laporan Eksekutif FBB</div>
     <div class="sub" id="lapMeta" style="color:var(--muted); font-size:0.8rem; margin-top:2px;">Memuat...</div>
   </div>
-  <div class="btn-row no-print">
+  <div class="btn-row">
     <button type="button" class="btn-ghost" onclick="location.href='/fbb'">&larr; Kembali ke FBB</button>
-    <button type="button" id="lapPrintBtn">&#128424; Cetak / Simpan PDF</button>
+    <button type="button" id="lapDownloadBtn">&#11015; Download PDF</button>
   </div>
 </div>
+
+<div id="lapExportArea">
 
 <div class="stat-grid" id="lapStatGrid">
   <div class="skeleton">Memuat ringkasan...</div>
@@ -69,11 +59,6 @@
   </div>
 </div>
 
-<div class="section-title">Data Detail (baris sesuai filter)</div>
-<div class="card" style="margin-bottom:18px;">
-  <div class="pivot-table-wrap detail-scroll" id="lapDetailTableWrap"><div class="skeleton">Memuat...</div></div>
-</div>
-
 <div class="section-title">Catatan, Kendala &amp; ATBT</div>
 <div class="card" style="margin-bottom:24px;">
   <div class="note-field">
@@ -92,9 +77,12 @@
     <label for="noteLain">Catatan Lain</label>
     <textarea id="noteLain" placeholder="Informasi tambahan lainnya..."></textarea>
   </div>
-  <div class="note-saved-hint no-print" id="noteSavedHint">Catatan tersimpan otomatis di perangkat/browser ini.</div>
+  <div class="note-saved-hint" id="noteSavedHint">Catatan tersimpan otomatis di perangkat/browser ini.</div>
 </div>
 
+</div><!-- /lapExportArea -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
 function escL(s) {
   return (s === null || s === undefined ? '' : String(s))
@@ -271,27 +259,6 @@ function renderLapStatusTable(filteredRows) {
   table.innerHTML = html;
 }
 
-function renderLapDetailTable(filteredRows) {
-  const wrap = document.getElementById('lapDetailTableWrap');
-  if (!filteredRows.length) { wrap.innerHTML = '<div class="empty-state">Tidak ada data.</div>'; return; }
-  const sorted = [...filteredRows].sort((a, b) =>
-    (a.regional || '').localeCompare(b.regional) || (a.batch || '').localeCompare(b.batch));
-  let html = '<table class="pivot"><thead><tr>';
-  ['Program', 'Regional', 'Branch', 'Batch', 'IHLD', 'Lokasi', 'STO', 'Status LOP', 'Final Port', 'Tgl Golive', 'Keterangan']
-    .forEach(h => { html += `<th>${h}</th>`; });
-  html += '</tr></thead><tbody>';
-  sorted.forEach(r => {
-    html += `<tr>
-      <td>${escL(r.program)}</td><td>${escL(r.regional)}</td><td>${escL(r.branch)}</td><td>${escL(r.batch)}</td>
-      <td style="text-align:left;">${escL(r.ihld)}</td><td style="text-align:left;">${escL(r.lokasi)}</td><td>${escL(r.sto)}</td>
-      <td>${escL(r.status_lop)}</td><td>${fmtNumL(r.final_port)}</td><td>${escL(r.tgl_golive)}</td>
-      <td style="text-align:left; max-width:220px; white-space:normal;">${escL(r.keterangan)}</td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  wrap.innerHTML = html;
-}
-
 function renderLapStats(filteredRows, filteredSummary) {
   const grid = document.getElementById('lapStatGrid');
   const totalOrder = filteredRows.length;
@@ -395,7 +362,26 @@ let saveTimer = null;
   });
 });
 
-document.getElementById('lapPrintBtn').addEventListener('click', () => { saveNotes(); window.print(); });
+document.getElementById('lapDownloadBtn').addEventListener('click', () => {
+  saveNotes();
+  const btn = document.getElementById('lapDownloadBtn');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = 'Menyiapkan PDF...';
+
+  const opt = {
+    margin: 8,
+    filename: `laporan-fbb-${currentRefDate || 'draft'}.pdf`,
+    image: { type: 'jpeg', quality: 0.95 },
+    html2canvas: { scale: 1.5, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] },
+  };
+
+  html2pdf().set(opt).from(document.getElementById('lapExportArea')).save()
+    .catch((e) => { alert('Gagal membuat PDF: ' + (e && e.message ? e.message : e)); })
+    .finally(() => { btn.disabled = false; btn.innerHTML = original; });
+});
 
 async function initLaporan() {
   try {
@@ -421,7 +407,6 @@ async function initLaporan() {
     renderLapSummaryTable(filteredSummary);
     renderLapRegionalTable(lapRows, programsForTable);
     renderLapStatusTable(lapRows);
-    renderLapDetailTable(lapRows);
     loadNotes(currentRefDate);
   } catch (e) {
     document.getElementById('lapNarrative').innerHTML =
@@ -431,4 +416,4 @@ async function initLaporan() {
 
 initLaporan();
 </script>
-{% endblock %}s
+{% endblock %}
