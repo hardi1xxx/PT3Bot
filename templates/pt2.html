@@ -53,6 +53,38 @@
   </div>
 </div>
 
+<!-- Grafik trend harian Golive (per minggu, filter tanggal close order) -->
+<div class="section-title">
+  Grafik Golive Berjalan
+  <span class="hint">harian, per minggu — filter berdasarkan TGL CLOSE WO (kolom AE)</span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pt2-trend-controls">
+    <div class="pt2-trend-mode-toggle">
+      <button type="button" class="pt2-trend-mode-btn active" id="pt2TrendModeWeek">Per Minggu</button>
+      <button type="button" class="pt2-trend-mode-btn" id="pt2TrendModeDay">Harian</button>
+    </div>
+    <div class="pt2-trend-field">
+      <label>Dari tanggal (TGL CLOSE WO)</label>
+      <input type="date" id="pt2TrendFrom">
+    </div>
+    <div class="pt2-trend-field">
+      <label>Sampai tanggal</label>
+      <input type="date" id="pt2TrendTo">
+    </div>
+    <div class="pt2-trend-nav" id="pt2TrendDayNav" style="display:none;">
+      <button type="button" class="btn-ghost btn-sm" id="pt2TrendPrevWeek">&larr; Minggu Lalu</button>
+      <button type="button" class="btn-ghost btn-sm" id="pt2TrendThisWeek">Minggu Ini</button>
+      <button type="button" class="btn-ghost btn-sm" id="pt2TrendNextWeek">Minggu Depan &rarr;</button>
+    </div>
+  </div>
+  <div class="pt2-trend-chart-box">
+    <div class="pt2-trend-title" id="pt2TrendTitle">Golive per Minggu</div>
+    <canvas id="pt2TrendChart" height="110"></canvas>
+    <div class="pt2-trend-hint" id="pt2TrendHint">Klik salah satu titik untuk lihat rincian harian minggu itu</div>
+  </div>
+</div>
+
 <!-- Rekap Regional/Branch table -->
 <div class="section-title">
   Rekap LOP &amp; Port per Regional / Branch
@@ -114,6 +146,33 @@
   .pt2-list-table thead th { background:#f1f5f9; position:sticky; top:0; }
   .pt2-download-btn { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:0.85rem; font-weight:600; cursor:pointer; }
   .pt2-download-btn:hover { background:#15803d; }
+
+  .pt2-trend-controls {
+    display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:16px;
+  }
+  .pt2-trend-mode-toggle { display:flex; gap:6px; background:#f1f5f9; border-radius:8px; padding:3px; }
+  .pt2-trend-mode-btn {
+    border:none; background:transparent; padding:7px 14px; border-radius:6px; font-size:0.82rem;
+    font-weight:600; color:var(--muted, #64748b); cursor:pointer;
+  }
+  .pt2-trend-mode-btn.active { background:#fff; color:var(--brand-blue, #29467a); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .pt2-trend-field { display:flex; flex-direction:column; gap:4px; }
+  .pt2-trend-field label { font-size:0.76rem; color:var(--muted, #64748b); font-weight:600; }
+  .pt2-trend-field input[type=date] {
+    border:1px solid var(--border, #e2e8f0); border-radius:8px; padding:7px 10px; font-size:0.85rem;
+  }
+  .pt2-trend-nav { display:flex; gap:8px; margin-left:auto; }
+  .pt2-trend-chart-box {
+    background: linear-gradient(180deg, #3b5bdb 0%, #1e3a8a 100%);
+    border-radius: 12px;
+    padding: 18px 22px 10px;
+  }
+  .pt2-trend-title {
+    color:#fff; font-weight:800; font-size:1.05rem; margin-bottom:8px; letter-spacing:.01em;
+  }
+  .pt2-trend-hint {
+    color:rgba(255,255,255,0.65); font-size:0.74rem; text-align:center; margin-top:4px; padding-bottom:6px;
+  }
 </style>
 
 <script>
@@ -470,6 +529,183 @@ document.getElementById('pt2ListModalOverlay').addEventListener('click', (e) => 
   if (e.target.id === 'pt2ListModalOverlay') pt2CloseListModal();
 });
 
+// ── Grafik Golive Berjalan (per minggu / harian) ───────────────────
+let pt2TrendMode = 'week'; // 'week' | 'day'
+let pt2TrendChart = null;
+let pt2TrendDayWeekStart = null; // Date (Senin) dari minggu yang sedang ditampilkan di mode harian
+
+function pt2ParseDate(str) {
+  if (!str) return null;
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(str).trim());
+  if (!m) return null;
+  return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+}
+function pt2DateToISO(d) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function pt2ISOToDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function pt2AddDays(d, n) {
+  const nd = new Date(d);
+  nd.setDate(nd.getDate() + n);
+  return nd;
+}
+function pt2StartOfWeek(d) {
+  const nd = new Date(d);
+  const day = nd.getDay(); // 0=Min..6=Sab
+  const diff = (day === 0 ? -6 : 1 - day); // Senin sebagai awal minggu
+  nd.setDate(nd.getDate() + diff);
+  nd.setHours(0, 0, 0, 0);
+  return nd;
+}
+function pt2FmtShortDate(d) {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  return `${dd} ${months[d.getMonth()]}`;
+}
+function pt2GoliveCountInRange(from, to) {
+  if (!pt2Cache) return 0;
+  let count = 0;
+  for (const r of pt2Cache.rows) {
+    if (r.status !== pt2Cache.golive_status) continue;
+    const d = pt2ParseDate(r.tgl_close_wo_formatted);
+    if (d && d >= from && d <= to) count++;
+  }
+  return count;
+}
+
+function pt2RenderTrendChart() {
+  if (!pt2Cache) return;
+  const fromInput = document.getElementById('pt2TrendFrom').value;
+  const toInput = document.getElementById('pt2TrendTo').value;
+  const from = fromInput ? pt2ISOToDate(fromInput) : pt2AddDays(new Date(), -28);
+  const to = toInput ? pt2ISOToDate(toInput) : new Date();
+  const titleEl = document.getElementById('pt2TrendTitle');
+  const hintEl = document.getElementById('pt2TrendHint');
+
+  let labels = [];
+  let values = [];
+  let weekBuckets = [];
+
+  if (pt2TrendMode === 'week') {
+    let cursor = new Date(from);
+    let weekNum = 1;
+    while (cursor <= to && weekNum <= 26) { // batas wajar biar tidak infinite kalau tanggal salah input
+      const bucketStart = new Date(cursor);
+      const naturalEnd = pt2AddDays(bucketStart, 6);
+      const bucketEnd = naturalEnd > to ? new Date(to) : naturalEnd;
+      values.push(pt2GoliveCountInRange(bucketStart, bucketEnd));
+      labels.push([`Minggu ${weekNum}`, `${pt2FmtShortDate(bucketStart)}-${pt2FmtShortDate(bucketEnd)}`]);
+      weekBuckets.push({ start: bucketStart, end: bucketEnd });
+      cursor = pt2AddDays(bucketStart, 7);
+      weekNum++;
+    }
+    titleEl.textContent = `Golive per Minggu (${pt2FmtShortDate(from)} - ${pt2FmtShortDate(to)})`;
+    hintEl.style.display = 'block';
+  } else {
+    const weekStart = pt2TrendDayWeekStart || pt2StartOfWeek(new Date());
+    for (let i = 0; i < 7; i++) {
+      const d = pt2AddDays(weekStart, i);
+      values.push(pt2GoliveCountInRange(d, d));
+      labels.push(pt2FmtShortDate(d));
+    }
+    const weekEnd = pt2AddDays(weekStart, 6);
+    titleEl.textContent = `Golive Harian (${pt2FmtShortDate(weekStart)} - ${pt2FmtShortDate(weekEnd)})`;
+    hintEl.style.display = 'none';
+  }
+
+  const ctx = document.getElementById('pt2TrendChart').getContext('2d');
+  if (pt2TrendChart) pt2TrendChart.destroy();
+  pt2TrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: '#fbbf24',
+        backgroundColor: 'rgba(251,191,36,0.15)',
+        pointBackgroundColor: '#fbbf24',
+        pointBorderColor: '#fff',
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.35,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: 'rgba(255,255,255,0.85)', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.12)' } },
+        y: { beginAtZero: true, ticks: { color: 'rgba(255,255,255,0.85)' }, grid: { color: 'rgba(255,255,255,0.12)' } },
+      },
+      onClick: (evt, elements) => {
+        if (pt2TrendMode === 'week' && elements.length) {
+          const bucket = weekBuckets[elements[0].index];
+          if (bucket) {
+            pt2TrendDayWeekStart = bucket.start;
+            pt2SetTrendMode('day');
+          }
+        }
+      },
+    },
+    plugins: [{
+      id: 'pt2ValueLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        chart.data.datasets[0].data.forEach((val, i) => {
+          const point = chart.getDatasetMeta(0).data[i];
+          if (!point) return;
+          ctx.save();
+          ctx.fillStyle = '#fde68a';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(pt2FmtNum(val), point.x, point.y - 10);
+          ctx.restore();
+        });
+      },
+    }],
+  });
+}
+
+function pt2SetTrendMode(mode) {
+  pt2TrendMode = mode;
+  document.getElementById('pt2TrendModeWeek').classList.toggle('active', mode === 'week');
+  document.getElementById('pt2TrendModeDay').classList.toggle('active', mode === 'day');
+  document.getElementById('pt2TrendDayNav').style.display = mode === 'day' ? 'flex' : 'none';
+  if (mode === 'day' && !pt2TrendDayWeekStart) pt2TrendDayWeekStart = pt2StartOfWeek(new Date());
+  pt2RenderTrendChart();
+}
+
+document.getElementById('pt2TrendModeWeek').addEventListener('click', () => pt2SetTrendMode('week'));
+document.getElementById('pt2TrendModeDay').addEventListener('click', () => pt2SetTrendMode('day'));
+document.getElementById('pt2TrendFrom').addEventListener('change', () => { if (pt2TrendMode === 'week') pt2RenderTrendChart(); });
+document.getElementById('pt2TrendTo').addEventListener('change', () => { if (pt2TrendMode === 'week') pt2RenderTrendChart(); });
+document.getElementById('pt2TrendPrevWeek').addEventListener('click', () => {
+  pt2TrendDayWeekStart = pt2AddDays(pt2TrendDayWeekStart || pt2StartOfWeek(new Date()), -7);
+  pt2RenderTrendChart();
+});
+document.getElementById('pt2TrendThisWeek').addEventListener('click', () => {
+  pt2TrendDayWeekStart = pt2StartOfWeek(new Date());
+  pt2RenderTrendChart();
+});
+document.getElementById('pt2TrendNextWeek').addEventListener('click', () => {
+  pt2TrendDayWeekStart = pt2AddDays(pt2TrendDayWeekStart || pt2StartOfWeek(new Date()), 7);
+  pt2RenderTrendChart();
+});
+
+function pt2InitTrendDefaults() {
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  document.getElementById('pt2TrendFrom').value = pt2DateToISO(firstOfMonth);
+  document.getElementById('pt2TrendTo').value = pt2DateToISO(today);
+  pt2TrendDayWeekStart = pt2StartOfWeek(today);
+}
+
 // ── Load ─────────────────────────────────────────────────────────────
 async function loadPt2Dashboard() {
   document.getElementById('pt2PivotWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
@@ -484,6 +720,8 @@ async function loadPt2Dashboard() {
     pt2Cache = json.data;
     pt2RenderPivotTable(pt2Cache);
     pt2RenderKendala(pt2Cache);
+    if (!document.getElementById('pt2TrendFrom').value) pt2InitTrendDefaults();
+    pt2RenderTrendChart();
   } catch (e) {
     document.getElementById('pt2PivotWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
   }
