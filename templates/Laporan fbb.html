@@ -26,11 +26,9 @@
   </div>
   <div class="btn-row">
     <button type="button" class="btn-ghost" onclick="location.href='/fbb'">&larr; Kembali ke FBB</button>
-    <button type="button" id="lapDownloadBtn">&#11015; Download PDF</button>
+    <button type="button" id="lapDownloadBtn">&#11015; Download PPTX</button>
   </div>
 </div>
-
-<div id="lapExportArea">
 
 <div class="stat-grid" id="lapStatGrid">
   <div class="skeleton">Memuat ringkasan...</div>
@@ -80,9 +78,7 @@
   <div class="note-saved-hint" id="noteSavedHint">Catatan tersimpan otomatis di perangkat/browser ini.</div>
 </div>
 
-</div><!-- /lapExportArea -->
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script>
 function escL(s) {
   return (s === null || s === undefined ? '' : String(s))
@@ -113,6 +109,7 @@ const qRegionals = qp.get('regionals') ? qp.get('regionals').split(',').filter(B
 
 let lapRows = [];
 let currentRefDate = null;
+let lapFilteredSummary = null;
 
 // ── Rekombinasi ringkasan (DOD/MTD/YTD/ACH/GAP) sesuai filter Program & Regional ──
 // /api/fbb-summary selalu menghitung untuk SEMUA data (hanya menerima parameter
@@ -362,26 +359,289 @@ let saveTimer = null;
   });
 });
 
-document.getElementById('lapDownloadBtn').addEventListener('click', () => {
+function achFillHex(pct) {
+  if (pct === null || pct === undefined) return '9CA3AF';
+  if (pct > 90) return '16A34A';
+  if (pct > 50) return 'EAB308';
+  if (pct > 25) return 'F97316';
+  return 'DC2626';
+}
+
+function buildNarrativePlainText(filteredSummary) {
+  const g = filteredSummary.grand_total;
+  const candidates = filteredSummary.regionals.filter(r => r.combined.target_ytd > 0);
+  let best = null, worst = null;
+  candidates.forEach(r => {
+    if (!best || r.combined.ach_ytd_q3 > best.combined.ach_ytd_q3) best = r;
+    if (!worst || r.combined.ach_ytd_q3 < worst.combined.ach_ytd_q3) worst = r;
+  });
+  let text = `Sampai dengan tanggal acuan ${filteredSummary.reference_date} (bulan berjalan: ${filteredSummary.current_month_label}), `
+    + `pencapaian YTD tercatat ${fmtPctL(g.ach_ytd_q3)} dari target (realisasi ${fmtNumL(g.ytd)} port dari target ${fmtNumL(g.target_ytd)} port), `
+    + `dengan GAP sebesar ${fmtNumL(g.gap_q3)} port. Outlook YTD (realisasi + potensi bulan berjalan) diproyeksikan mencapai ${fmtNumL(g.outlook_ytd)} port.`;
+  if (best && worst && best.regional !== worst.regional) {
+    text += ` Regional dengan pencapaian tertinggi adalah ${best.regional} (${fmtPctL(best.combined.ach_ytd_q3)}), `
+      + `sedangkan yang paling perlu perhatian adalah ${worst.regional} (${fmtPctL(worst.combined.ach_ytd_q3)}).`;
+  }
+  return text;
+}
+
+function computeColWidths(totalCols, labelWidth, totalWidth) {
+  const restCols = totalCols - 1;
+  const eachW = (totalWidth - labelWidth) / restCols;
+  return [labelWidth, ...Array(restCols).fill(eachW)];
+}
+
+// ── Baris tabel pptx: "Pencapaian per Regional & Program" ──
+function pptHeaderRow(monthLabel) {
+  const headerOpts = { fontSize: 8, bold: true, color: 'FFFFFF', fill: { color: '1E3A8A' }, align: 'center', valign: 'middle' };
+  const labels = ['Regional / Program', 'Total Port', 'DOD', `MTD ${monthLabel}`, `Potensi ${monthLabel}`, 'ACH MTD', `YTD ${monthLabel}`, 'Outlook YTD', 'ACH YTD', 'GAP'];
+  return labels.map((l, i) => ({ text: l, options: Object.assign({}, headerOpts, i === 0 ? { align: 'left' } : {}) }));
+}
+function pptSummaryRow(label, m, opts) {
+  opts = opts || {};
+  const baseCellOpts = { fontSize: 8, valign: 'middle', border: { type: 'solid', color: 'D1D5DB', pt: 0.5 } };
+  const rowFillOpts = opts.fill ? { fill: { color: opts.fill } } : {};
+  function cell(text, extra) { return { text: String(text), options: Object.assign({}, baseCellOpts, rowFillOpts, opts.bold ? { bold: true } : {}, extra || {}) }; }
+  return [
+    cell(label, { align: 'left', bold: true }),
+    cell(fmtNumL(m.total_order_port)),
+    cell(fmtNumL(m.dod)),
+    cell(fmtNumL(m.mtd)),
+    cell(fmtNumL(m.potensi)),
+    cell(fmtPctL(m.ach_mtd), { fill: { color: achFillHex(m.ach_mtd) }, color: 'FFFFFF', bold: true }),
+    cell(fmtNumL(m.ytd)),
+    cell(fmtNumL(m.outlook_ytd)),
+    cell(fmtPctL(m.ach_ytd_q3), { fill: { color: achFillHex(m.ach_ytd_q3) }, color: 'FFFFFF', bold: true }),
+    cell(fmtNumL(m.gap_q3), { fill: { color: m.gap_q3 >= 0 ? '16A34A' : 'DC2626' }, color: 'FFFFFF', bold: true }),
+  ];
+}
+function buildSummaryTableData(filteredSummary) {
+  const rows = [pptHeaderRow(filteredSummary.current_month_label)];
+  filteredSummary.regionals.forEach(reg => rows.push(pptSummaryRow(reg.regional, reg.combined, { fill: 'EFF6FF' })));
+  filteredSummary.programs.forEach(prog => rows.push(pptSummaryRow('TOTAL ' + prog, filteredSummary.totals_by_program[prog], { fill: 'FEF3C7' })));
+  rows.push(pptSummaryRow('TOTAL', filteredSummary.grand_total, { fill: 'DCFCE7' }));
+  return rows;
+}
+
+// ── Baris tabel pptx: "Order & Port per Regional x Program" ──
+function buildRegionalPortTableData(filteredRows, programs) {
+  const regionals = Array.from(new Set(filteredRows.map(r => r.regional))).sort((a, b) => a.localeCompare(b));
+  const grid = {};
+  regionals.forEach(reg => { grid[reg] = {}; programs.forEach(p => { grid[reg][p] = { order: 0, port: 0 }; }); });
+  filteredRows.forEach(r => {
+    if (!grid[r.regional]) return;
+    if (!grid[r.regional][r.program]) grid[r.regional][r.program] = { order: 0, port: 0 };
+    grid[r.regional][r.program].order += 1;
+    grid[r.regional][r.program].port += (r.final_port || 0);
+  });
+
+  const headerOpts = { fontSize: 8, bold: true, color: 'FFFFFF', fill: { color: '1E3A8A' }, align: 'center', valign: 'middle' };
+  const header = [{ text: 'Regional', options: Object.assign({}, headerOpts, { align: 'left' }) }];
+  programs.forEach(p => { header.push({ text: p + ' Order', options: headerOpts }); header.push({ text: p + ' Port', options: headerOpts }); });
+  header.push({ text: 'TOTAL Order', options: headerOpts }, { text: 'TOTAL Port', options: headerOpts });
+  const rows = [header];
+
+  const colTotals = {}; programs.forEach(p => { colTotals[p] = { order: 0, port: 0 }; });
+  let grandOrder = 0, grandPort = 0;
+  const cellOpts = { fontSize: 8, valign: 'middle', border: { type: 'solid', color: 'D1D5DB', pt: 0.5 } };
+  regionals.forEach(reg => {
+    const row = [{ text: reg, options: Object.assign({}, cellOpts, { align: 'left', bold: true }) }];
+    let rowOrder = 0, rowPort = 0;
+    programs.forEach(p => {
+      const c = grid[reg][p] || { order: 0, port: 0 };
+      colTotals[p].order += c.order; colTotals[p].port += c.port;
+      rowOrder += c.order; rowPort += c.port;
+      row.push({ text: fmtNumL(c.order), options: cellOpts }, { text: fmtNumL(c.port), options: cellOpts });
+    });
+    grandOrder += rowOrder; grandPort += rowPort;
+    row.push(
+      { text: fmtNumL(rowOrder), options: Object.assign({}, cellOpts, { bold: true, fill: { color: 'EFF6FF' } }) },
+      { text: fmtNumL(rowPort), options: Object.assign({}, cellOpts, { bold: true, fill: { color: 'EFF6FF' } }) },
+    );
+    rows.push(row);
+  });
+
+  const totalOpts = { fontSize: 8, bold: true, valign: 'middle', fill: { color: 'DCFCE7' }, border: { type: 'solid', color: 'D1D5DB', pt: 0.5 } };
+  const totalRow = [{ text: 'TOTAL', options: Object.assign({}, totalOpts, { align: 'left' }) }];
+  programs.forEach(p => { totalRow.push({ text: fmtNumL(colTotals[p].order), options: totalOpts }, { text: fmtNumL(colTotals[p].port), options: totalOpts }); });
+  totalRow.push({ text: fmtNumL(grandOrder), options: totalOpts }, { text: fmtNumL(grandPort), options: totalOpts });
+  rows.push(totalRow);
+  return rows;
+}
+
+// ── Baris tabel pptx: "Distribusi Status LOP" ──
+function buildStatusTableData(filteredRows) {
+  const counts = {};
+  filteredRows.forEach(r => { counts[r.status_lop] = (counts[r.status_lop] || 0) + 1; });
+  const labels = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  const total = filteredRows.length;
+  const headerOpts = { fontSize: 9, bold: true, color: 'FFFFFF', fill: { color: '1E3A8A' }, align: 'center', valign: 'middle' };
+  const rows = [[
+    { text: 'Status LOP', options: Object.assign({}, headerOpts, { align: 'left' }) },
+    { text: 'Jumlah', options: headerOpts },
+    { text: '%', options: headerOpts },
+  ]];
+  const cellOpts = { fontSize: 9, valign: 'middle', border: { type: 'solid', color: 'D1D5DB', pt: 0.5 } };
+  labels.forEach(l => {
+    rows.push([
+      { text: l, options: Object.assign({}, cellOpts, { align: 'left' }) },
+      { text: fmtNumL(counts[l]), options: cellOpts },
+      { text: (total ? Math.round(counts[l] / total * 100) : 0) + '%', options: cellOpts },
+    ]);
+  });
+  rows.push([
+    { text: 'TOTAL', options: { fontSize: 9, bold: true, fill: { color: 'DCFCE7' }, align: 'left' } },
+    { text: fmtNumL(total), options: { fontSize: 9, bold: true, fill: { color: 'DCFCE7' } } },
+    { text: '100%', options: { fontSize: 9, bold: true, fill: { color: 'DCFCE7' } } },
+  ]);
+  return rows;
+}
+
+async function buildAndDownloadPptx() {
+  if (!window.PptxGenJS) { alert('Library pembuat PPTX gagal dimuat — cek koneksi internet lalu coba lagi.'); return; }
+  if (!lapFilteredSummary) { alert('Data laporan belum siap, tunggu sebentar lalu coba lagi.'); return; }
   saveNotes();
+
   const btn = document.getElementById('lapDownloadBtn');
   const original = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = 'Menyiapkan PDF...';
+  btn.innerHTML = 'Menyiapkan PPTX...';
 
-  const opt = {
-    margin: 8,
-    filename: `laporan-fbb-${currentRefDate || 'draft'}.pdf`,
-    image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: { scale: 1.5, useCORS: true },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['css', 'legacy'] },
-  };
+  try {
+    const pptx = new PptxGenJS();
+    pptx.layout = 'LAYOUT_WIDE'; // 13.33 x 7.5 in, cukup lega untuk tabel banyak kolom
 
-  html2pdf().set(opt).from(document.getElementById('lapExportArea')).save()
-    .catch((e) => { alert('Gagal membuat PDF: ' + (e && e.message ? e.message : e)); })
-    .finally(() => { btn.disabled = false; btn.innerHTML = original; });
-});
+    const fs = lapFilteredSummary;
+    const g = fs.grand_total;
+    const monthLabel = fs.current_month_label;
+
+    // ── Slide 1: Cover ──
+    let s = pptx.addSlide();
+    s.background = { color: '0F172A' };
+    s.addText('LAPORAN EKSEKUTIF FBB', { x: 0.6, y: 2.6, w: 12, h: 1, fontSize: 40, bold: true, color: 'FFFFFF' });
+    s.addText(
+      `Tanggal acuan: ${fs.reference_date}   |   Program: ${qPrograms ? qPrograms.join(', ') : 'Semua'}   |   Regional: ${qRegionals ? qRegionals.join(', ') : 'Semua'}`,
+      { x: 0.6, y: 3.7, w: 12, h: 0.5, fontSize: 14, color: 'CBD5E1' }
+    );
+    s.addText(`Dibuat: ${new Date().toLocaleString('id-ID')}`, { x: 0.6, y: 4.2, w: 12, h: 0.4, fontSize: 12, color: '94A3B8' });
+
+    // ── Slide 2: Ringkasan Eksekutif (KPI + narasi) ──
+    s = pptx.addSlide();
+    s.addText('Ringkasan Eksekutif', { x: 0.4, y: 0.3, w: 12.5, h: 0.6, fontSize: 22, bold: true, color: '111827' });
+    const kpis = [
+      { label: 'TOTAL ORDER', value: fmtNumL(lapRows.length), color: 'E30613' },
+      { label: 'TOTAL PORT', value: fmtNumL(lapRows.reduce((sum, r) => sum + (r.final_port || 0), 0)), color: '29467A' },
+      { label: 'ACH YTD', value: fmtPctL(g.ach_ytd_q3), color: achFillHex(g.ach_ytd_q3) },
+      { label: 'GAP YTD', value: fmtNumL(g.gap_q3), color: g.gap_q3 >= 0 ? '16A34A' : 'DC2626' },
+    ];
+    const kpiW = 2.9, kpiGap = 0.25, kpiX0 = 0.4;
+    kpis.forEach((k, i) => {
+      const x = kpiX0 + i * (kpiW + kpiGap);
+      s.addShape(pptx.ShapeType.roundRect, { x, y: 1.05, w: kpiW, h: 1.35, fill: { color: 'F8FAFC' }, line: { color: k.color, width: 2 }, rectRadius: 0.08 });
+      s.addText(k.label, { x, y: 1.15, w: kpiW, h: 0.35, fontSize: 11, bold: true, color: '6B7280', align: 'center' });
+      s.addText(k.value, { x, y: 1.5, w: kpiW, h: 0.7, fontSize: 26, bold: true, color: k.color, align: 'center' });
+    });
+    s.addText(buildNarrativePlainText(fs), { x: 0.4, y: 2.7, w: 12.5, h: 2.3, fontSize: 13, color: '1F2937', valign: 'top', lineSpacingMultiple: 1.3 });
+
+    // ── Slide 3: Chart bar — ACH YTD per Regional ──
+    const regLabels = fs.regionals.map(r => r.regional);
+    const achValues = fs.regionals.map(r => Math.round((r.combined.ach_ytd_q3 || 0) * 10) / 10);
+    s = pptx.addSlide();
+    s.addText('ACH YTD per Regional (%)', { x: 0.4, y: 0.3, w: 12.5, h: 0.5, fontSize: 20, bold: true, color: '111827' });
+    s.addChart(pptx.ChartType.bar, [{ name: 'ACH YTD (%)', labels: regLabels, values: achValues }], {
+      x: 0.4, y: 0.9, w: 12.5, h: 6.2, barDir: 'col', showValue: true,
+      dataLabelColor: '111827', dataLabelFontSize: 10, chartColors: ['2563EB'], showLegend: false,
+      catAxisLabelColor: '374151', valAxisLabelColor: '374151',
+    });
+
+    // ── Slide 4: Chart bar berkelompok — Realisasi vs Target per Regional ──
+    const ytdValues = fs.regionals.map(r => Math.round(r.combined.ytd));
+    const targetValues = fs.regionals.map(r => Math.round(r.combined.target_ytd));
+    s = pptx.addSlide();
+    s.addText('Realisasi vs Target YTD per Regional (Port)', { x: 0.4, y: 0.3, w: 12.5, h: 0.5, fontSize: 20, bold: true, color: '111827' });
+    s.addChart(pptx.ChartType.bar, [
+      { name: 'Realisasi YTD', labels: regLabels, values: ytdValues },
+      { name: 'Target YTD', labels: regLabels, values: targetValues },
+    ], {
+      x: 0.4, y: 0.9, w: 12.5, h: 6.2, barDir: 'col', barGrouping: 'clustered', showValue: true,
+      dataLabelFontSize: 9, chartColors: ['16A34A', '94A3B8'], showLegend: true, legendPos: 'b',
+      catAxisLabelColor: '374151', valAxisLabelColor: '374151',
+    });
+
+    // ── Slide 5: Chart line — Tren realisasi kumulatif (Juni / Juli / bulan berjalan) ──
+    const trendLabels = ['Juni', 'Juli', monthLabel];
+    const trendValues = [Math.round(g.real_ytd_juni || 0), Math.round(g.real_ytd_juli || 0), Math.round(g.ytd || 0)];
+    s = pptx.addSlide();
+    s.addText('Tren Realisasi Kumulatif (Port)', { x: 0.4, y: 0.3, w: 12.5, h: 0.5, fontSize: 20, bold: true, color: '111827' });
+    s.addChart(pptx.ChartType.line, [{ name: 'Realisasi Kumulatif', labels: trendLabels, values: trendValues }], {
+      x: 0.4, y: 0.9, w: 12.5, h: 6.2, showValue: true, lineDataSymbol: 'circle', lineSize: 3, lineDataSymbolSize: 8,
+      chartColors: ['E30613'], showLegend: false, catAxisLabelColor: '374151', valAxisLabelColor: '374151',
+    });
+
+    // ── Slide 6: Chart pie — Distribusi Status LOP ──
+    const statusCounts = {};
+    lapRows.forEach(r => { statusCounts[r.status_lop] = (statusCounts[r.status_lop] || 0) + 1; });
+    const statusLabels = Object.keys(statusCounts).sort((a, b) => statusCounts[b] - statusCounts[a]);
+    const statusValues = statusLabels.map(l => statusCounts[l]);
+    s = pptx.addSlide();
+    s.addText('Distribusi Status LOP', { x: 0.4, y: 0.3, w: 12.5, h: 0.5, fontSize: 20, bold: true, color: '111827' });
+    s.addChart(pptx.ChartType.pie, [{ name: 'Status LOP', labels: statusLabels, values: statusValues }], {
+      x: 2.4, y: 0.9, w: 8.5, h: 6.2, showValue: false, showPercent: true, showLegend: true, legendPos: 'r',
+      dataLabelColor: 'FFFFFF', dataLabelFontSize: 10,
+    });
+
+    // ── Slide 7+: Tabel Pencapaian per Regional & Program (auto-lanjut slide kalau panjang) ──
+    s = pptx.addSlide();
+    s.addText('Pencapaian per Regional & Program', { x: 0.4, y: 0.3, w: 12.5, h: 0.5, fontSize: 20, bold: true, color: '111827' });
+    s.addTable(buildSummaryTableData(fs), {
+      x: 0.4, y: 0.9, w: 12.5, colW: computeColWidths(10, 2.5, 12.5),
+      autoPage: true, autoPageRepeatHeader: true, autoPageHeaderRows: 1, newSlideStartY: 0.6,
+    });
+
+    // ── Slide N: Tabel Order & Port per Regional x Program (auto-lanjut slide) ──
+    const programsForTable = qPrograms || Array.from(new Set(lapRows.map(r => r.program))).sort();
+    s = pptx.addSlide();
+    s.addText('Order & Port per Regional × Program', { x: 0.4, y: 0.3, w: 12.5, h: 0.5, fontSize: 20, bold: true, color: '111827' });
+    const portRows = buildRegionalPortTableData(lapRows, programsForTable);
+    s.addTable(portRows, {
+      x: 0.4, y: 0.9, w: 12.5, colW: computeColWidths(portRows[0].length, 2.3, 12.5),
+      autoPage: true, autoPageRepeatHeader: true, autoPageHeaderRows: 1, newSlideStartY: 0.6,
+    });
+
+    // ── Slide N+1: Tabel Distribusi Status LOP (auto-lanjut slide) ──
+    s = pptx.addSlide();
+    s.addText('Distribusi Status LOP', { x: 0.4, y: 0.3, w: 12.5, h: 0.5, fontSize: 20, bold: true, color: '111827' });
+    s.addTable(buildStatusTableData(lapRows), {
+      x: 2.4, y: 0.9, w: 8.5, colW: [5, 1.75, 1.75],
+      autoPage: true, autoPageRepeatHeader: true, autoPageHeaderRows: 1, newSlideStartY: 0.6,
+    });
+
+    // ── Slide terakhir: Catatan, Kendala & ATBT ──
+    s = pptx.addSlide();
+    s.addText('Catatan, Kendala & ATBT', { x: 0.4, y: 0.3, w: 12.5, h: 0.5, fontSize: 20, bold: true, color: '111827' });
+    const noteBlocks = [
+      { label: 'Catatan Umum', value: document.getElementById('noteUmum').value },
+      { label: 'Kendala / Isu', value: document.getElementById('noteKendala').value },
+      { label: 'ATBT (Action To Be Taken)', value: document.getElementById('noteAtbt').value },
+      { label: 'Catatan Lain', value: document.getElementById('noteLain').value },
+    ];
+    let ny = 1.0;
+    noteBlocks.forEach(block => {
+      s.addText(block.label, { x: 0.4, y: ny, w: 12.5, h: 0.35, fontSize: 13, bold: true, color: '1E3A8A' });
+      s.addText(block.value || '(kosong)', { x: 0.4, y: ny + 0.38, w: 12.5, h: 1.0, fontSize: 11, color: '374151', valign: 'top' });
+      ny += 1.5;
+    });
+
+    await pptx.writeFile({ fileName: `laporan-fbb-${currentRefDate || 'draft'}.pptx` });
+  } catch (e) {
+    alert('Gagal membuat PPTX: ' + (e && e.message ? e.message : e));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+}
+
+document.getElementById('lapDownloadBtn').addEventListener('click', buildAndDownloadPptx);
 
 async function initLaporan() {
   try {
@@ -400,6 +660,7 @@ async function initLaporan() {
 
     const filteredSummary = computeFilteredSummary(summaryRes.data);
     currentRefDate = filteredSummary.reference_date;
+    lapFilteredSummary = filteredSummary;
 
     renderLapMeta(filteredSummary);
     renderLapStats(lapRows, filteredSummary);
