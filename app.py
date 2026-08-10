@@ -125,7 +125,7 @@ def fbb_laporan_page():
     tombol 'Buat Laporan' di halaman FBB. Semua data diambil lewat
     /api/fbb-data dan /api/fbb-summary yang sudah ada, jadi tidak perlu
     fungsi baru di sheets_service.py."""
-    return render_template("laporan_fbb.html")
+    return render_template("Laporan fbb.html")
 
 
 @app.route("/api/fbb-data")
