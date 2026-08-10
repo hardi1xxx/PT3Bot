@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+{% block title %}Laporan Eksekutif FBB{% endblock %}
+{% block page_title %}Laporan Eksekutif FBB{% endblock %}
+{% block page_sub %}Ringkasan eksekutif, data detail, dan catatan kendala/ATBT — dibuat dari data &amp; filter halaman FBB{% endblock %}
+
+{% block content %}
+
+<style>
+  .laporan-meta { display:flex; flex-wrap:wrap; gap:10px 24px; align-items:center; margin-bottom:16px; }
+  .laporan-meta .btn-row { margin-left:auto; display:flex; gap:8px; }
+  .laporan-narrative { font-size:0.9rem; line-height:1.65; color:var(--text); background:var(--panel-alt); }
+  .laporan-narrative p { margin:0; }
+  .note-field { margin-bottom:16px; }
+  .note-field:last-child { margin-bottom:0; }
+  .note-field label { display:block; font-weight:600; color:var(--text); margin-bottom:4px; font-size:0.86rem; }
+  .note-field textarea { min-height:90px; }
+  .note-saved-hint { font-size:0.72rem; color:var(--muted); margin-top:6px; }
+  .detail-scroll { max-height:520px; overflow-y:auto; }
+  .lap-stat-value-sm { font-size: 1.5rem; }
+
+  @media print {
+    .sidebar, .notif-wrap, .no-print { display:none !important; }
+    .main { margin:0; }
+    .content { padding:0; max-width:100%; }
+    body { background:#fff; }
+    .card { box-shadow:none; border:1px solid #ccc; break-inside:avoid; }
+    .detail-scroll { max-height:none; overflow:visible; }
+    table.pivot { font-size:0.72rem; }
+    textarea { border:1px solid #ccc; background:#fff; }
+    .section-title { break-after:avoid; }
+  }
+</style>
+
+<div class="card laporan-meta">
+  <div>
+    <div style="font-weight:700; font-size:0.95rem;">Laporan Eksekutif FBB</div>
+    <div class="sub" id="lapMeta" style="color:var(--muted); font-size:0.8rem; margin-top:2px;">Memuat...</div>
+  </div>
+  <div class="btn-row no-print">
+    <button type="button" class="btn-ghost" onclick="location.href='/fbb'">&larr; Kembali ke FBB</button>
+    <button type="button" id="lapPrintBtn">&#128424; Cetak / Simpan PDF</button>
+  </div>
+</div>
+
+<div class="stat-grid" id="lapStatGrid">
+  <div class="skeleton">Memuat ringkasan...</div>
+</div>
+
+<div class="section-title">Ringkasan Eksekutif</div>
+<div class="card laporan-narrative" id="lapNarrative" style="margin-bottom:22px;">Memuat...</div>
+
+<div class="section-title">Pencapaian per Regional &amp; Program</div>
+<div class="card" style="margin-bottom:18px;">
+  <div class="pivot-table-wrap" id="lapSummaryTableWrap" style="overflow-x:auto;"><div class="skeleton">Memuat...</div></div>
+</div>
+
+<div class="dashboard-grid">
+  <div class="tables-col">
+    <div>
+      <div class="section-title">Order &amp; Port per Regional &times; Program</div>
+      <div class="card">
+        <div class="pivot-table-wrap"><table class="pivot pivot-combined" id="lapRegionalTable"></table></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title">Distribusi Status LOP</div>
+    <div class="pivot-table-wrap"><table class="pivot" id="lapStatusTable"></table></div>
+  </div>
+</div>
+
+<div class="section-title">Data Detail (baris sesuai filter)</div>
+<div class="card" style="margin-bottom:18px;">
+  <div class="pivot-table-wrap detail-scroll" id="lapDetailTableWrap"><div class="skeleton">Memuat...</div></div>
+</div>
+
+<div class="section-title">Catatan, Kendala &amp; ATBT</div>
+<div class="card" style="margin-bottom:24px;">
+  <div class="note-field">
+    <label for="noteUmum">Catatan Umum</label>
+    <textarea id="noteUmum" placeholder="Catatan umum terkait pencapaian periode ini..."></textarea>
+  </div>
+  <div class="note-field">
+    <label for="noteKendala">Kendala / Isu</label>
+    <textarea id="noteKendala" placeholder="Kendala lapangan, perijinan, material, dsb..."></textarea>
+  </div>
+  <div class="note-field">
+    <label for="noteAtbt">ATBT (Action To Be Taken)</label>
+    <textarea id="noteAtbt" placeholder="Rencana tindak lanjut untuk mengatasi kendala..."></textarea>
+  </div>
+  <div class="note-field">
+    <label for="noteLain">Catatan Lain</label>
+    <textarea id="noteLain" placeholder="Informasi tambahan lainnya..."></textarea>
+  </div>
+  <div class="note-saved-hint no-print" id="noteSavedHint">Catatan tersimpan otomatis di perangkat/browser ini.</div>
+</div>
+
+<script>
+function escL(s) {
+  return (s === null || s === undefined ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function fmtNumL(n) { return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0); }
+function fmtPctL(n) { return (n === null || n === undefined) ? '-' : Math.round(n * 10) / 10 + '%'; }
+function achColorL(pct) {
+  if (pct === null || pct === undefined) return '#9ca3af';
+  if (pct > 90) return '#16a34a';
+  if (pct > 50) return '#eab308';
+  if (pct > 25) return '#f97316';
+  return '#dc2626';
+}
+function achCellStyleL(pct) { const c = achColorL(pct); return `background:${c}22; color:${c}; font-weight:700;`; }
+function gapCellStyleL(gap) {
+  if (gap === null || gap === undefined) return '';
+  return gap >= 0
+    ? 'background:#ecfdf3; color:#14532d; font-weight:700;'
+    : 'background:#fdecec; color:#7f1d1d; font-weight:700;';
+}
+
+// ── Filter dibawa dari halaman FBB lewat query string ────────────────
+const qp = new URLSearchParams(window.location.search);
+const qDate = qp.get('date') || '';
+const qPrograms = qp.get('programs') ? qp.get('programs').split(',').filter(Boolean) : null;   // null = semua
+const qRegionals = qp.get('regionals') ? qp.get('regionals').split(',').filter(Boolean) : null; // null = semua
+
+let lapRows = [];
+let currentRefDate = null;
+
+// ── Rekombinasi ringkasan (DOD/MTD/YTD/ACH/GAP) sesuai filter Program & Regional ──
+// /api/fbb-summary selalu menghitung untuk SEMUA data (hanya menerima parameter
+// tanggal acuan), jadi field-field yang additive (dod, mtd, ytd, target, dst)
+// dijumlah ulang di sisi klien untuk regional/program yang dipilih saja, lalu
+// rasio ACH/GAP dihitung ulang dengan rumus yang sama seperti di backend.
+function sumMetric(entries, key) { return entries.reduce((s, e) => s + (e[key] || 0), 0); }
+function combineMetricsJS(entries) {
+  const dod = sumMetric(entries, 'dod');
+  const mtd = sumMetric(entries, 'mtd');
+  const potensi = sumMetric(entries, 'potensi');
+  const ytd = sumMetric(entries, 'ytd');
+  const real_ytd_juni = sumMetric(entries, 'real_ytd_juni');
+  const real_ytd_juli = sumMetric(entries, 'real_ytd_juli');
+  const total_order_port = sumMetric(entries, 'total_order_port');
+  const target_month = sumMetric(entries, 'target_month');
+  const target_ytd = sumMetric(entries, 'target_ytd');
+  const outlook_ytd = ytd + potensi;
+  const ach_mtd = target_month ? (mtd / target_month * 100) : 0;
+  const ach_ytd = target_ytd ? (ytd / target_ytd * 100) : 0;
+  const gap_ytd = ytd - target_ytd;
+  const ach_total_order = total_order_port ? (ytd / total_order_port * 100) : 0;
+  return {
+    dod, mtd, potensi, ytd, real_ytd_juni, real_ytd_juli, total_order_port,
+    target_month, target_ytd, outlook_ytd, ach_mtd, ach_ytd, gap_ytd,
+    ach_ytd_q3: ach_ytd, gap_q3: gap_ytd, ach_total_order,
+  };
+}
+function computeFilteredSummary(data) {
+  const regionals = data.regionals.filter(r => !qRegionals || qRegionals.includes(r.regional));
+  const programs = data.programs.filter(p => !qPrograms || qPrograms.includes(p));
+
+  const regionalResults = regionals.map(r => {
+    const entries = programs.map(p => r.programs[p]).filter(Boolean);
+    return { regional: r.regional, combined: combineMetricsJS(entries), programs: r.programs };
+  });
+
+  const totalsByProgram = {};
+  programs.forEach(p => {
+    const entries = regionals.map(r => r.programs[p]).filter(Boolean);
+    totalsByProgram[p] = combineMetricsJS(entries);
+  });
+
+  const grandEntries = [];
+  regionals.forEach(r => programs.forEach(p => { if (r.programs[p]) grandEntries.push(r.programs[p]); }));
+
+  return {
+    regionals: regionalResults,
+    programs,
+    totals_by_program: totalsByProgram,
+    grand_total: combineMetricsJS(grandEntries),
+    current_month_label: data.current_month_label,
+    reference_date: data.reference_date,
+  };
+}
+
+function summaryRowHtmlL(label, m, opts) {
+  opts = opts || {};
+  return `
+    <tr class="${opts.rowClass || ''}">
+      <th style="${opts.labelStyle || 'text-align:left;'}">${escL(label)}</th>
+      <td>${fmtNumL(m.total_order_port)}</td>
+      <td>${fmtNumL(m.dod)}</td>
+      <td>${fmtNumL(m.mtd)}</td>
+      <td>${fmtNumL(m.potensi)}</td>
+      <td style="${achCellStyleL(m.ach_mtd)}">${fmtPctL(m.ach_mtd)}</td>
+      <td>${fmtNumL(m.ytd)}</td>
+      <td>${fmtNumL(m.outlook_ytd)}</td>
+      <td style="${achCellStyleL(m.ach_ytd_q3)}">${fmtPctL(m.ach_ytd_q3)}</td>
+      <td style="${gapCellStyleL(m.gap_q3)}">${fmtNumL(m.gap_q3)}</td>
+    </tr>
+  `;
+}
+
+function renderLapSummaryTable(data) {
+  const wrap = document.getElementById('lapSummaryTableWrap');
+  const monthLabel = data.current_month_label;
+  let html = '<table class="pivot pivot-combined"><thead><tr>';
+  html += '<th style="text-align:left;">Regional / Program</th>';
+  html += '<th>Total Port<br>(non-Drop)</th><th>DOD</th>';
+  html += `<th>MTD<br>${escL(monthLabel)}</th><th>Potensi<br>${escL(monthLabel)}</th><th>ACH MTD</th>`;
+  html += `<th>YTD<br>${escL(monthLabel)}</th><th>Outlook YTD</th><th>ACH YTD</th><th>GAP</th>`;
+  html += '</tr></thead><tbody>';
+  data.regionals.forEach(reg => { html += summaryRowHtmlL(reg.regional, reg.combined, { rowClass: 'regional-row' }); });
+  data.programs.forEach(prog => { html += summaryRowHtmlL('TOTAL ' + prog, data.totals_by_program[prog], { rowClass: 'subtotal-row' }); });
+  html += summaryRowHtmlL('TOTAL', data.grand_total, { rowClass: 'grand-total-row' });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderLapRegionalTable(filteredRows, programs) {
+  const table = document.getElementById('lapRegionalTable');
+  const regionals = Array.from(new Set(filteredRows.map(r => r.regional))).sort((a, b) => a.localeCompare(b));
+  if (!regionals.length) { table.innerHTML = '<tr><td class="empty-state">Tidak ada data.</td></tr>'; return; }
+
+  const grid = {};
+  regionals.forEach(reg => { grid[reg] = {}; programs.forEach(p => { grid[reg][p] = { order: 0, port: 0 }; }); });
+  filteredRows.forEach(r => {
+    if (!grid[r.regional]) return;
+    if (!grid[r.regional][r.program]) grid[r.regional][r.program] = { order: 0, port: 0 };
+    grid[r.regional][r.program].order += 1;
+    grid[r.regional][r.program].port += (r.final_port || 0);
+  });
+
+  let html = '<thead><tr><th rowspan="2" style="text-align:left;">Regional</th>';
+  programs.forEach(p => { html += `<th colspan="2">${escL(p)}</th>`; });
+  html += '<th colspan="2" class="total-col">TOTAL</th></tr><tr>';
+  programs.forEach(() => { html += '<th>Order</th><th>Port</th>'; });
+  html += '<th class="total-col">Order</th><th class="total-col">Port</th></tr></thead><tbody>';
+
+  const colTotals = {}; programs.forEach(p => { colTotals[p] = { order: 0, port: 0 }; });
+  let grandOrder = 0, grandPort = 0;
+  regionals.forEach(reg => {
+    html += `<tr><th style="text-align:left;">${escL(reg)}</th>`;
+    let rowOrder = 0, rowPort = 0;
+    programs.forEach(p => {
+      const cell = grid[reg][p] || { order: 0, port: 0 };
+      colTotals[p].order += cell.order; colTotals[p].port += cell.port;
+      rowOrder += cell.order; rowPort += cell.port;
+      html += `<td>${fmtNumL(cell.order)}</td><td>${fmtNumL(cell.port)}</td>`;
+    });
+    grandOrder += rowOrder; grandPort += rowPort;
+    html += `<td class="total-col">${fmtNumL(rowOrder)}</td><td class="total-col">${fmtNumL(rowPort)}</td></tr>`;
+  });
+  html += '<tr class="grand-total-row"><th style="text-align:left;">TOTAL</th>';
+  programs.forEach(p => { html += `<td>${fmtNumL(colTotals[p].order)}</td><td>${fmtNumL(colTotals[p].port)}</td>`; });
+  html += `<td class="total-col">${fmtNumL(grandOrder)}</td><td class="total-col">${fmtNumL(grandPort)}</td></tr>`;
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+function renderLapStatusTable(filteredRows) {
+  const table = document.getElementById('lapStatusTable');
+  const counts = {};
+  filteredRows.forEach(r => { counts[r.status_lop] = (counts[r.status_lop] || 0) + 1; });
+  const labels = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  const total = filteredRows.length;
+  if (!labels.length) { table.innerHTML = '<tr><td class="empty-state">Tidak ada data.</td></tr>'; return; }
+  let html = '<thead><tr><th style="text-align:left;">Status LOP</th><th>Jumlah</th><th>%</th></tr></thead><tbody>';
+  labels.forEach(l => {
+    html += `<tr><th style="text-align:left;">${escL(l)}</th><td>${fmtNumL(counts[l])}</td><td>${total ? Math.round(counts[l] / total * 100) : 0}%</td></tr>`;
+  });
+  html += `</tbody><tfoot><tr><td style="text-align:left;">TOTAL</td><td>${fmtNumL(total)}</td><td>100%</td></tr></tfoot>`;
+  table.innerHTML = html;
+}
+
+function renderLapDetailTable(filteredRows) {
+  const wrap = document.getElementById('lapDetailTableWrap');
+  if (!filteredRows.length) { wrap.innerHTML = '<div class="empty-state">Tidak ada data.</div>'; return; }
+  const sorted = [...filteredRows].sort((a, b) =>
+    (a.regional || '').localeCompare(b.regional) || (a.batch || '').localeCompare(b.batch));
+  let html = '<table class="pivot"><thead><tr>';
+  ['Program', 'Regional', 'Branch', 'Batch', 'IHLD', 'Lokasi', 'STO', 'Status LOP', 'Final Port', 'Tgl Golive', 'Keterangan']
+    .forEach(h => { html += `<th>${h}</th>`; });
+  html += '</tr></thead><tbody>';
+  sorted.forEach(r => {
+    html += `<tr>
+      <td>${escL(r.program)}</td><td>${escL(r.regional)}</td><td>${escL(r.branch)}</td><td>${escL(r.batch)}</td>
+      <td style="text-align:left;">${escL(r.ihld)}</td><td style="text-align:left;">${escL(r.lokasi)}</td><td>${escL(r.sto)}</td>
+      <td>${escL(r.status_lop)}</td><td>${fmtNumL(r.final_port)}</td><td>${escL(r.tgl_golive)}</td>
+      <td style="text-align:left; max-width:220px; white-space:normal;">${escL(r.keterangan)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderLapStats(filteredRows, filteredSummary) {
+  const grid = document.getElementById('lapStatGrid');
+  const totalOrder = filteredRows.length;
+  const totalPort = filteredRows.reduce((s, r) => s + (r.final_port || 0), 0);
+  const g = filteredSummary.grand_total;
+  grid.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total Order</div><div class="stat-value">${fmtNumL(totalOrder)}</div>
+      <div class="stat-foot">baris sesuai filter</div>
+    </div>
+    <div class="stat-card alt">
+      <div class="stat-label">Total Port</div><div class="stat-value">${fmtNumL(totalPort)}</div>
+      <div class="stat-foot">FINAL PORT</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">ACH YTD</div>
+      <div class="stat-value lap-stat-value-sm" style="color:${achColorL(g.ach_ytd_q3)}">${fmtPctL(g.ach_ytd_q3)}</div>
+      <div class="stat-foot">terhadap target YTD</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">GAP YTD</div>
+      <div class="stat-value lap-stat-value-sm" style="color:${g.gap_q3 >= 0 ? '#16a34a' : '#dc2626'}">${fmtNumL(g.gap_q3)}</div>
+      <div class="stat-foot">port vs target</div>
+    </div>
+  `;
+}
+
+function renderLapNarrative(filteredSummary) {
+  const el = document.getElementById('lapNarrative');
+  const g = filteredSummary.grand_total;
+  const candidates = filteredSummary.regionals.filter(r => r.combined.target_ytd > 0);
+  let best = null, worst = null;
+  candidates.forEach(r => {
+    if (!best || r.combined.ach_ytd_q3 > best.combined.ach_ytd_q3) best = r;
+    if (!worst || r.combined.ach_ytd_q3 < worst.combined.ach_ytd_q3) worst = r;
+  });
+
+  let text = `Sampai dengan tanggal acuan <strong>${escL(filteredSummary.reference_date)}</strong> `
+    + `(bulan berjalan: ${escL(filteredSummary.current_month_label)}), pencapaian YTD tercatat `
+    + `<strong>${fmtPctL(g.ach_ytd_q3)}</strong> dari target (realisasi ${fmtNumL(g.ytd)} port dari target ${fmtNumL(g.target_ytd)} port), `
+    + `dengan GAP sebesar <strong>${fmtNumL(g.gap_q3)}</strong> port. `
+    + `Outlook YTD (realisasi + potensi bulan berjalan) diproyeksikan mencapai ${fmtNumL(g.outlook_ytd)} port.`;
+
+  if (best && worst && best.regional !== worst.regional) {
+    text += ` Regional dengan pencapaian tertinggi adalah <strong>${escL(best.regional)}</strong> (${fmtPctL(best.combined.ach_ytd_q3)}), `
+      + `sedangkan yang paling perlu perhatian adalah <strong>${escL(worst.regional)}</strong> (${fmtPctL(worst.combined.ach_ytd_q3)}).`;
+  }
+
+  el.innerHTML = `<p>${text}</p>`;
+}
+
+function renderLapMeta(filteredSummary) {
+  document.getElementById('lapMeta').textContent =
+    `Tanggal acuan: ${filteredSummary.reference_date} · `
+    + `Program: ${qPrograms ? qPrograms.join(', ') : 'Semua'} · `
+    + `Regional: ${qRegionals ? qRegionals.join(', ') : 'Semua'} · `
+    + `Dibuat: ${new Date().toLocaleString('id-ID')}`;
+}
+
+// ── Catatan / Kendala / ATBT — tersimpan otomatis di localStorage browser ini,
+// dipisah per tanggal acuan + kombinasi filter supaya laporan beda periode
+// tidak saling menimpa catatannya. ──
+function noteStorageKey(refDate) {
+  const progKey = qPrograms ? qPrograms.slice().sort().join('|') : 'ALL';
+  const regKey = qRegionals ? qRegionals.slice().sort().join('|') : 'ALL';
+  return `fbb_laporan_notes::${refDate}::${progKey}::${regKey}`;
+}
+function loadNotes(refDate) {
+  try {
+    const raw = localStorage.getItem(noteStorageKey(refDate));
+    if (!raw) return;
+    const obj = JSON.parse(raw);
+    document.getElementById('noteUmum').value = obj.umum || '';
+    document.getElementById('noteKendala').value = obj.kendala || '';
+    document.getElementById('noteAtbt').value = obj.atbt || '';
+    document.getElementById('noteLain').value = obj.lain || '';
+    if (obj.savedAt) {
+      document.getElementById('noteSavedHint').textContent = 'Terakhir disimpan: ' + new Date(obj.savedAt).toLocaleString('id-ID');
+    }
+  } catch (e) { /* localStorage tidak tersedia — abaikan */ }
+}
+function saveNotes() {
+  if (!currentRefDate) return;
+  const obj = {
+    umum: document.getElementById('noteUmum').value,
+    kendala: document.getElementById('noteKendala').value,
+    atbt: document.getElementById('noteAtbt').value,
+    lain: document.getElementById('noteLain').value,
+    savedAt: Date.now(),
+  };
+  try {
+    localStorage.setItem(noteStorageKey(currentRefDate), JSON.stringify(obj));
+    document.getElementById('noteSavedHint').textContent = 'Terakhir disimpan: ' + new Date(obj.savedAt).toLocaleString('id-ID');
+  } catch (e) { /* localStorage tidak tersedia — abaikan */ }
+}
+let saveTimer = null;
+['noteUmum', 'noteKendala', 'noteAtbt', 'noteLain'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNotes, 800);
+  });
+});
+
+document.getElementById('lapPrintBtn').addEventListener('click', () => { saveNotes(); window.print(); });
+
+async function initLaporan() {
+  try {
+    const [dashRes, summaryRes] = await Promise.all([
+      fetch('/api/fbb-data').then(r => r.json()),
+      fetch('/api/fbb-summary' + (qDate ? ('?date=' + encodeURIComponent(qDate)) : '')).then(r => r.json()),
+    ]);
+    if (!dashRes.ok) throw new Error(dashRes.error || 'Gagal memuat data FBB');
+    if (!summaryRes.ok) throw new Error(summaryRes.error || 'Gagal memuat ringkasan FBB');
+
+    lapRows = dashRes.data.rows.filter(r =>
+      (!qPrograms || qPrograms.includes(r.program)) &&
+      (!qRegionals || qRegionals.includes(r.regional))
+    );
+    const programsForTable = qPrograms || dashRes.data.programs;
+
+    const filteredSummary = computeFilteredSummary(summaryRes.data);
+    currentRefDate = filteredSummary.reference_date;
+
+    renderLapMeta(filteredSummary);
+    renderLapStats(lapRows, filteredSummary);
+    renderLapNarrative(filteredSummary);
+    renderLapSummaryTable(filteredSummary);
+    renderLapRegionalTable(lapRows, programsForTable);
+    renderLapStatusTable(lapRows);
+    renderLapDetailTable(lapRows);
+    loadNotes(currentRefDate);
+  } catch (e) {
+    document.getElementById('lapNarrative').innerHTML =
+      `<span style="color:var(--danger);">Gagal memuat laporan: ${escL(e.message || e)}</span>`;
+  }
+}
+
+initLaporan();
+</script>
+{% endblock %}s

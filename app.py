@@ -119,6 +119,15 @@ def fbb_page():
     return render_template("fbb.html")
 
 
+@app.route("/fbb/laporan")
+def fbb_laporan_page():
+    """Laporan eksekutif FBB — tidak ada di menu sidebar, hanya diakses lewat
+    tombol 'Buat Laporan' di halaman FBB. Semua data diambil lewat
+    /api/fbb-data dan /api/fbb-summary yang sudah ada, jadi tidak perlu
+    fungsi baru di sheets_service.py."""
+    return render_template("laporan_fbb.html")
+
+
 @app.route("/api/fbb-data")
 def api_fbb_data():
     try:
