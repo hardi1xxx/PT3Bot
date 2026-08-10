@@ -72,6 +72,9 @@
   <input type="date" id="fbbRefDate" style="width:auto; margin:0;">
   <button type="button" id="fbbRefDateApply">Terapkan</button>
   <span class="sub" id="fbbRefDateLabel"></span>
+  <button type="button" id="fbbLaporanBtn" class="btn-ghost" style="margin-left:auto;" title="Buat laporan eksekutif dari data &amp; filter saat ini">
+    &#128196; Buat Laporan
+  </button>
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pivot-table-wrap" id="fbbSummaryTableWrap" style="overflow-x:auto;">
@@ -355,6 +358,23 @@ async function loadFbbSummary(dateStr) {
 document.getElementById('fbbRefDateApply').addEventListener('click', () => {
   const val = document.getElementById('fbbRefDate').value;
   loadFbbSummary(val || null);
+});
+
+// ── Buat Laporan: buka halaman laporan baru di tab baru, bawa filter aktif ──
+document.getElementById('fbbLaporanBtn').addEventListener('click', () => {
+  const dateVal = document.getElementById('fbbRefDate').value;
+  const programsChecked = Array.from(document.querySelectorAll('.fbb-program-checkbox:checked')).map(cb => cb.value);
+  const programsAll = Array.from(document.querySelectorAll('.fbb-program-checkbox')).map(cb => cb.value);
+  const regionalsChecked = Array.from(document.querySelectorAll('.fbb-regional-checkbox:checked')).map(cb => cb.value);
+  const regionalsAll = Array.from(document.querySelectorAll('.fbb-regional-checkbox')).map(cb => cb.value);
+
+  const qs = new URLSearchParams();
+  if (dateVal) qs.set('date', dateVal);
+  // hanya kirim filter kalau memang subset (bukan "semua dipilih"), biar URL tetap rapi
+  if (programsChecked.length && programsChecked.length < programsAll.length) qs.set('programs', programsChecked.join(','));
+  if (regionalsChecked.length && regionalsChecked.length < regionalsAll.length) qs.set('regionals', regionalsChecked.join(','));
+
+  window.open('/fbb/laporan?' + qs.toString(), '_blank');
 });
 
 (function () {
