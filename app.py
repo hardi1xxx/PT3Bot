@@ -100,6 +100,20 @@ def api_pending_updates():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/pt2")
+def pt2_page():
+    return render_template("pt2.html")
+
+
+@app.route("/api/pt2-dashboard")
+def api_pt2_dashboard():
+    try:
+        data = sheets_service.get_pt2_dashboard_data()
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/fbb")
 def fbb_page():
     return render_template("fbb.html")

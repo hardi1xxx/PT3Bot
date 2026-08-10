@@ -245,6 +245,38 @@ ACH_THRESHOLD_GREEN = 90
 ACH_THRESHOLD_YELLOW = 50
 ACH_THRESHOLD_ORANGE = 25
 
+# ── Sheet "Detail PT2" ───────────────────────────────────────────────
+SHEET_NAME_PT2 = os.environ.get("SHEET_NAME_PT2", "Detail PT2")
+HEADER_ROW_PT2 = 1     # asumsi -- konfirmasi & ubah kalau beda
+DATA_START_ROW_PT2 = 2  # asumsi -- konfirmasi & ubah kalau beda
+
+COL_PT2_ID_IHLD = "A"
+COL_PT2_LOKASI = "B"
+COL_PT2_STO = "C"
+COL_PT2_SOURCE_ORDER = "D"
+COL_PT2_BATCH = "H"
+COL_PT2_BRANCH = "J"        # BRANCH TA
+COL_PT2_REGIONAL = "L"      # REGIONAL TA
+COL_PT2_STATUS_LOP = "M"
+COL_PT2_KLASIFIKASI_CANCEL = "P"
+COL_PT2_DETAIL_CANCEL = "Q"
+COL_PT2_ODP_GOLIVE = "U"
+COL_PT2_FINAL_PORT = "AC"
+COL_PT2_TGL_CLOSE_WO = "AE"
+
+# Urutan status LOP persis seperti dikonfirmasi (loncat dari 3 ke 5 memang disengaja).
+PT2_STATUSES = ["0.DROP", "0.KENDALA", "1.DESIGN", "2.APPROVAL", "3.OGP DEPLOY", "5.GOLIVE"]
+PT2_GOLIVE_STATUS = "5.GOLIVE"
+PT2_EXCLUDE_FROM_DENOM = ["0.DROP", "0.KENDALA"]
+PT2_STATUS_COLORS = {
+    "0.DROP": "#dc2626",
+    "0.KENDALA": "#f97316",
+    "1.DESIGN": "#3b82f6",
+    "2.APPROVAL": "#8b5cf6",
+    "3.OGP DEPLOY": "#eab308",
+    "5.GOLIVE": "#16a34a",
+}
+
 # ── Env / secrets ──────────────────────────────────────────────────────
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")

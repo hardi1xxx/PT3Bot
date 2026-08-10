@@ -70,6 +70,19 @@ def get_semesta_worksheet():
     return _semesta_worksheet
 
 
+_pt2_worksheet = None
+
+
+def get_pt2_worksheet():
+    """Sheet 'Detail PT2' — tab lain, spreadsheet yang sama."""
+    global _pt2_worksheet
+    if _pt2_worksheet is None:
+        client = get_client()
+        sh = client.open_by_key(config.SPREADSHEET_ID)
+        _pt2_worksheet = sh.worksheet(config.SHEET_NAME_PT2)
+    return _pt2_worksheet
+
+
 def find_row(ihld: str, lokasi: str):
     """
     Find the sheet row matching IHLD (col I) + LOKASI IHLD (col J).
@@ -956,4 +969,101 @@ def get_fbb_summary(reference_date_str: str = None):
             "yellow": config.ACH_THRESHOLD_YELLOW,
             "orange": config.ACH_THRESHOLD_ORANGE,
         },
+    }
+
+
+_PT2_STATUS_LOOKUP = {s.strip().upper(): s for s in config.PT2_STATUSES}
+
+
+def _match_pt2_status(raw: str):
+    return _PT2_STATUS_LOOKUP.get((raw or "").strip().upper())
+
+
+def get_pt2_dashboard_data():
+    """
+    Data untuk Dashboard PT2 (read-only — tidak ada update/edit di sini).
+    Bentuk return-nya mengikuti persis apa yang dibaca JS di pt2.html:
+    statuses, status_colors, golive_status, exclude_from_denom, regionals,
+    branches, current_month_label, rows (per-baris, sudah termasuk flag
+    is_golive_today / is_golive_month dari kolom TGL CLOSE WO).
+    """
+    ws = get_pt2_worksheet()
+    all_values = ws.get_all_values()
+
+    idx = {
+        "ihld": _col_to_index(config.COL_PT2_ID_IHLD) - 1,
+        "lokasi": _col_to_index(config.COL_PT2_LOKASI) - 1,
+        "source_order": _col_to_index(config.COL_PT2_SOURCE_ORDER) - 1,
+        "batch": _col_to_index(config.COL_PT2_BATCH) - 1,
+        "branch": _col_to_index(config.COL_PT2_BRANCH) - 1,
+        "regional": _col_to_index(config.COL_PT2_REGIONAL) - 1,
+        "status_lop": _col_to_index(config.COL_PT2_STATUS_LOP) - 1,
+        "klasifikasi": _col_to_index(config.COL_PT2_KLASIFIKASI_CANCEL) - 1,
+        "detail_cancel": _col_to_index(config.COL_PT2_DETAIL_CANCEL) - 1,
+        "odp_golive": _col_to_index(config.COL_PT2_ODP_GOLIVE) - 1,
+        "final_port": _col_to_index(config.COL_PT2_FINAL_PORT) - 1,
+        "tgl_close_wo": _col_to_index(config.COL_PT2_TGL_CLOSE_WO) - 1,
+    }
+
+    data_rows = all_values[config.DATA_START_ROW_PT2 - 1:]
+    today = datetime.date.today()
+
+    rows = []
+    regionals = set()
+    branches = set()
+
+    for row in data_rows:
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+
+        ihld_val = cell("ihld")
+        lokasi_val = cell("lokasi")
+        if not ihld_val and not lokasi_val:
+            continue  # baris kosong total, skip
+
+        regional_val = _norm_label(cell("regional")) or "(TANPA REGIONAL)"
+        branch_val = _norm_label(cell("branch")) or "(TANPA BRANCH)"
+        regionals.add(regional_val)
+        branches.add(branch_val)
+
+        status_raw = cell("status_lop")
+        status_val = _match_pt2_status(status_raw)
+
+        tgl_close_wo_raw = cell("tgl_close_wo")
+        tgl_close_wo_date = _parse_date(tgl_close_wo_raw)
+        is_golive_today = bool(tgl_close_wo_date and tgl_close_wo_date == today)
+        is_golive_month = bool(
+            tgl_close_wo_date
+            and tgl_close_wo_date.year == today.year
+            and tgl_close_wo_date.month == today.month
+        )
+
+        rows.append({
+            "ihld": ihld_val,
+            "lokasi": lokasi_val,
+            "source_order": cell("source_order"),
+            "batch": cell("batch") or "(Tanpa Batch)",
+            "regional": regional_val,
+            "branch": branch_val,
+            "status": status_val,        # canonical (salah satu PT2_STATUSES) atau null
+            "status_raw": status_raw,
+            "port": _to_number(cell("final_port")),
+            "klasifikasi": cell("klasifikasi"),
+            "detail_cancel": cell("detail_cancel"),
+            "odp_golive": cell("odp_golive"),
+            "tgl_close_wo_formatted": tgl_close_wo_date.strftime("%d/%m/%Y") if tgl_close_wo_date else tgl_close_wo_raw,
+            "is_golive_today": is_golive_today,
+            "is_golive_month": is_golive_month,
+        })
+
+    return {
+        "statuses": config.PT2_STATUSES,
+        "status_colors": config.PT2_STATUS_COLORS,
+        "golive_status": config.PT2_GOLIVE_STATUS,
+        "exclude_from_denom": config.PT2_EXCLUDE_FROM_DENOM,
+        "regionals": sorted(regionals, key=lambda r: r.lower()),
+        "branches": sorted(branches, key=lambda b: b.lower()),
+        "current_month_label": config.MONTH_LABEL_ID[today.month - 1],
+        "rows": rows,
     }
