@@ -261,6 +261,7 @@ COL_PT2_STATUS_LOP = "M"
 COL_PT2_KLASIFIKASI_CANCEL = "P"
 COL_PT2_DETAIL_CANCEL = "Q"
 COL_PT2_ODP_GOLIVE = "U"
+COL_PT2_H1 = "AH"           # H-1 -- LOP terisi (count) untuk baris pembanding di bawah Grand Total
 COL_PT2_FINAL_PORT = "AC"
 COL_PT2_TGL_CLOSE_WO = "AE"
 

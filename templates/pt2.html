@@ -138,6 +138,9 @@
   .pt2-pivot .grand-total-row .col-golive-hi,
   .pt2-pivot .grand-total-row .col-golive-month,
   .pt2-pivot .grand-total-row .col-pct { background:#1c2b4a; }
+  .pt2-pivot .pt2-h1-row td { background:#f8fafc; font-weight:600; }
+  .pt2-pivot .pt2-deviasi-row td { background:#f8fafc; font-weight:600; font-style:italic; }
+  .pt2-pivot .pt2-summary-dash { text-align:center; color:var(--muted, #94a3b8); font-weight:400; font-style:normal; }
   .pt2-pivot td.pt2-clickable { cursor:pointer; }
   .pt2-pivot td.pt2-clickable:hover { outline:2px solid #6366f1; outline-offset:-2px; position:relative; }
 
@@ -252,6 +255,7 @@ function pt2FilterRows(filter) {
     if (filter.status !== undefined && r.status !== filter.status) return false;
     if (filter.golive_hi && !r.is_golive_today) return false;
     if (filter.golive_month && !r.is_golive_month) return false;
+    if (filter.h1 && !r.has_h1) return false;
     return true;
   });
 }
@@ -263,6 +267,7 @@ function pt2FilterTitle(filter) {
   if (filter.status) parts.push(pt2ShortLabel(filter.status));
   if (filter.golive_hi) parts.push('Golive Hari Ini');
   if (filter.golive_month) parts.push('Golive ' + (pt2Cache.current_month_label || ''));
+  if (filter.h1) parts.push('H-1 (kolom AH)');
   if (!parts.length) parts.push('Grand Total (Semua Data)');
   return parts.join(' — ');
 }
@@ -318,6 +323,29 @@ function pt2RenderPivotRow(label, agg, data, rowClass, rowKey) {
   return html;
 }
 
+function pt2RenderH1Rows(data, grand) {
+  const h1Count = data.rows.filter(r => r.has_h1).length;
+  const deviasi = h1Count - grand.total.lop;
+  const h1Filter = pt2FilterAttr({ h1: true });
+  const sign = deviasi > 0 ? '+' : '';
+
+  let html = `<tr class="pt2-h1-row">
+    <td class="row-label">H-1 (kolom AH)</td>
+    <td colspan="12" class="pt2-summary-dash">&mdash;</td>
+    <td class="pt2-clickable" data-filter='${h1Filter}'>${pt2FmtNum(h1Count)}</td>
+    <td class="pt2-summary-dash">&mdash;</td>
+    <td colspan="5" class="pt2-summary-dash">&mdash;</td>
+  </tr>`;
+  html += `<tr class="pt2-deviasi-row">
+    <td class="row-label">Deviasi (H-1 &minus; Total)</td>
+    <td colspan="12" class="pt2-summary-dash">&mdash;</td>
+    <td>${sign}${pt2FmtNum(deviasi)}</td>
+    <td class="pt2-summary-dash">&mdash;</td>
+    <td colspan="5" class="pt2-summary-dash">&mdash;</td>
+  </tr>`;
+  return html;
+}
+
 function pt2RenderPivotTable(data) {
   const el = document.getElementById('pt2PivotWrap');
   if (!data.rows.length) { el.innerHTML = '<div class="empty-state">Belum ada data di sheet Detail PT2.</div>'; return; }
@@ -350,6 +378,7 @@ function pt2RenderPivotTable(data) {
   });
 
   html += pt2RenderPivotRow('GRAND TOTAL', grand, data, 'grand-total-row', {});
+  html += pt2RenderH1Rows(data, grand);
   html += '</tbody></table>';
   el.innerHTML = html;
 
@@ -414,7 +443,8 @@ function pt2ComputeKendalaTable(rows) {
     counter[r.klasifikasi] = (counter[r.klasifikasi] || 0) + 1;
     (rowsByLabel[r.klasifikasi] = rowsByLabel[r.klasifikasi] || []).push(r);
   });
-  return Object.keys(counter).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+  return Object.keys(counter)
+    .sort((a, b) => counter[b] - counter[a] || a.toLowerCase().localeCompare(b.toLowerCase()))
     .map(label => ({ label, count: counter[label], rows: rowsByLabel[label] }));
 }
 
