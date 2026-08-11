@@ -132,15 +132,17 @@
   .pt2-pivot .regional-row .row-label { padding-left:8px; }
   .pt2-pivot .branch-row .row-label { padding-left:24px; color:var(--text, #1e293b); }
   .pt2-pivot .grand-total-row td, .pt2-pivot .grand-total-row th { background:#1c2b4a; color:#fff; font-weight:700; }
+  .pt2-pivot .pt2-h1-row td, .pt2-pivot .pt2-h1-row th { background:#f8fafc; color:var(--text, #1e293b); font-style:italic; }
+  .pt2-pivot .pt2-deviasi-row td, .pt2-pivot .pt2-deviasi-row th { background:#f1f5f9; font-weight:700; }
+  .pt2-h1-hint { font-size:0.7rem; font-weight:400; color:var(--muted, #64748b); font-style:normal; }
+  .pt2-dev-up { color:#16a34a; font-weight:700; }
+  .pt2-dev-down { color:#dc2626; font-weight:700; }
   .pt2-pivot .col-golive-hi { background:#fff7ed; }
   .pt2-pivot .col-golive-month { background:#ecfdf5; }
   .pt2-pivot .col-pct { background:#eef2ff; text-align:center; }
   .pt2-pivot .grand-total-row .col-golive-hi,
   .pt2-pivot .grand-total-row .col-golive-month,
   .pt2-pivot .grand-total-row .col-pct { background:#1c2b4a; }
-  .pt2-pivot .pt2-h1-row td { background:#f8fafc; font-weight:600; }
-  .pt2-pivot .pt2-deviasi-row td { background:#f8fafc; font-weight:600; font-style:italic; }
-  .pt2-pivot .pt2-summary-dash { text-align:center; color:var(--muted, #94a3b8); font-weight:400; font-style:normal; }
   .pt2-pivot td.pt2-clickable { cursor:pointer; }
   .pt2-pivot td.pt2-clickable:hover { outline:2px solid #6366f1; outline-offset:-2px; position:relative; }
 
@@ -246,6 +248,18 @@ function pt2BuildPivot(data) {
   return { regionalMap, grand };
 }
 
+function pt2ComputeH1Agg(rows, data) {
+  const agg = pt2EmptyAgg(data.statuses);
+  rows.forEach(r => {
+    if (r.status_h1 && agg.values[r.status_h1]) {
+      agg.values[r.status_h1].lop += 1;
+      agg.values[r.status_h1].port += (r.port || 0);
+    }
+  });
+  pt2Finalize(agg, data);
+  return agg;
+}
+
 // ── Row filtering (dipakai oleh semua drill-down: card, donut, tabel) ─
 function pt2FilterRows(filter) {
   filter = filter || {};
@@ -255,7 +269,6 @@ function pt2FilterRows(filter) {
     if (filter.status !== undefined && r.status !== filter.status) return false;
     if (filter.golive_hi && !r.is_golive_today) return false;
     if (filter.golive_month && !r.is_golive_month) return false;
-    if (filter.h1 && !r.has_h1) return false;
     return true;
   });
 }
@@ -267,7 +280,6 @@ function pt2FilterTitle(filter) {
   if (filter.status) parts.push(pt2ShortLabel(filter.status));
   if (filter.golive_hi) parts.push('Golive Hari Ini');
   if (filter.golive_month) parts.push('Golive ' + (pt2Cache.current_month_label || ''));
-  if (filter.h1) parts.push('H-1 (kolom AH)');
   if (!parts.length) parts.push('Grand Total (Semua Data)');
   return parts.join(' — ');
 }
@@ -323,26 +335,41 @@ function pt2RenderPivotRow(label, agg, data, rowClass, rowKey) {
   return html;
 }
 
-function pt2RenderH1Rows(data, grand) {
-  const h1Count = data.rows.filter(r => r.has_h1).length;
-  const deviasi = h1Count - grand.total.lop;
-  const h1Filter = pt2FilterAttr({ h1: true });
-  const sign = deviasi > 0 ? '+' : '';
+function pt2RenderH1Row(agg, data) {
+  let html = `<tr class="pt2-h1-row"><td class="row-label">H-1 <span class="pt2-h1-hint">(kolom AH)</span></td>`;
+  data.statuses.forEach(s => {
+    const v = agg.values[s];
+    html += `<td>${pt2FmtNum(v.lop)}</td><td>${pt2FmtNum(v.port)}</td>`;
+  });
+  html += `<td>${pt2FmtNum(agg.total.lop)}</td><td>${pt2FmtNum(agg.total.port)}</td>`;
+  html += `<td class="col-golive-hi">-</td><td class="col-golive-hi">-</td>`;
+  html += `<td class="col-golive-month">-</td><td class="col-golive-month">-</td>`;
+  html += `<td class="col-pct">${agg.pct_golive.toFixed(2)}%</td>`;
+  html += '</tr>';
+  return html;
+}
 
-  let html = `<tr class="pt2-h1-row">
-    <td class="row-label">H-1 (kolom AH)</td>
-    <td colspan="12" class="pt2-summary-dash">&mdash;</td>
-    <td class="pt2-clickable" data-filter='${h1Filter}'>${pt2FmtNum(h1Count)}</td>
-    <td class="pt2-summary-dash">&mdash;</td>
-    <td colspan="5" class="pt2-summary-dash">&mdash;</td>
-  </tr>`;
-  html += `<tr class="pt2-deviasi-row">
-    <td class="row-label">Deviasi (H-1 &minus; Total)</td>
-    <td colspan="12" class="pt2-summary-dash">&mdash;</td>
-    <td>${sign}${pt2FmtNum(deviasi)}</td>
-    <td class="pt2-summary-dash">&mdash;</td>
-    <td colspan="5" class="pt2-summary-dash">&mdash;</td>
-  </tr>`;
+function pt2DeviasiCell(h1Val, totalVal) {
+  const diff = (h1Val || 0) - (totalVal || 0); // sesuai rumus: H-1 - Total
+  const cls = diff > 0 ? 'pt2-dev-up' : (diff < 0 ? 'pt2-dev-down' : '');
+  const sign = diff > 0 ? '+' : '';
+  return `<td class="${cls}">${sign}${pt2FmtNum(diff)}</td>`;
+}
+
+function pt2RenderDeviasiRow(grand, grandH1, data) {
+  let html = `<tr class="pt2-deviasi-row"><td class="row-label">Deviasi <span class="pt2-h1-hint">(H-1 &minus; Total)</span></td>`;
+  data.statuses.forEach(s => {
+    html += pt2DeviasiCell(grandH1.values[s].lop, grand.values[s].lop);
+    html += pt2DeviasiCell(grandH1.values[s].port, grand.values[s].port);
+  });
+  html += pt2DeviasiCell(grandH1.total.lop, grand.total.lop);
+  html += pt2DeviasiCell(grandH1.total.port, grand.total.port);
+  html += `<td class="col-golive-hi">-</td><td class="col-golive-hi">-</td>`;
+  html += `<td class="col-golive-month">-</td><td class="col-golive-month">-</td>`;
+  const pctDiff = grandH1.pct_golive - grand.pct_golive;
+  const pctCls = pctDiff > 0 ? 'pt2-dev-up' : (pctDiff < 0 ? 'pt2-dev-down' : '');
+  html += `<td class="col-pct ${pctCls}">${pctDiff > 0 ? '+' : ''}${pctDiff.toFixed(2)}%</td>`;
+  html += '</tr>';
   return html;
 }
 
@@ -378,7 +405,11 @@ function pt2RenderPivotTable(data) {
   });
 
   html += pt2RenderPivotRow('GRAND TOTAL', grand, data, 'grand-total-row', {});
-  html += pt2RenderH1Rows(data, grand);
+
+  const grandH1 = pt2ComputeH1Agg(data.rows, data);
+  html += pt2RenderH1Row(grandH1, data);
+  html += pt2RenderDeviasiRow(grand, grandH1, data);
+
   html += '</tbody></table>';
   el.innerHTML = html;
 
@@ -443,8 +474,7 @@ function pt2ComputeKendalaTable(rows) {
     counter[r.klasifikasi] = (counter[r.klasifikasi] || 0) + 1;
     (rowsByLabel[r.klasifikasi] = rowsByLabel[r.klasifikasi] || []).push(r);
   });
-  return Object.keys(counter)
-    .sort((a, b) => counter[b] - counter[a] || a.toLowerCase().localeCompare(b.toLowerCase()))
+  return Object.keys(counter).sort((a, b) => counter[b] - counter[a])
     .map(label => ({ label, count: counter[label], rows: rowsByLabel[label] }));
 }
 

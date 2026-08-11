@@ -1001,9 +1001,10 @@ def get_pt2_dashboard_data():
         "klasifikasi": _col_to_index(config.COL_PT2_KLASIFIKASI_CANCEL) - 1,
         "detail_cancel": _col_to_index(config.COL_PT2_DETAIL_CANCEL) - 1,
         "odp_golive": _col_to_index(config.COL_PT2_ODP_GOLIVE) - 1,
-        "h1": _col_to_index(config.COL_PT2_H1) - 1,
         "final_port": _col_to_index(config.COL_PT2_FINAL_PORT) - 1,
         "tgl_close_wo": _col_to_index(config.COL_PT2_TGL_CLOSE_WO) - 1,
+        "progress_h1": _col_to_index(config.COL_PT2_PROGRESS_H1) - 1,
+        "progress_h1": _col_to_index(config.COL_PT2_PROGRESS_H1) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW_PT2 - 1:]
@@ -1053,8 +1054,9 @@ def get_pt2_dashboard_data():
             "klasifikasi": cell("klasifikasi"),
             "detail_cancel": cell("detail_cancel"),
             "odp_golive": cell("odp_golive"),
-            "has_h1": bool(cell("h1")),
             "tgl_close_wo_formatted": tgl_close_wo_date.strftime("%d/%m/%Y") if tgl_close_wo_date else tgl_close_wo_raw,
+            "status_h1": _match_pt2_status(cell("progress_h1")),
+            "tgl_close_wo_iso": tgl_close_wo_date.isoformat() if tgl_close_wo_date else None,
             "is_golive_today": is_golive_today,
             "is_golive_month": is_golive_month,
         })

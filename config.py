@@ -261,9 +261,10 @@ COL_PT2_STATUS_LOP = "M"
 COL_PT2_KLASIFIKASI_CANCEL = "P"
 COL_PT2_DETAIL_CANCEL = "Q"
 COL_PT2_ODP_GOLIVE = "U"
-COL_PT2_H1 = "AH"           # H-1 -- LOP terisi (count) untuk baris pembanding di bawah Grand Total
 COL_PT2_FINAL_PORT = "AC"
 COL_PT2_TGL_CLOSE_WO = "AE"
+COL_PT2_PROGRESS_H1 = "AH"  # snapshot status per baris di H-1 (kemarin)
+COL_PT2_PROGRESS_H1 = "AH"      # status LOP versi kemarin (H-1), buat baris pembanding di tabel
 
 # Urutan status LOP persis seperti dikonfirmasi (loncat dari 3 ke 5 memang disengaja).
 PT2_STATUSES = ["0.DROP", "0.KENDALA", "1.DESIGN", "2.APPROVAL", "3.OGP DEPLOY", "5.GOLIVE"]
