@@ -67,17 +67,20 @@
   </div>
 </div>
 
-<!-- Timeline: alur tahapan Perijinan -> Finish Instalasi, jumlah LOP & rata-rata aging tiap tahap -->
+<!-- Timeline: alur tahapan Perijinan -> Golive, jumlah LOP & rata-rata aging tiap tahap -->
 <div class="section-title">
   Alur Tahapan (Timeline)
-  <span class="hint">jumlah LOP &amp; rata-rata aging per tahap, urut Perijinan &rarr; Finish Instalasi — warna ikut rata-rata aging tahap tsb</span>
+  <span class="hint">jumlah LOP &amp; rata-rata aging per tahap, urut Perijinan &rarr; Golive — warna ikut rata-rata aging tahap tsb</span>
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div id="agingFunnel"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Tabel rata-rata per branch -->
-<div class="section-title">Rata-rata Aging per Branch</div>
+<div class="section-title">
+  Rata-rata Aging per Branch
+  <span class="hint">klik baris branch untuk lihat daftar lokasi</span>
+</div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pivot-table-wrap"><table class="pivot" id="agingBranchTable"></table></div>
 </div>
@@ -85,6 +88,7 @@
 <!-- Tabel per LOP -->
 <div class="section-title">
   Detail per LOP
+  <span class="hint">status Drop (00. DROP / 01. DROP MOM) tidak ditampilkan di tabel ini</span>
   <button class="refresh-btn" style="margin-left:auto;" onclick="loadAging()">&#8635; Refresh</button>
 </div>
 <div class="card">
@@ -248,7 +252,7 @@ function refreshAging() {
   renderAgingLopTable(filtered, warnDays, critDays, document.getElementById('agingSearch').value);
 }
 
-// Alur tahapan Perijinan -> Finish Instalasi: jumlah LOP & rata-rata aging
+// Alur tahapan Perijinan -> Golive: jumlah LOP & rata-rata aging
 // per tahap, ditampilkan sebagai timeline horizontal (bukan grafik batang).
 const AGING_STAGES = [
   ['01. PERIJINAN', 'Perijinan'],
@@ -256,6 +260,7 @@ const AGING_STAGES = [
   ['03. MATDEV', 'Matdev'],
   ['04. INSTALASI', 'Instalasi'],
   ['05. FINISH INSTALASI', 'Finish Instalasi'],
+  ['06. GOLIVE', 'Golive'],
 ];
 
 function renderStageFunnel(filteredRows, warnDays, critDays) {
@@ -299,7 +304,7 @@ function renderAgingBranchTable(filteredRows, warnDays, critDays) {
     const g = byBranch[b];
     const avg = Math.round(g.sum / g.count);
     const bucket = agingBucket(avg, warnDays, critDays);
-    html += `<tr>
+    html += `<tr data-branch="${esc2(b)}" class="clickable-row" title="Klik untuk lihat daftar lokasi">
       <th style="text-align:left;">${esc2(b)}</th>
       <td>${fmtNum2(g.count)}</td>
       <td><span class="badge" style="background:${agingColor(bucket)}22; color:${agingColor(bucket)}; border-color:${agingColor(bucket)}55; font-weight:700;">${avg} hari</span></td>
@@ -312,10 +317,19 @@ function renderAgingBranchTable(filteredRows, warnDays, critDays) {
   table.innerHTML = html;
 }
 
+// Status yang SELALU disembunyikan dari tabel "Detail per LOP" — terlepas
+// dari status checkbox filter di atas (permintaan: tabel ini fokus ke LOP
+// yang masih berjalan, bukan yang sudah Drop).
+const DETAIL_LOP_EXCLUDED_STATUSES = ['00. DROP', '01. DROP MOM'];
+function isExcludedFromDetailLop(statusZ) {
+  const s = (statusZ || '').trim().toLowerCase();
+  return DETAIL_LOP_EXCLUDED_STATUSES.some(x => x.toLowerCase() === s);
+}
+
 function renderAgingLopTable(filteredRows, warnDays, critDays, searchText) {
   const el = document.getElementById('agingLopTableWrap');
   const q = (searchText || '').trim().toLowerCase();
-  let rows = filteredRows.filter(r => r.aging_days !== null);
+  let rows = filteredRows.filter(r => r.aging_days !== null && !isExcludedFromDetailLop(r.status_z));
   if (q) rows = rows.filter(r => (r.ihld + ' ' + r.lokasi).toLowerCase().includes(q));
   rows = rows.slice().sort((a, b) => b.aging_days - a.aging_days);
 
@@ -397,6 +411,117 @@ function closeAgingModal() {
 document.getElementById('agingModalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'agingModalOverlay') closeAgingModal();
 });
+
+// ── Klik baris di "Rata-rata Aging per Branch" -> daftar lokasi branch itu,
+// klik salah satu lokasi -> tampilkan keterangan kolom AB (Keterangan
+// gabungan semua status) untuk lokasi tsb. ──
+let branchModalCache = { branch: null, rows: [] };
+
+document.getElementById('agingBranchTable').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-branch]');
+  if (!tr || !agingCache) return;
+  openBranchListModal(tr.dataset.branch);
+});
+
+function openBranchListModal(branch) {
+  const warnDays = agingCache.warning_days, critDays = agingCache.critical_days;
+  const rows = getAgingFilteredRows()
+    .filter(r => r.branch === branch && r.aging_days !== null)
+    .slice()
+    .sort((a, b) => b.aging_days - a.aging_days);
+  branchModalCache = { branch, rows, warnDays, critDays };
+  renderBranchListView();
+  document.getElementById('agingModalOverlay').classList.add('open');
+}
+
+function renderBranchListView() {
+  const { branch, rows, warnDays, critDays } = branchModalCache;
+  const modalBox = document.getElementById('agingModalBox');
+
+  if (!rows.length) {
+    modalBox.innerHTML = `
+      <div class="modal-header">
+        <div class="modal-title">${esc2(branch)}</div>
+        <button class="btn-ghost modal-close" id="branchModalCloseBtn">Tutup &#10005;</button>
+      </div>
+      <div class="empty-state">Tidak ada lokasi pada branch ini sesuai filter yang aktif.</div>
+    `;
+    document.getElementById('branchModalCloseBtn').addEventListener('click', closeAgingModal);
+    return;
+  }
+
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">${esc2(branch)} <span class="badge">${rows.length} lokasi</span></div>
+      <button class="btn-ghost modal-close" id="branchModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="loc-list" style="margin-top:10px; max-height:420px; overflow-y:auto;" id="branchLopListBody">
+      ${rows.map(r => {
+        const bucket = agingBucket(r.aging_days, warnDays, critDays);
+        const color = agingColor(bucket);
+        return `
+          <div class="result-item" data-row="${r.row}">
+            <div class="ihld">${esc2(r.ihld) || '(tanpa IHLD)'} — ${esc2(r.lokasi) || '-'}</div>
+            <div class="meta">
+              <span class="badge status">${esc2(r.status_z) || '-'}</span>
+              <span class="badge" style="background:${color}22; color:${color}; border-color:${color}55; font-weight:700;">${r.aging_days} hari (${agingLabel(bucket)})</span>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  document.getElementById('branchModalCloseBtn').addEventListener('click', closeAgingModal);
+  document.getElementById('branchLopListBody').addEventListener('click', (e) => {
+    const item = e.target.closest('.result-item');
+    if (!item) return;
+    renderBranchLopDetailView(parseInt(item.dataset.row, 10));
+  });
+}
+
+async function renderBranchLopDetailView(rowNum) {
+  const modalBox = document.getElementById('agingModalBox');
+  const rowData = branchModalCache.rows.find(r => r.row === rowNum);
+
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">${esc2(rowData ? rowData.ihld : '') || '(tanpa IHLD)'} — ${esc2(rowData ? rowData.lokasi : '') || '-'}</div>
+      <button class="btn-ghost modal-close" id="branchDetailCloseBtn">Tutup &#10005;</button>
+    </div>
+    <a href="#" class="modal-back" id="branchDetailBackLink">&larr; Kembali ke daftar lokasi</a>
+    <table class="detail-table" style="margin-top:10px;">
+      <tr><th>Batch</th><td>${esc2(rowData ? rowData.batch : '')}</td></tr>
+      <tr><th>Status (Z)</th><td>${esc2(rowData ? rowData.status_z : '') || '-'}</td></tr>
+      <tr><th>Sub Status (AA)</th><td>${esc2(rowData ? rowData.status_aa : '') || '-'}</td></tr>
+    </table>
+    <div id="branchDetailKeteranganWrap" style="margin-top:12px;"><div class="skeleton">Memuat keterangan (kolom AB)...</div></div>
+    <div style="margin-top:12px;">
+      <button type="button" onclick="window.location.href='/?openRow=${rowNum}'">Update Status</button>
+    </div>
+  `;
+  document.getElementById('branchDetailCloseBtn').addEventListener('click', closeAgingModal);
+  document.getElementById('branchDetailBackLink').addEventListener('click', (e) => { e.preventDefault(); renderBranchListView(); });
+
+  const wrap = document.getElementById('branchDetailKeteranganWrap');
+  try {
+    const res = await fetch(`/api/row/${rowNum}/detail`);
+    const json = await res.json();
+    if (!json.ok || !json.fields.length) {
+      wrap.innerHTML = `<div class="flash error">${esc2(json.error || 'Gagal memuat keterangan.')}</div>`;
+      return;
+    }
+    // Kolom AB SELALU field terakhir karena rentangnya I s/d AB.
+    const abField = json.fields[json.fields.length - 1];
+    wrap.innerHTML = `
+      <div class="note-field">
+        <label style="font-weight:600; display:block; margin-bottom:6px;">${esc2(abField.header)}</label>
+        <div class="card" style="white-space:pre-wrap; font-size:0.85rem; padding:10px 12px;">${esc2(abField.value) || 'Kosong'}</div>
+      </div>
+    `;
+  } catch (e) {
+    wrap.innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
+  }
+}
 
 async function loadAging() {
   document.getElementById('agingLopTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
