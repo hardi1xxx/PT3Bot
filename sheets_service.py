@@ -288,20 +288,24 @@ def get_dashboard_data():
 
 
 def get_row_snapshot(row_num: int):
-    """Return current Z, AA and the keterangan cell content for the row's current Z status.
-    `last_note` is just the topmost single entry (the most recent one, since
-    entries are prepended newest-first) — used by the update panel to show
-    "Keterangan sebelumnya" without the whole history.
+    """Return current Z, AA and keterangan info for the update panel.
+    `last_note` = topmost entry dari kolom keterangan STATUS SAAT INI (mis. BA
+    untuk Instalasi) — konteks untuk "Keterangan sebelumnya".
+    `note_preview` ("Riwayat keterangan lengkap") SELALU dari kolom AB
+    (KETERANGAN gabungan semua status), bukan cuma status yang sedang aktif.
     Also returns current BL-BQ values (extra_fields) so the update panel can
     show what's already saved without forcing the user to re-enter it."""
     ws = get_worksheet()
     z_val = ws.acell(f"{config.COL_STATUS_Z}{row_num}").value or ""
     aa_val = ws.acell(f"{config.COL_STATUS_AA}{row_num}").value or ""
-    note_preview = ""
+
+    last_note = ""
     if z_val in config.STATUS_COLUMN_MAP:
         note_col = config.STATUS_COLUMN_MAP[z_val]["note_col"]
-        note_preview = ws.acell(f"{note_col}{row_num}").value or ""
-    last_note = note_preview.split("\n")[0].strip() if note_preview.strip() else ""
+        current_status_note = ws.acell(f"{note_col}{row_num}").value or ""
+        last_note = current_status_note.split("\n")[0].strip() if current_status_note.strip() else ""
+
+    note_preview = ws.acell(f"{config.COL_KETERANGAN_AB}{row_num}").value or ""
 
     extra_fields = {}
     for key, col in config.EXTRA_FIELD_COLUMNS.items():
