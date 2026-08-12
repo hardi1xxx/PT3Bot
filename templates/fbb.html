@@ -72,7 +72,10 @@
   <input type="date" id="fbbRefDate" style="width:auto; margin:0;">
   <button type="button" id="fbbRefDateApply">Terapkan</button>
   <span class="sub" id="fbbRefDateLabel"></span>
-  <button type="button" id="fbbLaporanBtn" class="btn-ghost" style="margin-left:auto;" title="Buat laporan eksekutif dari data &amp; filter saat ini">
+  <button type="button" id="fbbUpdateDataBtn" class="btn-ghost" style="margin-left:auto;" title="Ambil data terbaru tanpa mereset filter yang sedang aktif">
+    &#8635; Update Data
+  </button>
+  <button type="button" id="fbbLaporanBtn" class="btn-ghost" title="Buat laporan eksekutif dari data &amp; filter saat ini">
     &#128196; Buat Laporan
   </button>
 </div>
@@ -137,15 +140,31 @@ function getFbbFilteredRows() {
   return fbbCache.rows.filter(r => programs.has(r.program) && regionals.has(r.regional));
 }
 
-function renderCheckGrid(elId, values, cls) {
+function renderCheckGrid(elId, values, cls, preserveState) {
   const el = document.getElementById(elId);
   if (!values.length) { el.innerHTML = '<div class="empty-state">Tidak ada data.</div>'; return; }
-  el.innerHTML = values.map(v => `
+
+  // Kalau ini update data (bukan load awal/refresh halaman), simpan dulu pilihan checkbox
+  // yang sedang aktif supaya filter tidak ikut ter-reset saat grid dirender ulang.
+  let prevChecked = null;
+  if (preserveState) {
+    const existing = document.querySelectorAll('.' + cls);
+    if (existing.length) {
+      prevChecked = new Set(Array.from(document.querySelectorAll('.' + cls + ':checked')).map(cb => cb.value));
+    }
+  }
+
+  el.innerHTML = values.map(v => {
+    // Default: semua tercentang (load awal / refresh halaman).
+    // Kalau ada state sebelumnya (update data), pertahankan sesuai pilihan terakhir user.
+    const isChecked = prevChecked ? prevChecked.has(v) : true;
+    return `
     <label class="branch-check">
-      <input type="checkbox" class="${cls}" value="${escF(v)}" checked>
+      <input type="checkbox" class="${cls}" value="${escF(v)}" ${isChecked ? 'checked' : ''}>
       <span>${escF(v)}</span>
     </label>
-  `).join('');
+  `;
+  }).join('');
 }
 function updateFilterSummary(cls, summaryId) {
   const all = document.querySelectorAll('.' + cls);
@@ -360,6 +379,14 @@ document.getElementById('fbbRefDateApply').addEventListener('click', () => {
   loadFbbSummary(val || null);
 });
 
+// ── Update Data: ambil ulang data dari server tanpa reload halaman.
+// Filter Program & Regional yang sedang aktif tetap dipertahankan (lihat renderCheckGrid/loadFbb).
+document.getElementById('fbbUpdateDataBtn').addEventListener('click', () => {
+  const val = document.getElementById('fbbRefDate').value;
+  loadFbb();
+  loadFbbSummary(val || null);
+});
+
 // ── Buat Laporan: buka halaman laporan baru di tab baru, bawa filter aktif ──
 document.getElementById('fbbLaporanBtn').addEventListener('click', () => {
   const dateVal = document.getElementById('fbbRefDate').value;
@@ -384,6 +411,9 @@ document.getElementById('fbbLaporanBtn').addEventListener('click', () => {
 })();
 
 async function loadFbb() {
+  // Jika fbbCache sudah pernah terisi sebelumnya, artinya ini pemanggilan ulang
+  // (update data) bukan load awal saat halaman dibuka/di-refresh -> pertahankan filter.
+  const isUpdate = fbbCache !== null;
   document.getElementById('fbbRegionalTable').innerHTML = '<tr><td class="skeleton">Memuat data...</td></tr>';
   try {
     const res = await fetch('/api/fbb-data');
@@ -393,8 +423,8 @@ async function loadFbb() {
       return;
     }
     fbbCache = json.data;
-    renderCheckGrid('fbbProgramGrid', fbbCache.programs, 'fbb-program-checkbox');
-    renderCheckGrid('fbbRegionalGrid', fbbCache.regionals, 'fbb-regional-checkbox');
+    renderCheckGrid('fbbProgramGrid', fbbCache.programs, 'fbb-program-checkbox', isUpdate);
+    renderCheckGrid('fbbRegionalGrid', fbbCache.regionals, 'fbb-regional-checkbox', isUpdate);
     refreshFbb();
   } catch (e) {
     document.getElementById('fbbRegionalTable').innerHTML = `<tr><td class="flash error">Gagal memuat: ${e}</td></tr>`;
