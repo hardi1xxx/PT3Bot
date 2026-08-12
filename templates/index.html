@@ -251,15 +251,29 @@ function editFromDetail(rowNum) {
 }
 
 // ── Filter branch (kolom S) — dropdown + checkbox ─────────────────
-function renderBranchFilter(branches) {
+function renderBranchFilter(branches, preserveState) {
   const el = document.getElementById('branchFilterGrid');
   if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch (kolom S).</div>'; return; }
-  el.innerHTML = branches.map(b => `
+
+  // Kalau ini update data (bukan load awal/refresh halaman), simpan dulu pilihan checkbox
+  // yang sedang aktif supaya filter tidak ikut ter-reset saat grid dirender ulang.
+  let prevChecked = null;
+  if (preserveState) {
+    const existing = document.querySelectorAll('.branch-checkbox');
+    if (existing.length) {
+      prevChecked = new Set(Array.from(document.querySelectorAll('.branch-checkbox:checked')).map(cb => cb.value));
+    }
+  }
+
+  el.innerHTML = branches.map(b => {
+    const isChecked = prevChecked ? prevChecked.has(b) : true;
+    return `
     <label class="branch-check">
-      <input type="checkbox" class="branch-checkbox" value="${esc(b)}" checked>
+      <input type="checkbox" class="branch-checkbox" value="${esc(b)}" ${isChecked ? 'checked' : ''}>
       <span>${esc(b)}</span>
     </label>
-  `).join('');
+  `;
+  }).join('');
   updateBranchDropdownLabel();
 }
 
@@ -489,6 +503,9 @@ function renderLocList(locations, filterText) {
 }
 
 async function loadDashboard() {
+  // Jika dashboardCache sudah pernah terisi sebelumnya, artinya ini pemanggilan ulang
+  // (klik tombol Refresh / update data) bukan load awal saat halaman dibuka -> pertahankan filter.
+  const isUpdate = dashboardCache !== null;
   document.getElementById('pivotTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
   try {
     const res = await fetch('/api/dashboard');
@@ -499,7 +516,7 @@ async function loadDashboard() {
       return;
     }
     dashboardCache = json.data;   // { statuses, batches, branches, rows }
-    renderBranchFilter(dashboardCache.branches);
+    renderBranchFilter(dashboardCache.branches, isUpdate);
     refreshAll();
   } catch (e) {
     document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
