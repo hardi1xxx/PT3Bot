@@ -304,9 +304,11 @@ function summaryRowHtml(label, m, opts) {
       <td>${fmtNumF(m.total_order_port)}</td>
       <td>${fmtNumF(m.dod)}</td>
       <td>${fmtNumF(m.mtd)}</td>
+      <td>${fmtNumF(m.target_month)}</td>
       <td>${fmtNumF(m.potensi)}</td>
       <td style="${achCellStyle(m.ach_mtd)}">${fmtPctF(m.ach_mtd)}</td>
       <td>${fmtNumF(m.ytd)}</td>
+      <td>${fmtNumF(m.target_ytd)}</td>
       <td>${fmtNumF(m.real_ytd_juni)}</td>
       <td>${fmtNumF(m.real_ytd_juli)}</td>
       <td>${fmtNumF(m.outlook_ytd)}</td>
@@ -330,9 +332,11 @@ function renderSummaryTable(data) {
   html += '<th rowspan="2">Total Port<br>(non-Drop)</th>';
   html += '<th rowspan="2">DOD</th>';
   html += `<th rowspan="2">MTD<br>${escF(monthLabel)}</th>`;
+  html += `<th rowspan="2">Target MTD<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">Potensi<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">ACH MTD<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">YTD<br>${escF(monthLabel)}</th>`;
+  html += `<th rowspan="2">Target YTD<br>${escF(monthLabel)}</th>`;
   html += '<th rowspan="2">Real YTD<br>Juni</th>';
   html += '<th rowspan="2">Real YTD<br>Juli</th>';
   html += `<th rowspan="2">Outlook YTD<br>${escF(monthLabel)}</th>`;

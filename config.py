@@ -226,12 +226,14 @@ STATUS_LOP_DROP_MOM = "6.3. Drop MOM"
 SHEET_NAME_TARGET = os.environ.get("SHEET_NAME_TARGET", "TARGET")
 HEADER_ROW_TARGET = 1
 DATA_START_ROW_TARGET = 2
-# 1 baris = 1 Regional + 1 Bulan. TARGET PORT = total; PT2/PT3 = pembagiannya.
+# 1 baris = 1 Regional + 1 Program (PT2/PT3) + 1 Bulan + TARGET PORT-nya.
+# PENTING: kalau Regional "JABAR" dan "JAKARTA" ditarget terpisah, harus
+# jadi 2 baris sendiri-sendiri di sheet ini (bukan digabung "JABAR&JAKARTA"),
+# karena data aktual (sheet Semesta) memisahkan kedua Regional itu.
 COL_TARGET_REGIONAL = "A"
-COL_TARGET_BULAN = "B"
-COL_TARGET_PORT = "C"
-COL_TARGET_PT2 = "D"
-COL_TARGET_PT3 = "E"
+COL_TARGET_PROGRAM = "B"   # PT2 / PT3
+COL_TARGET_BULAN = "C"
+COL_TARGET_PORT = "D"
 
 MONTH_NAMES_ID = [
     "januari", "februari", "maret", "april", "mei", "juni",

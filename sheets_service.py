@@ -759,15 +759,15 @@ def _parse_month_to_num(raw):
 
 
 def get_target_data():
-    """List of {regional, month(1-12), target_port, pt2, pt3} dari sheet TARGET."""
+    """List of {regional, program(PT2/PT3 atau ""), month(1-12), target_port}
+    dari sheet TARGET. 1 baris sheet = 1 Regional + 1 Program + 1 Bulan."""
     ws = get_target_worksheet()
     all_values = ws.get_all_values()
     idx = {
         "regional": _col_to_index(config.COL_TARGET_REGIONAL) - 1,
+        "program": _col_to_index(config.COL_TARGET_PROGRAM) - 1,
         "bulan": _col_to_index(config.COL_TARGET_BULAN) - 1,
         "target_port": _col_to_index(config.COL_TARGET_PORT) - 1,
-        "pt2": _col_to_index(config.COL_TARGET_PT2) - 1,
-        "pt3": _col_to_index(config.COL_TARGET_PT3) - 1,
     }
     data_rows = all_values[config.DATA_START_ROW_TARGET - 1:]
     targets = []
@@ -776,15 +776,15 @@ def get_target_data():
             i = idx[key]
             return row[i].strip() if i < len(row) else ""
         regional = cell("regional")
+        program = _norm_label(cell("program"))
         month_num = _parse_month_to_num(cell("bulan"))
         if not regional or not month_num:
             continue
         targets.append({
             "regional": regional,
+            "program": program,
             "month": month_num,
             "target_port": _to_number(cell("target_port")),
-            "pt2": _to_number(cell("pt2")),
-            "pt3": _to_number(cell("pt3")),
         })
     return targets
 
@@ -909,20 +909,20 @@ def get_fbb_summary(reference_date_str: str = None):
 
     # Normalisasi case-insensitive: kalau "Banten" di satu sheet dan "BANTEN"
     # di sheet lain, tetap harus ketemu -- bukan diam-diam jadi target 0.
-    target_lookup = {}  # REGIONAL_UPPER -> month -> {target_port, pt2, pt3}
+    # REGIONAL_UPPER -> PROGRAM_UPPER ("PT2"/"PT3"/"") -> month -> target_port
+    target_lookup = {}
     for t in targets:
-        target_lookup.setdefault(t["regional"].strip().upper(), {})[t["month"]] = t
+        reg_key = t["regional"].strip().upper()
+        prog_key = (t["program"] or "").strip().upper()
+        target_lookup.setdefault(reg_key, {}).setdefault(prog_key, {})[t["month"]] = t["target_port"]
 
     def target_value(regional, month, program=None):
-        t = target_lookup.get((regional or "").strip().upper(), {}).get(month)
-        if not t:
-            return 0
-        prog_norm = (program or "").strip().upper()
-        if prog_norm == "PT2":
-            return t["pt2"]
-        if prog_norm == "PT3":
-            return t["pt3"]
-        return t["target_port"]
+        prog_map = target_lookup.get((regional or "").strip().upper(), {})
+        if program:
+            return prog_map.get((program or "").strip().upper(), {}).get(month, 0)
+        # Baris gabungan (regional tanpa filter program): jumlahkan semua
+        # program yang ditarget untuk regional+bulan ini.
+        return sum(months.get(month, 0) for months in prog_map.values())
 
     def target_value_all_regions(month, program=None):
         return sum(target_value(reg, month, program) for reg in target_lookup.keys())
