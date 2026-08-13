@@ -799,7 +799,10 @@ def _normalize_status(raw: str) -> str:
 
 
 def _is_golive(status_lop: str) -> bool:
-    return "GOLIVE" in _normalize_status(status_lop)
+    """Golive = status di kolom I persis '5.GOLIVE' (dicocokkan tanpa spasi,
+    case-insensitive). Tanggal acuannya kolom L (TGL GOLIVE) -- dicek terpisah
+    oleh pemanggil (r['golive_date'])."""
+    return _normalize_status(status_lop) == _normalize_status(config.STATUS_LOP_GOLIVE)
 
 
 def _is_drop_mom(status_lop: str) -> bool:
