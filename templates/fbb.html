@@ -298,23 +298,26 @@ function summaryRowHtml(label, m, opts) {
   opts = opts || {};
   const rowClass = opts.rowClass || '';
   const labelStyle = opts.labelStyle || 'text-align:left;';
+  const tb = m.target_by_month || {};
   return `
     <tr class="${rowClass}">
       <th style="${labelStyle}">${escF(label)}</th>
       <td>${fmtNumF(m.total_order_port)}</td>
+      <td>${fmtNumF(tb[5])}</td>
+      <td>${fmtNumF(tb[6])}</td>
+      <td>${fmtNumF(tb[7])}</td>
+      <td>${fmtNumF(tb[8])}</td>
+      <td>${fmtNumF(tb[9])}</td>
+      <td>${fmtNumF(m.real_ytd_prev_month)}</td>
       <td>${fmtNumF(m.dod)}</td>
       <td>${fmtNumF(m.mtd)}</td>
-      <td>${fmtNumF(m.target_month)}</td>
       <td>${fmtNumF(m.potensi)}</td>
       <td style="${achCellStyle(m.ach_mtd)}">${fmtPctF(m.ach_mtd)}</td>
       <td>${fmtNumF(m.ytd)}</td>
-      <td>${fmtNumF(m.target_ytd)}</td>
-      <td>${fmtNumF(m.real_ytd_juni)}</td>
-      <td>${fmtNumF(m.real_ytd_juli)}</td>
       <td>${fmtNumF(m.outlook_ytd)}</td>
-      <td style="${achCellStyle(m.ach_ytd_q3)}">${fmtPctF(m.ach_ytd_q3)}</td>
-      <td style="${gapCellStyle(m.gap_ytd)}">${fmtNumF(m.gap_ytd)}</td>
-      <td style="${gapCellStyle(m.gap_q3)}">${fmtNumF(m.gap_q3)}</td>
+      <td style="${achCellStyle(m.ach_ytd)}">${fmtPctF(m.ach_ytd)}</td>
+      <td style="${gapCellStyle(-m.gap_mtd)}">${fmtNumF(m.gap_mtd)}</td>
+      <td style="${gapCellStyle(-m.gap_q3)}">${fmtNumF(m.gap_q3)}</td>
       <td style="${achCellStyle(m.ach_total_order)}">${fmtPctF(m.ach_total_order)}</td>
     </tr>
   `;
@@ -323,27 +326,31 @@ function summaryRowHtml(label, m, opts) {
 function renderSummaryTable(data) {
   const wrap = document.getElementById('fbbSummaryTableWrap');
   const monthLabel = data.current_month_label;
+  const prevMonthLabel = data.prev_month_label || '-';
+  const tml = data.target_month_labels || {};
 
   document.getElementById('fbbRefDateLabel').textContent =
     `Bulan berjalan: ${monthLabel} · acuan: ${data.reference_date}`;
 
   let html = '<table class="pivot pivot-combined"><thead><tr>';
   html += '<th rowspan="2" style="text-align:left;">Regional / Program</th>';
-  html += '<th rowspan="2">Total Port<br>(non-Drop)</th>';
+  html += '<th rowspan="2">Total Order</th>';
+  html += `<th rowspan="2">Target<br>${escF(tml[5] || 'Mei')}</th>`;
+  html += `<th rowspan="2">Target<br>${escF(tml[6] || 'Juni')}</th>`;
+  html += `<th rowspan="2">Target<br>${escF(tml[7] || 'Juli')}</th>`;
+  html += `<th rowspan="2">Target<br>${escF(tml[8] || 'Agustus')}</th>`;
+  html += `<th rowspan="2">Target<br>${escF(tml[9] || 'September')}</th>`;
+  html += `<th rowspan="2">YTD<br>${escF(prevMonthLabel)}</th>`;
   html += '<th rowspan="2">DOD</th>';
   html += `<th rowspan="2">MTD<br>${escF(monthLabel)}</th>`;
-  html += `<th rowspan="2">Target MTD<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">Potensi<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">ACH MTD<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">YTD<br>${escF(monthLabel)}</th>`;
-  html += `<th rowspan="2">Target YTD<br>${escF(monthLabel)}</th>`;
-  html += '<th rowspan="2">Real YTD<br>Juni</th>';
-  html += '<th rowspan="2">Real YTD<br>Juli</th>';
   html += `<th rowspan="2">Outlook YTD<br>${escF(monthLabel)}</th>`;
-  html += '<th rowspan="2">ACH YTD<br>Q3</th>';
-  html += `<th rowspan="2">GAP YTD<br>${escF(monthLabel)}</th>`;
+  html += '<th rowspan="2">ACH YTD</th>';
+  html += `<th rowspan="2">GAP MTD<br>${escF(monthLabel)}</th>`;
   html += '<th rowspan="2">GAP Q3</th>';
-  html += '<th rowspan="2">ACH Total<br>Order</th>';
+  html += '<th rowspan="2">ACH Total</th>';
   html += '</tr><tr></tr></thead><tbody>';
 
   data.regionals.forEach(reg => {

@@ -6,6 +6,7 @@ logic (routing + prepend + date-overwrite) lives in exactly one place.
 import json
 import re
 import datetime
+import calendar
 import threading
 
 import gspread
@@ -799,11 +800,23 @@ def _is_drop_mom(status_lop: str) -> bool:
 
 
 def _potensi_matches_month(potensi_raw: str, month_num: int) -> bool:
-    """'P1 AUG' cocok bulan 8 (Agustus)?"""
+    """'P1 AUG' cocok bulan 8 (Agustus)? (tidak dipakai lagi untuk hitung Potensi
+    di ringkasan FBB -- Potensi sekarang dihitung dari status LOP -- tapi
+    dibiarkan ada kalau dibutuhkan lagi nanti.)"""
     if not potensi_raw:
         return False
     abbr = config.MONTH_ABBR_EN[month_num - 1]
     return abbr in potensi_raw.strip().upper()
+
+
+def _is_potensi_status(status_lop: str) -> bool:
+    """Potensi = lokasi yang statusnya '3.OGP DEPLOY' (siap/berpotensi golive)."""
+    return (status_lop or "").strip().upper() == config.STATUS_POTENSI.strip().upper()
+
+
+def _month_end_date(year: int, month: int) -> datetime.date:
+    last_day = calendar.monthrange(year, month)[1]
+    return datetime.date(year, month, last_day)
 
 
 def _load_semesta_rows_for_summary():
@@ -843,44 +856,51 @@ def _load_semesta_rows_for_summary():
     return rows
 
 
-def _compute_actuals(subset_rows, reference_date, current_month, jan1, jun30, jul31):
+def _compute_actuals(subset_rows, reference_date, current_month, jan1):
     golive_rows = [r for r in subset_rows if _is_golive(r["status_lop"]) and r["golive_date"]]
     month_start = reference_date.replace(day=1)
 
     dod = sum(r["port"] for r in golive_rows if r["golive_date"] == reference_date)
     mtd = sum(r["port"] for r in golive_rows if month_start <= r["golive_date"] <= reference_date)
-    potensi_month = sum(r["port"] for r in subset_rows if _potensi_matches_month(r["potensi"], current_month))
+    potensi_month = sum(r["port"] for r in subset_rows if _is_potensi_status(r["status_lop"]))
     ytd = sum(r["port"] for r in golive_rows if jan1 <= r["golive_date"] <= reference_date)
-    real_ytd_juni = sum(r["port"] for r in golive_rows if jan1 <= r["golive_date"] <= jun30)
-    real_ytd_juli = sum(r["port"] for r in golive_rows if jan1 <= r["golive_date"] <= jul31)
+
+    # YTD "-1 bulan berjalan": akumulatif Jan s/d akhir bulan sebelum bulan
+    # berjalan. Kalau bulan berjalan Agustus -> jumlahkan s/d akhir Juli.
+    prev_month = current_month - 1
+    if prev_month >= 1:
+        prev_month_end = _month_end_date(reference_date.year, prev_month)
+        real_ytd_prev_month = sum(r["port"] for r in golive_rows if jan1 <= r["golive_date"] <= prev_month_end)
+    else:
+        real_ytd_prev_month = 0
+
     total_order_port = sum(r["port"] for r in subset_rows if not _is_drop_mom(r["status_lop"]))
 
     return {
         "dod": dod, "mtd": mtd, "potensi": potensi_month, "ytd": ytd,
-        "real_ytd_juni": real_ytd_juni, "real_ytd_juli": real_ytd_juli,
+        "real_ytd_prev_month": real_ytd_prev_month,
         "total_order_port": total_order_port,
     }
 
 
-def _combine_with_target(actuals, target_month, target_ytd):
+def _combine_with_target(actuals, target_month, target_ytd, target_q3):
     ach_mtd = (actuals["mtd"] / target_month * 100) if target_month else 0
     outlook_ytd = actuals["ytd"] + actuals["potensi"]
     ach_ytd = (actuals["ytd"] / target_ytd * 100) if target_ytd else 0
-    gap_ytd = actuals["ytd"] - target_ytd
-    ach_total_order = (actuals["ytd"] / actuals["total_order_port"] * 100) if actuals["total_order_port"] else 0
+    gap_mtd = target_month - actuals["mtd"]
+    gap_q3 = target_q3 - actuals["ytd"]
+    ach_total_order = (actuals["total_order_port"] / actuals["ytd"] * 100) if actuals["ytd"] else 0
 
     return {
         **actuals,
         "target_month": target_month,
         "target_ytd": target_ytd,
+        "target_q3": target_q3,
         "ach_mtd": ach_mtd,
         "outlook_ytd": outlook_ytd,
         "ach_ytd": ach_ytd,
-        "gap_ytd": gap_ytd,
-        # Sesuai konfirmasi: ACH/GAP "Q3" rumusnya sama dengan ACH/GAP YTD
-        # (akumulatif dari awal tahun, bukan target khusus kuartal).
-        "ach_ytd_q3": ach_ytd,
-        "gap_q3": gap_ytd,
+        "gap_mtd": gap_mtd,
+        "gap_q3": gap_q3,
         "ach_total_order": ach_total_order,
     }
 
@@ -901,8 +921,6 @@ def get_fbb_summary(reference_date_str: str = None):
     year = reference_date.year
     current_month = reference_date.month
     jan1 = datetime.date(year, 1, 1)
-    jun30 = datetime.date(year, 6, 30)
-    jul31 = datetime.date(year, 7, 31)
 
     rows = _load_semesta_rows_for_summary()
     targets = get_target_data()
@@ -933,15 +951,22 @@ def get_fbb_summary(reference_date_str: str = None):
     regionals = sorted(set(r["regional"] for r in rows), key=lambda s: s.lower())
     programs_present = sorted(set(r["program"] for r in rows), key=lambda s: s.lower())
 
+    # Kolom Target tetap Mei-September (5-9), berapapun bulan berjalannya.
+    FIXED_TARGET_MONTHS = [5, 6, 7, 8, 9]
+    Q3_END_MONTH = 9
+
     def build_entry(subset_rows, regional_key, program_key):
-        actuals = _compute_actuals(subset_rows, reference_date, current_month, jan1, jun30, jul31)
+        actuals = _compute_actuals(subset_rows, reference_date, current_month, jan1)
         if regional_key is None:
-            t_month = target_value_all_regions(current_month, program_key)
-            t_ytd = cumulative_target(lambda m: target_value_all_regions(m, program_key), current_month)
+            value_fn = lambda m: target_value_all_regions(m, program_key)
         else:
-            t_month = target_value(regional_key, current_month, program_key)
-            t_ytd = cumulative_target(lambda m: target_value(regional_key, m, program_key), current_month)
-        return _combine_with_target(actuals, t_month, t_ytd)
+            value_fn = lambda m: target_value(regional_key, m, program_key)
+        t_month = value_fn(current_month)
+        t_ytd = cumulative_target(value_fn, current_month)
+        t_q3 = cumulative_target(value_fn, Q3_END_MONTH)
+        entry = _combine_with_target(actuals, t_month, t_ytd, t_q3)
+        entry["target_by_month"] = {m: value_fn(m) for m in FIXED_TARGET_MONTHS}
+        return entry
 
     regional_results = []
     for reg in regionals:
@@ -960,10 +985,15 @@ def get_fbb_summary(reference_date_str: str = None):
 
     grand_total = build_entry(rows, None, None)
 
+    prev_month = current_month - 1
+    prev_month_label = config.MONTH_LABEL_ID[prev_month - 1] if prev_month >= 1 else None
+
     return {
         "reference_date": reference_date.isoformat(),
         "current_month": current_month,
         "current_month_label": config.MONTH_LABEL_ID[current_month - 1],
+        "prev_month_label": prev_month_label,
+        "target_month_labels": {m: config.MONTH_LABEL_ID[m - 1] for m in FIXED_TARGET_MONTHS},
         "programs": programs_present,
         "regionals": regional_results,
         "totals_by_program": totals_by_program,

@@ -221,6 +221,8 @@ COL_SEMESTA_KETERANGAN = "O"
 # Status LOP (kolom V) yang jadi acuan formula FBB — dicocokkan case-insensitive.
 STATUS_LOP_GOLIVE = "5. Golive"
 STATUS_LOP_DROP_MOM = "6.3. Drop MOM"
+# Potensi (di ringkasan FBB) = lokasi yang sudah di status ini (siap/berpotensi Golive).
+STATUS_POTENSI = "3.OGP DEPLOY"
 
 # ── Sheet "TARGET" ───────────────────────────────────────────────────
 SHEET_NAME_TARGET = os.environ.get("SHEET_NAME_TARGET", "TARGET")
