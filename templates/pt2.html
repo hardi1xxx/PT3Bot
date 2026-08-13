@@ -94,6 +94,15 @@
   <div class="pivot-table-wrap" id="pt2PivotWrap"><div class="skeleton">Memuat data...</div></div>
 </div>
 
+<!-- Rekap per Batch NDE (kolom H) -->
+<div class="section-title">
+  Rekap LOP &amp; Port per Batch NDE
+  <span class="hint">baris = BATCH NDE (kolom H) — klik angka untuk lihat daftar lokasinya</span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="pt2BatchPivotWrap"><div class="skeleton">Memuat data...</div></div>
+</div>
+
 <!-- Kendala (Klasifikasi Cancel, kolom P) -->
 <div class="section-title">Kendala</div>
 <div class="card" style="margin-bottom:22px;">
@@ -263,12 +272,27 @@ function pt2ComputeH1Agg(rows, data) {
 // ── Row filtering (dipakai oleh semua drill-down: card, donut, tabel) ─
 function pt2FilterRows(filter) {
   filter = filter || {};
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isSameDate = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
   return pt2Cache.rows.filter(r => {
     if (filter.regional !== undefined && r.regional !== filter.regional) return false;
     if (filter.branch !== undefined && r.branch !== filter.branch) return false;
+    if (filter.batch !== undefined && r.batch !== filter.batch) return false;
     if (filter.status !== undefined && r.status !== filter.status) return false;
     if (filter.golive_hi && !r.is_golive_today) return false;
     if (filter.golive_month && !r.is_golive_month) return false;
+    if (filter.h1_golive_hi) {
+      const d = pt2ParseDate(r.tgl_close_wo_formatted);
+      if (!isSameDate(d, yesterday)) return false;
+    }
+    if (filter.h1_golive_month) {
+      const d = pt2ParseDate(r.tgl_close_wo_formatted);
+      if (!d || d.getFullYear() !== today.getFullYear() || d.getMonth() !== today.getMonth() || isSameDate(d, today)) return false;
+    }
     return true;
   });
 }
@@ -277,9 +301,12 @@ function pt2FilterTitle(filter) {
   const parts = [];
   if (filter.regional) parts.push(filter.regional);
   if (filter.branch) parts.push(filter.branch);
+  if (filter.batch) parts.push('Batch ' + filter.batch);
   if (filter.status) parts.push(pt2ShortLabel(filter.status));
   if (filter.golive_hi) parts.push('Golive Hari Ini');
   if (filter.golive_month) parts.push('Golive ' + (pt2Cache.current_month_label || ''));
+  if (filter.h1_golive_hi) parts.push('Golive Kemarin (H-1)');
+  if (filter.h1_golive_month) parts.push('Golive Bulan Ini s.d. Kemarin (H-1)');
   if (!parts.length) parts.push('Grand Total (Semua Data)');
   return parts.join(' — ');
 }
@@ -335,28 +362,54 @@ function pt2RenderPivotRow(label, agg, data, rowClass, rowKey) {
   return html;
 }
 
-function pt2RenderH1Row(agg, data) {
+function pt2ComputeH1GoliveDate(rows) {
+  // Golive HI (H-1) = golive dengan TGL CLOSE WO = kemarin.
+  // Golive Bulan Ini (H-1) = golive bulan berjalan TAPI BUKAN hari ini
+  // (jadi angka "s.d. kemarin" sebagai pembanding progres bulan ini).
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isSameDate = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+  const hi = { lop: 0, port: 0 };
+  const month = { lop: 0, port: 0 };
+  rows.forEach(r => {
+    const d = pt2ParseDate(r.tgl_close_wo_formatted);
+    if (!d) return;
+    if (isSameDate(d, yesterday)) { hi.lop += 1; hi.port += (r.port || 0); }
+    if (d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && !isSameDate(d, today)) {
+      month.lop += 1; month.port += (r.port || 0);
+    }
+  });
+  return { golive_hi: hi, golive_month: month };
+}
+
+function pt2RenderH1Row(agg, data, h1Golive) {
   let html = `<tr class="pt2-h1-row"><td class="row-label">H-1 <span class="pt2-h1-hint">(kolom AH)</span></td>`;
   data.statuses.forEach(s => {
     const v = agg.values[s];
     html += `<td>${pt2FmtNum(v.lop)}</td><td>${pt2FmtNum(v.port)}</td>`;
   });
   html += `<td>${pt2FmtNum(agg.total.lop)}</td><td>${pt2FmtNum(agg.total.port)}</td>`;
-  html += `<td class="col-golive-hi">-</td><td class="col-golive-hi">-</td>`;
-  html += `<td class="col-golive-month">-</td><td class="col-golive-month">-</td>`;
+  const hiF = pt2FilterAttr({ h1_golive_hi: true });
+  html += `<td class="col-golive-hi pt2-clickable" data-filter='${hiF}'>${pt2FmtNum(h1Golive.golive_hi.lop)}</td><td class="col-golive-hi pt2-clickable" data-filter='${hiF}'>${pt2FmtNum(h1Golive.golive_hi.port)}</td>`;
+  const monF = pt2FilterAttr({ h1_golive_month: true });
+  html += `<td class="col-golive-month pt2-clickable" data-filter='${monF}'>${pt2FmtNum(h1Golive.golive_month.lop)}</td><td class="col-golive-month pt2-clickable" data-filter='${monF}'>${pt2FmtNum(h1Golive.golive_month.port)}</td>`;
   html += `<td class="col-pct">${agg.pct_golive.toFixed(2)}%</td>`;
   html += '</tr>';
   return html;
 }
 
-function pt2DeviasiCell(h1Val, totalVal) {
+function pt2DeviasiCell(h1Val, totalVal, extraClass) {
   const diff = (h1Val || 0) - (totalVal || 0); // sesuai rumus: H-1 - Total
-  const cls = diff > 0 ? 'pt2-dev-up' : (diff < 0 ? 'pt2-dev-down' : '');
+  const devCls = diff > 0 ? 'pt2-dev-up' : (diff < 0 ? 'pt2-dev-down' : '');
+  const cls = [extraClass, devCls].filter(Boolean).join(' ');
   const sign = diff > 0 ? '+' : '';
   return `<td class="${cls}">${sign}${pt2FmtNum(diff)}</td>`;
 }
 
-function pt2RenderDeviasiRow(grand, grandH1, data) {
+function pt2RenderDeviasiRow(grand, grandH1, data, h1Golive) {
   let html = `<tr class="pt2-deviasi-row"><td class="row-label">Deviasi <span class="pt2-h1-hint">(H-1 &minus; Total)</span></td>`;
   data.statuses.forEach(s => {
     html += pt2DeviasiCell(grandH1.values[s].lop, grand.values[s].lop);
@@ -364,8 +417,10 @@ function pt2RenderDeviasiRow(grand, grandH1, data) {
   });
   html += pt2DeviasiCell(grandH1.total.lop, grand.total.lop);
   html += pt2DeviasiCell(grandH1.total.port, grand.total.port);
-  html += `<td class="col-golive-hi">-</td><td class="col-golive-hi">-</td>`;
-  html += `<td class="col-golive-month">-</td><td class="col-golive-month">-</td>`;
+  html += pt2DeviasiCell(h1Golive.golive_hi.lop, grand.golive_hi.lop, 'col-golive-hi');
+  html += pt2DeviasiCell(h1Golive.golive_hi.port, grand.golive_hi.port, 'col-golive-hi');
+  html += pt2DeviasiCell(h1Golive.golive_month.lop, grand.golive_month.lop, 'col-golive-month');
+  html += pt2DeviasiCell(h1Golive.golive_month.port, grand.golive_month.port, 'col-golive-month');
   const pctDiff = grandH1.pct_golive - grand.pct_golive;
   const pctCls = pctDiff > 0 ? 'pt2-dev-up' : (pctDiff < 0 ? 'pt2-dev-down' : '');
   html += `<td class="col-pct ${pctCls}">${pctDiff > 0 ? '+' : ''}${pctDiff.toFixed(2)}%</td>`;
@@ -407,8 +462,9 @@ function pt2RenderPivotTable(data) {
   html += pt2RenderPivotRow('GRAND TOTAL', grand, data, 'grand-total-row', {});
 
   const grandH1 = pt2ComputeH1Agg(data.rows, data);
-  html += pt2RenderH1Row(grandH1, data);
-  html += pt2RenderDeviasiRow(grand, grandH1, data);
+  const h1Golive = pt2ComputeH1GoliveDate(data.rows);
+  html += pt2RenderH1Row(grandH1, data, h1Golive);
+  html += pt2RenderDeviasiRow(grand, grandH1, data, h1Golive);
 
   html += '</tbody></table>';
   el.innerHTML = html;
@@ -418,6 +474,75 @@ function pt2RenderPivotTable(data) {
 }
 
 document.getElementById('pt2PivotWrap').addEventListener('click', (e) => {
+  const td = e.target.closest('.pt2-clickable');
+  if (!td || !pt2Cache) return;
+  const filter = JSON.parse(td.dataset.filter);
+  pt2OpenFilteredList(pt2FilterTitle(filter), pt2FilterRows(filter), filter);
+});
+
+// ── Rekap per Batch NDE (kolom H) — level tunggal, pakai render row yang sama ─
+function pt2NaturalCompare(a, b) {
+  const numA = parseInt((a.match(/\d+/) || [0])[0], 10);
+  const numB = parseInt((b.match(/\d+/) || [0])[0], 10);
+  if (numA !== numB) return numA - numB;
+  return a.toLowerCase().localeCompare(b.toLowerCase());
+}
+
+function pt2BuildBatchPivot(data) {
+  const batchMap = {};
+  const grand = pt2EmptyAgg(data.statuses);
+
+  data.rows.forEach(r => {
+    const batchKey = r.batch || '(Tanpa Batch)';
+    if (!batchMap[batchKey]) batchMap[batchKey] = pt2EmptyAgg(data.statuses);
+    const agg = batchMap[batchKey];
+
+    [agg, grand].forEach(a => {
+      if (r.status) {
+        a.values[r.status].lop += 1;
+        a.values[r.status].port += (r.port || 0);
+      }
+      if (r.is_golive_today) { a.golive_hi.lop += 1; a.golive_hi.port += (r.port || 0); }
+      if (r.is_golive_month) { a.golive_month.lop += 1; a.golive_month.port += (r.port || 0); }
+    });
+  });
+
+  Object.values(batchMap).forEach(agg => pt2Finalize(agg, data));
+  pt2Finalize(grand, data);
+  return { batchMap, grand };
+}
+
+function pt2RenderBatchPivotTable(data) {
+  const el = document.getElementById('pt2BatchPivotWrap');
+  if (!el) return;
+  if (!data.rows.length) { el.innerHTML = '<div class="empty-state">Belum ada data di sheet Detail PT2.</div>'; return; }
+
+  const { batchMap, grand } = pt2BuildBatchPivot(data);
+  const monthLabel = 'GOLIVE ' + (data.current_month_label || '');
+  const batchKeys = Object.keys(batchMap).sort(pt2NaturalCompare);
+
+  let html = '<table class="pt2-pivot"><thead><tr>';
+  html += '<th rowspan="2" class="row-label">BATCH NDE</th>';
+  data.statuses.forEach(s => { html += `<th colspan="2">${pt2Esc(pt2ShortLabel(s))}</th>`; });
+  html += '<th colspan="2">GRAND TOTAL</th>';
+  html += '<th colspan="2">GOLIVE HI</th>';
+  html += `<th colspan="2">${pt2Esc(monthLabel)}</th>`;
+  html += '<th rowspan="2">%GOLIVE</th>';
+  html += '</tr><tr>';
+  data.statuses.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th>LOP</th><th>Port</th><th>LOP</th><th>Port</th><th>LOP</th><th>Port</th>';
+  html += '</tr></thead><tbody>';
+
+  batchKeys.forEach(batchKey => {
+    html += pt2RenderPivotRow(batchKey, batchMap[batchKey], data, 'branch-row', { batch: batchKey });
+  });
+  html += pt2RenderPivotRow('GRAND TOTAL', grand, data, 'grand-total-row', {});
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+document.getElementById('pt2BatchPivotWrap').addEventListener('click', (e) => {
   const td = e.target.closest('.pt2-clickable');
   if (!td || !pt2Cache) return;
   const filter = JSON.parse(td.dataset.filter);
@@ -522,7 +647,9 @@ const PT2_LIST_DISPLAY_CAP = 300;
 
 function pt2IsGoliveFilter(filter) {
   filter = filter || {};
-  return filter.status === (pt2Cache && pt2Cache.golive_status) || !!filter.golive_hi || !!filter.golive_month;
+  return filter.status === (pt2Cache && pt2Cache.golive_status)
+    || !!filter.golive_hi || !!filter.golive_month
+    || !!filter.h1_golive_hi || !!filter.h1_golive_month;
 }
 
 function pt2RowsToCSV(rows, cols) {
@@ -779,6 +906,7 @@ async function loadPt2Dashboard() {
     }
     pt2Cache = json.data;
     pt2RenderPivotTable(pt2Cache);
+    pt2RenderBatchPivotTable(pt2Cache);
     pt2RenderKendala(pt2Cache);
     if (!document.getElementById('pt2TrendFrom').value) pt2InitTrendDefaults();
     pt2RenderTrendChart();
