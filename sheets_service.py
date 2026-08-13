@@ -695,9 +695,9 @@ def get_fbb_data():
             continue  # baris kosong total, skip
 
         program_val = _norm_label(cell("program"))
-        regional_val = _norm_label(cell("regional"))
-        if not program_val or not regional_val:
-            continue  # Program/Regional kosong -> tidak ditampilkan sama sekali
+        if not program_val:
+            continue  # Program kosong -> tidak bisa diklasifikasi, tetap di-skip
+        regional_val = _norm_label(cell("regional")) or "(TANPA REGIONAL)"
 
         branch_val = cell("branch") or "(Tanpa Branch)"
         programs.add(program_val)
@@ -846,12 +846,13 @@ def _load_semesta_rows_for_summary():
             i = idx[key]
             return row[i].strip() if i < len(row) else ""
         ihld_val = cell("ihld")
-        regional_val = _norm_label(cell("regional"))
+        raw_regional = cell("regional")
         program_val = _norm_label(cell("program"))
-        if not ihld_val and not regional_val:
-            continue
-        if not program_val or not regional_val:
-            continue  # Program/Regional kosong -> tidak dimasukkan ke ringkasan
+        if not ihld_val and not raw_regional:
+            continue  # baris kosong total, skip
+        if not program_val:
+            continue  # Program kosong -> tidak bisa diklasifikasi, tetap di-skip
+        regional_val = _norm_label(raw_regional) or "(TANPA REGIONAL)"
         rows.append({
             "program": program_val,
             "regional": regional_val,
