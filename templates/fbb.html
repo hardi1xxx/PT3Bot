@@ -5,6 +5,17 @@
 
 {% block content %}
 
+<style>
+  .fbb-list-table { border-collapse:collapse; width:100%; font-size:0.8rem; }
+  .fbb-list-table th, .fbb-list-table td { border:1px solid var(--border, #e2e8f0); padding:5px 8px; text-align:left; white-space:nowrap; }
+  .fbb-list-table thead th { background:#f1f5f9; position:sticky; top:0; }
+  .fbb-download-btn { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:0.85rem; font-weight:600; cursor:pointer; }
+  .fbb-download-btn:hover { background:#15803d; }
+  .fbb-download-btn:disabled { background:#94a3b8; cursor:not-allowed; }
+  td.fbb-drill { cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
+  td.fbb-drill:hover { background:#eff6ff; }
+</style>
+
 <div class="stat-grid">
   <div class="stat-card">
     <div class="stat-label">Total Order</div>
@@ -75,6 +86,9 @@
   <button type="button" id="fbbUpdateDataBtn" class="btn-ghost" style="margin-left:auto;" title="Ambil data terbaru tanpa mereset filter yang sedang aktif">
     &#8635; Update Data
   </button>
+  <button type="button" id="fbbExportSemestaBtn" class="btn-ghost" title="Download seluruh data sheet Semesta (sesuai filter Program/Regional aktif) sebagai CSV">
+    &#11015; Export Data Semesta
+  </button>
   <button type="button" id="fbbLaporanBtn" class="btn-ghost" title="Buat laporan eksekutif dari data &amp; filter saat ini">
     &#128196; Buat Laporan
   </button>
@@ -83,6 +97,12 @@
   <div class="pivot-table-wrap" id="fbbSummaryTableWrap" style="overflow-x:auto;">
     <div class="skeleton">Memuat ringkasan...</div>
   </div>
+  <p class="sub" style="margin:10px 2px 0;">Klik angka pada tabel (bergaris putus-putus) untuk lihat daftar lokasinya &mdash; bisa didownload sebagai CSV.</p>
+</div>
+
+<!-- Modal: daftar lokasi hasil drill-down + download CSV -->
+<div class="modal-overlay" id="fbbListModalOverlay">
+  <div class="modal-box" id="fbbListModalBox" style="max-width:1000px;"></div>
 </div>
 
 <div class="dashboard-grid">
@@ -294,7 +314,12 @@ function renderStatusChart(filteredRows) {
 }
 
 // ── Tabel Ringkasan Pencapaian (DOD/MTD/Potensi/ACH/YTD/Outlook/GAP) ──
-function summaryRowHtml(label, m, opts) {
+function drillTd(value, regionalKey, programKey, metric, label) {
+  const attrs = `data-regional="${escF(regionalKey || '')}" data-program="${escF(programKey || '')}" data-metric="${metric}" data-label="${escF(label)}"`;
+  return `<td class="fbb-drill" ${attrs}>${fmtNumF(value)}</td>`;
+}
+
+function summaryRowHtml(label, m, regionalKey, programKey, opts) {
   opts = opts || {};
   const rowClass = opts.rowClass || '';
   const labelStyle = opts.labelStyle || 'text-align:left;';
@@ -302,20 +327,20 @@ function summaryRowHtml(label, m, opts) {
   return `
     <tr class="${rowClass}">
       <th style="${labelStyle}">${escF(label)}</th>
-      <td>${fmtNumF(m.total_order_port)}</td>
+      ${drillTd(m.total_order_port, regionalKey, programKey, 'total_order', `Total Order — ${label}`)}
       <td>${fmtNumF(tb[5])}</td>
       <td>${fmtNumF(tb[6])}</td>
       <td>${fmtNumF(tb[7])}</td>
       <td>${fmtNumF(tb[8])}</td>
       <td>${fmtNumF(tb[9])}</td>
-      <td>${fmtNumF(m.real_ytd_prev_month)}</td>
+      ${drillTd(m.real_ytd_prev_month, regionalKey, programKey, 'ytd_prev', `YTD s/d bulan lalu — ${label}`)}
       <td>${fmtNumF(m.target_ytd)}</td>
-      <td>${fmtNumF(m.dod)}</td>
-      <td>${fmtNumF(m.mtd)}</td>
-      <td>${fmtNumF(m.potensi)}</td>
+      ${drillTd(m.dod, regionalKey, programKey, 'dod', `DOD (Golive hari ini) — ${label}`)}
+      ${drillTd(m.mtd, regionalKey, programKey, 'mtd', `MTD (Golive bulan ini) — ${label}`)}
+      ${drillTd(m.potensi, regionalKey, programKey, 'potensi', `Potensi (3.OGP DEPLOY) — ${label}`)}
       <td style="${achCellStyle(m.ach_mtd)}">${fmtPctF(m.ach_mtd)}</td>
-      <td>${fmtNumF(m.ytd)}</td>
-      <td>${fmtNumF(m.outlook_ytd)}</td>
+      ${drillTd(m.ytd, regionalKey, programKey, 'ytd', `YTD (Golive Jan s/d hari ini) — ${label}`)}
+      ${drillTd(m.outlook_ytd, regionalKey, programKey, 'outlook', `Outlook YTD (Potensi + YTD) — ${label}`)}
       <td style="${achCellStyle(m.ach_ytd)}">${fmtPctF(m.ach_ytd)}</td>
       <td style="${gapCellStyle(-m.gap_mtd)}">${fmtNumF(m.gap_mtd)}</td>
       <td style="${gapCellStyle(-m.gap_q3)}">${fmtNumF(m.gap_q3)}</td>
@@ -356,21 +381,177 @@ function renderSummaryTable(data) {
   html += '</tr><tr></tr></thead><tbody>';
 
   data.regionals.forEach(reg => {
-    html += summaryRowHtml(reg.regional, reg.combined, { rowClass: 'regional-row' });
+    html += summaryRowHtml(reg.regional, reg.combined, reg.regional, null, { rowClass: 'regional-row' });
     data.programs.forEach(prog => {
       const m = reg.programs[prog];
-      if (m) html += summaryRowHtml(prog, m, { labelStyle: 'text-align:left; font-weight:400; color:var(--muted); padding-left:28px;' });
+      if (m) html += summaryRowHtml(prog, m, reg.regional, prog, { labelStyle: 'text-align:left; font-weight:400; color:var(--muted); padding-left:28px;' });
     });
   });
 
   data.programs.forEach(prog => {
-    html += summaryRowHtml('TOTAL ' + prog, data.totals_by_program[prog], { rowClass: 'subtotal-row' });
+    html += summaryRowHtml('TOTAL ' + prog, data.totals_by_program[prog], null, prog, { rowClass: 'subtotal-row' });
   });
-  html += summaryRowHtml('TOTAL', data.grand_total, { rowClass: 'grand-total-row' });
+  html += summaryRowHtml('TOTAL', data.grand_total, null, null, { rowClass: 'grand-total-row' });
 
   html += '</tbody></table>';
   wrap.innerHTML = html;
 }
+
+// ── Export & drill-down: kolom-kolom di sheet Semesta yang ditampilkan
+// di daftar/CSV. Sama untuk export penuh maupun hasil klik-drill.
+const FBB_LIST_COLS = [
+  { key: 'tanggal_nde', label: 'Tanggal NDE' },
+  { key: 'program', label: 'Program' },
+  { key: 'ihld', label: 'IHLD' },
+  { key: 'lokasi', label: 'Nama Lokasi' },
+  { key: 'sto', label: 'STO' },
+  { key: 'batch', label: 'Batch' },
+  { key: 'branch', label: 'Branch' },
+  { key: 'regional', label: 'Regional' },
+  { key: 'status_lop', label: 'Status LOP' },
+  { key: 'final_port', label: 'Final Port' },
+  { key: 'tgl_fi', label: 'Tgl FI' },
+  { key: 'tgl_golive', label: 'Tgl Golive' },
+  { key: 'umur', label: 'Umur' },
+  { key: 'odp_golive', label: 'ODP Golive' },
+  { key: 'keterangan', label: 'Keterangan' },
+];
+const FBB_LIST_DISPLAY_CAP = 300;
+
+function fbbRowsToCSV(rows, cols) {
+  const escCsv = (v) => {
+    const s = (v === null || v === undefined) ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [['No'].concat(cols.map(c => c.label)).map(escCsv).join(',')];
+  rows.forEach((r, i) => {
+    lines.push([i + 1].concat(cols.map(c => r[c.key])).map(escCsv).join(','));
+  });
+  return lines.join('\n');
+}
+
+function fbbDownloadCSV(rows, title, cols) {
+  const csv = fbbRowsToCSV(rows, cols);
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const safeName = (title || 'fbb-data').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `semesta-${safeName || 'data'}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function fbbOpenFilteredList(title, rows) {
+  rows = rows || [];
+  const capped = rows.slice(0, FBB_LIST_DISPLAY_CAP);
+  const modalBox = document.getElementById('fbbListModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">${escF(title)} <span class="badge">${fmtNumF(rows.length)}</span></div>
+      <button class="btn-ghost modal-close" id="fbbListModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div style="display:flex; justify-content:flex-end; margin:10px 0;">
+      <button class="fbb-download-btn" id="fbbListDownloadBtn" ${rows.length ? '' : 'disabled'}>&#11015; Download CSV (${fmtNumF(rows.length)} baris)</button>
+    </div>
+    ${rows.length ? `
+      <div style="overflow:auto; max-height:58vh; border:1px solid var(--border, #e2e8f0); border-radius:8px;">
+        <table class="fbb-list-table">
+          <thead><tr><th>No</th>${FBB_LIST_COLS.map(c => `<th>${escF(c.label)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${capped.map((r, i) => `<tr><td>${i + 1}</td>${FBB_LIST_COLS.map(c => `<td>${escF(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${rows.length > capped.length ? `<p style="color:var(--muted,#64748b); font-size:0.8rem; margin-top:8px;">Menampilkan ${fmtNumF(capped.length)} dari ${fmtNumF(rows.length)} baris di layar &mdash; download CSV untuk lihat semuanya.</p>` : ''}
+    ` : '<div class="empty-state">Tidak ada data untuk kategori ini.</div>'}
+  `;
+  document.getElementById('fbbListModalCloseBtn').addEventListener('click', fbbCloseListModal);
+  const dlBtn = document.getElementById('fbbListDownloadBtn');
+  if (dlBtn && rows.length) dlBtn.addEventListener('click', () => fbbDownloadCSV(rows, title, FBB_LIST_COLS));
+  document.getElementById('fbbListModalOverlay').classList.add('open');
+}
+
+function fbbCloseListModal() {
+  document.getElementById('fbbListModalOverlay').classList.remove('open');
+}
+document.getElementById('fbbListModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'fbbListModalOverlay') fbbCloseListModal();
+});
+
+// ── Filter baris Semesta untuk drill-down, meniru persis rumus backend:
+// status Golive = kolom I persis "5.GOLIVE" (tanpa spasi, case-insensitive);
+// Potensi = status mengandung "OGP DEPLOY"; tanggal acuan dari kolom L.
+function fbbNormStatus(s) {
+  return (s || '').toUpperCase().replace(/\s+/g, '');
+}
+function fbbIsGolive(status) { return fbbNormStatus(status) === '5.GOLIVE'; }
+function fbbIsPotensi(status) { return fbbNormStatus(status).includes('OGPDEPLOY'); }
+
+function fbbParseDate(raw) {
+  if (!raw) return null;
+  raw = raw.trim();
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let [, d, mo, y] = m;
+    y = y.length === 2 ? '20' + y : y;
+    return new Date(Date.UTC(+y, +mo - 1, +d));
+  }
+  const d2 = new Date(raw);
+  return isNaN(d2) ? null : d2;
+}
+function fbbDateBetween(d, start, end) {
+  if (!d) return false;
+  if (start && d.getTime() < start.getTime()) return false;
+  if (end && d.getTime() > end.getTime()) return false;
+  return true;
+}
+function fbbSameDay(d, ref) {
+  return d && ref && d.getUTCFullYear() === ref.getUTCFullYear()
+    && d.getUTCMonth() === ref.getUTCMonth() && d.getUTCDate() === ref.getUTCDate();
+}
+
+function fbbFilterRows(regionalKey, programKey, metric) {
+  if (!fbbCache || !fbbSummaryCache) return [];
+  const refDate = fbbParseDate(fbbSummaryCache.reference_date);
+  const monthStart = refDate ? new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), 1)) : null;
+  const jan1 = refDate ? new Date(Date.UTC(refDate.getUTCFullYear(), 0, 1)) : null;
+  const prevMonthEnd = refDate ? new Date(Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth(), 0)) : null;
+
+  return fbbCache.rows.filter(r => {
+    if (regionalKey && r.regional !== regionalKey) return false;
+    if (programKey && r.program !== programKey) return false;
+    const golive = fbbIsGolive(r.status_lop);
+    const gdate = golive ? fbbParseDate(r.tgl_golive) : null;
+    switch (metric) {
+      case 'total_order': return true;
+      case 'dod': return golive && fbbSameDay(gdate, refDate);
+      case 'mtd': return golive && fbbDateBetween(gdate, monthStart, refDate);
+      case 'ytd': return golive && fbbDateBetween(gdate, jan1, refDate);
+      case 'ytd_prev': return golive && fbbDateBetween(gdate, jan1, prevMonthEnd);
+      case 'potensi': return fbbIsPotensi(r.status_lop);
+      case 'outlook': return fbbIsPotensi(r.status_lop) || (golive && fbbDateBetween(gdate, jan1, refDate));
+      default: return false;
+    }
+  });
+}
+
+document.getElementById('fbbSummaryTableWrap').addEventListener('click', (e) => {
+  const td = e.target.closest('.fbb-drill');
+  if (!td) return;
+  const { regional, program, metric, label } = td.dataset;
+  const rows = fbbFilterRows(regional || null, program || null, metric);
+  fbbOpenFilteredList(label, rows);
+});
+
+document.getElementById('fbbExportSemestaBtn').addEventListener('click', () => {
+  if (!fbbCache || !fbbCache.rows || !fbbCache.rows.length) return;
+  fbbDownloadCSV(fbbCache.rows, 'lengkap', FBB_LIST_COLS);
+});
 
 async function loadFbbSummary(dateStr) {
   const wrap = document.getElementById('fbbSummaryTableWrap');

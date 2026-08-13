@@ -402,7 +402,7 @@ function pt2RenderH1Row(agg, data, h1Golive) {
 }
 
 function pt2DeviasiCell(h1Val, totalVal, extraClass) {
-  const diff = (h1Val || 0) - (totalVal || 0); // sesuai rumus: H-1 - Total
+  const diff = (totalVal || 0) - (h1Val || 0); // sesuai rumus: Total - H-1
   const devCls = diff > 0 ? 'pt2-dev-up' : (diff < 0 ? 'pt2-dev-down' : '');
   const cls = [extraClass, devCls].filter(Boolean).join(' ');
   const sign = diff > 0 ? '+' : '';
@@ -410,7 +410,7 @@ function pt2DeviasiCell(h1Val, totalVal, extraClass) {
 }
 
 function pt2RenderDeviasiRow(grand, grandH1, data, h1Golive) {
-  let html = `<tr class="pt2-deviasi-row"><td class="row-label">Deviasi <span class="pt2-h1-hint">(H-1 &minus; Total)</span></td>`;
+  let html = `<tr class="pt2-deviasi-row"><td class="row-label">Deviasi <span class="pt2-h1-hint">(Total &minus; H-1)</span></td>`;
   data.statuses.forEach(s => {
     html += pt2DeviasiCell(grandH1.values[s].lop, grand.values[s].lop);
     html += pt2DeviasiCell(grandH1.values[s].port, grand.values[s].port);
@@ -421,7 +421,7 @@ function pt2RenderDeviasiRow(grand, grandH1, data, h1Golive) {
   html += pt2DeviasiCell(h1Golive.golive_hi.port, grand.golive_hi.port, 'col-golive-hi');
   html += pt2DeviasiCell(h1Golive.golive_month.lop, grand.golive_month.lop, 'col-golive-month');
   html += pt2DeviasiCell(h1Golive.golive_month.port, grand.golive_month.port, 'col-golive-month');
-  const pctDiff = grandH1.pct_golive - grand.pct_golive;
+  const pctDiff = grand.pct_golive - grandH1.pct_golive;
   const pctCls = pctDiff > 0 ? 'pt2-dev-up' : (pctDiff < 0 ? 'pt2-dev-down' : '');
   html += `<td class="col-pct ${pctCls}">${pctDiff > 0 ? '+' : ''}${pctDiff.toFixed(2)}%</td>`;
   html += '</tr>';
