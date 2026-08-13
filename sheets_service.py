@@ -160,15 +160,46 @@ def get_row_label(row_num: int):
 
 
 def _to_number(raw: str) -> float:
-    """Parse a sheet cell into a number. Tolerates '' , '12', '12.5', and the
-    Indonesian '1.234,56' thousands/decimal style. Anything unparseable -> 0."""
-    raw = (raw or "").strip()
+    """Parse a sheet cell into a number. Handles mixed formatting robustly:
+    - '1.234,56' (Indonesian: dot=ribuan, koma=desimal)
+    - '1,234.56' (US: koma=ribuan, dot=desimal)
+    - '1.234' atau '1,234' (cuma satu jenis separator, tanpa desimal) --
+      dideteksi otomatis dari pola pengelompokan 3 digit: kalau cocok pola
+      ribuan, semua separator itu dibuang (jadi 1234, bukan 1.234 atau 1.0).
+    - '12.5' / '12,5' (desimal biasa, bukan pola ribuan) -- tetap desimal.
+    Anything unparseable -> 0. Ini penting karena sel di sheet bisa beda-beda
+    format tergantung siapa yang isi manual."""
+    raw = (raw or "").strip().replace(" ", "")
     if not raw:
         return 0.0
-    if "," in raw and "." in raw:
-        raw = raw.replace(".", "").replace(",", ".")
-    elif "," in raw:
-        raw = raw.replace(",", ".")
+
+    def _looks_like_thousands(int_part: str, groups: list) -> bool:
+        return (
+            bool(groups)
+            and all(len(g) == 3 and g.isdigit() for g in groups)
+            and int_part.lstrip("-").isdigit()
+        )
+
+    has_comma = "," in raw
+    has_dot = "." in raw
+
+    if has_comma and has_dot:
+        # Dua-duanya ada: yang muncul TERAKHIR adalah pemisah desimal.
+        if raw.rfind(",") > raw.rfind("."):
+            raw = raw.replace(".", "").replace(",", ".")  # gaya ID
+        else:
+            raw = raw.replace(",", "")  # gaya US
+    elif has_comma:
+        parts = raw.split(",")
+        if _looks_like_thousands(parts[0], parts[1:]):
+            raw = raw.replace(",", "")
+        else:
+            raw = raw.replace(",", ".")
+    elif has_dot:
+        parts = raw.split(".")
+        if _looks_like_thousands(parts[0], parts[1:]):
+            raw = raw.replace(".", "")
+
     try:
         return float(raw)
     except ValueError:
