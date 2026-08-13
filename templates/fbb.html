@@ -86,8 +86,8 @@
   <button type="button" id="fbbUpdateDataBtn" class="btn-ghost" style="margin-left:auto;" title="Ambil data terbaru tanpa mereset filter yang sedang aktif">
     &#8635; Update Data
   </button>
-  <button type="button" id="fbbExportSemestaBtn" class="btn-ghost" title="Download seluruh data sheet Semesta (sesuai filter Program/Regional aktif) sebagai CSV">
-    &#11015; Export Data Semesta
+  <button type="button" id="fbbExportSemestaBtn" class="btn-ghost" title="Download data sheet Semesta (kolom A-M) sebagai CSV">
+    &#11015; Export Data
   </button>
   <button type="button" id="fbbLaporanBtn" class="btn-ghost" title="Buat laporan eksekutif dari data &amp; filter saat ini">
     &#128196; Buat Laporan
@@ -397,24 +397,23 @@ function renderSummaryTable(data) {
   wrap.innerHTML = html;
 }
 
-// ── Export & drill-down: kolom-kolom di sheet Semesta yang ditampilkan
-// di daftar/CSV. Sama untuk export penuh maupun hasil klik-drill.
+// ── Export & drill-down: kolom-kolom sheet Semesta A-M saja yang
+// ditampilkan/didownload (N=ODP Golive, O=Keterangan tidak diperlukan).
+// Sama untuk export penuh maupun hasil klik-drill.
 const FBB_LIST_COLS = [
-  { key: 'tanggal_nde', label: 'Tanggal NDE' },
-  { key: 'program', label: 'Program' },
-  { key: 'ihld', label: 'IHLD' },
-  { key: 'lokasi', label: 'Nama Lokasi' },
-  { key: 'sto', label: 'STO' },
-  { key: 'batch', label: 'Batch' },
-  { key: 'branch', label: 'Branch' },
-  { key: 'regional', label: 'Regional' },
-  { key: 'status_lop', label: 'Status LOP' },
-  { key: 'final_port', label: 'Final Port' },
-  { key: 'tgl_fi', label: 'Tgl FI' },
-  { key: 'tgl_golive', label: 'Tgl Golive' },
-  { key: 'umur', label: 'Umur' },
-  { key: 'odp_golive', label: 'ODP Golive' },
-  { key: 'keterangan', label: 'Keterangan' },
+  { key: 'tanggal_nde', label: 'Tanggal NDE' },      // A
+  { key: 'program', label: 'Program' },               // B
+  { key: 'ihld', label: 'IHLD' },                      // C
+  { key: 'lokasi', label: 'Nama Lokasi' },             // D
+  { key: 'sto', label: 'STO' },                        // E
+  { key: 'batch', label: 'Batch' },                    // F
+  { key: 'branch', label: 'Branch' },                  // G
+  { key: 'regional', label: 'Regional' },              // H
+  { key: 'status_lop', label: 'Status LOP' },          // I
+  { key: 'final_port', label: 'Final Port' },          // J
+  { key: 'tgl_fi', label: 'Tgl FI' },                  // K
+  { key: 'tgl_golive', label: 'Tgl Golive' },          // L
+  { key: 'umur', label: 'Umur' },                      // M
 ];
 const FBB_LIST_DISPLAY_CAP = 300;
 

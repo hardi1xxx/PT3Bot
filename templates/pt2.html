@@ -25,7 +25,7 @@
   <div class="stat-card amber pt2-clickable-card" onclick="pt2CardClick('pct_golive')" title="Klik untuk lihat daftar & download">
     <div class="stat-label">%GOLIVE</div>
     <div class="stat-value" id="pt2StatPctGolive">–</div>
-    <div class="stat-foot">5.GOLIVE ÷ Total LOP tanpa Drop &amp; Kendala</div>
+    <div class="stat-foot" id="pt2StatPctGoliveFoot">5.GOLIVE ÷ Total LOP tanpa Drop &amp; Kendala</div>
   </div>
 </div>
 
@@ -118,6 +118,8 @@
 </div>
 
 <style>
+  .stat-value .stat-value-sub { font-size:0.5em; font-weight:600; color:var(--muted, #64748b); margin-left:6px; }
+
   .pt2-donut-wrap { display:flex; align-items:center; gap:28px; flex-wrap:wrap; }
   .pt2-donut-canvas-box { position:relative; width:230px; height:230px; flex:0 0 auto; }
   .pt2-donut-wrap .chart-legend { flex:1 1 220px; display:flex; flex-direction:column; gap:8px; }
@@ -315,9 +317,15 @@ function pt2FilterTitle(filter) {
 function pt2RefreshStats(data, grand) {
   document.getElementById('pt2StatTotalLop').textContent = pt2FmtNum(grand.total.lop);
   document.getElementById('pt2StatTotalPort').textContent = pt2FmtNum(grand.total.port);
-  document.getElementById('pt2StatGoliveHi').textContent = pt2FmtNum(grand.golive_hi.lop);
-  document.getElementById('pt2StatGoliveHiFoot').textContent = `TGL CLOSE WO (kolom AE) = hari ini · ${pt2FmtNum(grand.golive_hi.port)} port`;
-  document.getElementById('pt2StatPctGolive').textContent = grand.pct_golive.toFixed(2) + '%';
+
+  document.getElementById('pt2StatGoliveHi').innerHTML =
+    `${pt2FmtNum(grand.golive_hi.lop)}<span class="stat-value-sub">${pt2FmtNum(grand.golive_hi.port)} Port</span>`;
+  document.getElementById('pt2StatGoliveHiFoot').textContent = 'TGL CLOSE WO (kolom AE) = hari ini';
+
+  const goliveTotal = grand.values[data.golive_status] || { lop: 0, port: 0 };
+  document.getElementById('pt2StatPctGolive').innerHTML =
+    `${grand.pct_golive.toFixed(2)}%<span class="stat-value-sub">${pt2FmtNum(goliveTotal.lop)} LOP &middot; ${pt2FmtNum(goliveTotal.port)} Port</span>`;
+  document.getElementById('pt2StatPctGoliveFoot').textContent = '5.GOLIVE ÷ Total LOP tanpa Drop & Kendala';
 
   const dropCount = grand.values['0.DROP'] ? grand.values['0.DROP'].lop : 0;
   const kendalaCount = grand.values['0.KENDALA'] ? grand.values['0.KENDALA'].lop : 0;
