@@ -309,6 +309,7 @@ function summaryRowHtml(label, m, opts) {
       <td>${fmtNumF(tb[8])}</td>
       <td>${fmtNumF(tb[9])}</td>
       <td>${fmtNumF(m.real_ytd_prev_month)}</td>
+      <td>${fmtNumF(m.target_ytd)}</td>
       <td>${fmtNumF(m.dod)}</td>
       <td>${fmtNumF(m.mtd)}</td>
       <td>${fmtNumF(m.potensi)}</td>
@@ -341,6 +342,7 @@ function renderSummaryTable(data) {
   html += `<th rowspan="2">Target<br>${escF(tml[8] || 'Agustus')}</th>`;
   html += `<th rowspan="2">Target<br>${escF(tml[9] || 'September')}</th>`;
   html += `<th rowspan="2">YTD<br>${escF(prevMonthLabel)}</th>`;
+  html += `<th rowspan="2">Target s/d<br>${escF(monthLabel)}</th>`;
   html += '<th rowspan="2">DOD</th>';
   html += `<th rowspan="2">MTD<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">Potensi<br>${escF(monthLabel)}</th>`;

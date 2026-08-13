@@ -791,12 +791,19 @@ def get_target_data():
 
 
 # ── FBB summary (Tahap 2): DOD/MTD/Potensi/ACH/YTD/Outlook/GAP ────────
+def _normalize_status(raw: str) -> str:
+    """Uppercase + buang semua spasi, supaya '5. Golive', '5.Golive', '05. GOLIVE'
+    dst dianggap sama -- perbandingan exact-match sebelumnya diam-diam
+    menjatuhkan baris yang formatnya sedikit beda (spasi/kapital)."""
+    return re.sub(r"\s+", "", (raw or "").strip().upper())
+
+
 def _is_golive(status_lop: str) -> bool:
-    return (status_lop or "").strip().lower() == config.STATUS_LOP_GOLIVE.strip().lower()
+    return "GOLIVE" in _normalize_status(status_lop)
 
 
 def _is_drop_mom(status_lop: str) -> bool:
-    return (status_lop or "").strip().lower() == config.STATUS_LOP_DROP_MOM.strip().lower()
+    return "DROPMOM" in _normalize_status(status_lop)
 
 
 def _potensi_matches_month(potensi_raw: str, month_num: int) -> bool:
@@ -811,7 +818,7 @@ def _potensi_matches_month(potensi_raw: str, month_num: int) -> bool:
 
 def _is_potensi_status(status_lop: str) -> bool:
     """Potensi = lokasi yang statusnya '3.OGP DEPLOY' (siap/berpotensi golive)."""
-    return (status_lop or "").strip().upper() == config.STATUS_POTENSI.strip().upper()
+    return "OGPDEPLOY" in _normalize_status(status_lop)
 
 
 def _month_end_date(year: int, month: int) -> datetime.date:
@@ -874,7 +881,7 @@ def _compute_actuals(subset_rows, reference_date, current_month, jan1):
     else:
         real_ytd_prev_month = 0
 
-    total_order_port = sum(r["port"] for r in subset_rows if not _is_drop_mom(r["status_lop"]))
+    total_order_port = sum(r["port"] for r in subset_rows)
 
     return {
         "dod": dod, "mtd": mtd, "potensi": potensi_month, "ytd": ytd,
@@ -889,7 +896,7 @@ def _combine_with_target(actuals, target_month, target_ytd, target_q3):
     ach_ytd = (actuals["ytd"] / target_ytd * 100) if target_ytd else 0
     gap_mtd = target_month - actuals["mtd"]
     gap_q3 = target_q3 - actuals["ytd"]
-    ach_total_order = (actuals["total_order_port"] / actuals["ytd"] * 100) if actuals["ytd"] else 0
+    ach_total_order = (actuals["ytd"] / target_ytd * 100) if target_ytd else 0
 
     return {
         **actuals,
