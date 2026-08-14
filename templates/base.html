@@ -6,19 +6,128 @@
   <title>{% block title %}PT3 Dashboard{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+  <style>
+    /* ── Sidebar: bisa disembunyikan + grup menu FBB (kotak berbayang + garis penghubung) ── */
+    .sidebar {
+      transition: margin-left .22s ease, opacity .18s ease;
+      position: relative;
+    }
+    .sidebar.is-hidden {
+      margin-left: -260px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .sidebar-hide-btn {
+      background: none;
+      border: 1px solid rgba(15,23,42,0.12);
+      border-radius: 8px;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--muted, #64748b);
+      font-size: 0.8rem;
+      line-height: 1;
+    }
+    .sidebar-hide-btn:hover {
+      background: rgba(15,23,42,0.05);
+    }
+    .sidebar-show-btn {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 40;
+      background: #fff;
+      border: 1px solid rgba(15,23,42,0.12);
+      box-shadow: 0 4px 14px rgba(15,23,42,0.12);
+      border-radius: 10px;
+      width: 38px;
+      height: 38px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.05rem;
+    }
+    .sidebar-show-btn.visible { display: flex; }
+
+    .menu-group { margin-top: 2px; }
+    .menu-group-title {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+    }
+    .menu-submenu {
+      position: relative;
+      margin: 8px 8px 14px 20px;
+      padding: 10px 10px 10px 24px;
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid rgba(15,23,42,0.06);
+      box-shadow: 0 6px 16px rgba(15,23,42,0.08);
+    }
+    .menu-submenu::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 16px;
+      bottom: 16px;
+      width: 2px;
+      background: #e2e8f0;
+    }
+    .menu-subitem {
+      position: relative;
+      display: block;
+      padding: 8px 10px !important;
+      font-size: 0.82rem !important;
+      border-radius: 8px;
+    }
+    .menu-subitem::before {
+      content: "";
+      position: absolute;
+      left: -14px;
+      top: 50%;
+      width: 12px;
+      height: 2px;
+      background: #e2e8f0;
+    }
+    .menu-subitem + .menu-subitem {
+      margin-top: 2px;
+    }
+    .menu-subitem:hover {
+      background: #f8fafc;
+    }
+  </style>
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">MENU</div>
+      <div class="sidebar-header">
+        <div class="sidebar-brand">MENU</div>
+        <button type="button" class="sidebar-hide-btn" id="sidebarHideBtn" title="Sembunyikan menu">&#10094;</button>
+      </div>
       <nav>
-        <a href="/fbb" class="menu-item {% block menu_fbb %}{% endblock %}"
-           style="font-weight:700; text-transform:uppercase; font-size:0.72rem; letter-spacing:0.06em;">FBB</a>
-        <a href="/" class="menu-item {% block menu_pt3 %}{% endblock %}" style="padding-left: 34px; font-size: 0.82rem;">PT3</a>
-        <a href="/aging" class="menu-item {% block menu_aging %}{% endblock %}" style="padding-left: 34px; font-size: 0.82rem;">Aging PT3</a>
-        <a href="/pt2" class="menu-item {% block menu_pt2 %}{% endblock %}" style="padding-left: 34px; font-size: 0.82rem;">PT2</a>
+        <div class="menu-group">
+          <a href="/fbb" class="menu-item menu-group-title {% block menu_fbb %}{% endblock %}">FBB</a>
+          <div class="menu-submenu">
+            <a href="/" class="menu-item menu-subitem {% block menu_pt3 %}{% endblock %}">PT3</a>
+            <a href="/aging" class="menu-item menu-subitem {% block menu_aging %}{% endblock %}">Aging PT3</a>
+            <a href="/pt2" class="menu-item menu-subitem {% block menu_pt2 %}{% endblock %}">PT2</a>
+          </div>
+        </div>
       </nav>
     </aside>
+
+    <button type="button" class="sidebar-show-btn" id="sidebarShowBtn" title="Tampilkan menu">&#9776;</button>
 
     <div class="main">
       <header class="topbar">
@@ -63,6 +172,28 @@
   <div class="modal-overlay" id="notifModalOverlay">
     <div class="modal-box" id="notifModalBox" style="max-width:640px;"></div>
   </div>
+
+  <script>
+  (function () {
+    const sidebar = document.getElementById('sidebar');
+    const hideBtn = document.getElementById('sidebarHideBtn');
+    const showBtn = document.getElementById('sidebarShowBtn');
+    const STORAGE_KEY = 'pt3SidebarHidden';
+
+    function setHidden(hidden) {
+      sidebar.classList.toggle('is-hidden', hidden);
+      showBtn.classList.toggle('visible', hidden);
+      try { localStorage.setItem(STORAGE_KEY, hidden ? '1' : '0'); } catch (e) {}
+    }
+
+    hideBtn.addEventListener('click', () => setHidden(true));
+    showBtn.addEventListener('click', () => setHidden(false));
+
+    let startHidden = false;
+    try { startHidden = localStorage.getItem(STORAGE_KEY) === '1'; } catch (e) {}
+    setHidden(startHidden);
+  })();
+  </script>
 
   <script>
   (function () {
