@@ -161,9 +161,10 @@ function renderAgingStatusFilter(rows) {
   const el = document.getElementById('agingStatusGrid');
   const statuses = Array.from(new Set(rows.map(statusKeyOf))).sort((a, b) => a.localeCompare(b));
   if (!statuses.length) { el.innerHTML = '<div class="empty-state">Tidak ada data status.</div>'; return; }
+  const DEFAULT_UNCHECKED = ['00. DROP', '01. DROP MOM'];
   el.innerHTML = statuses.map(s => `
     <label class="branch-check">
-      <input type="checkbox" class="aging-status-checkbox" value="${esc2(s)}" ${s === '00. DROP' ? '' : 'checked'}>
+      <input type="checkbox" class="aging-status-checkbox" value="${esc2(s)}" ${DEFAULT_UNCHECKED.includes(s) ? '' : 'checked'}>
       <span>${esc2(s)}</span>
     </label>
   `).join('');
@@ -271,18 +272,55 @@ function renderStageFunnel(filteredRows, warnDays, critDays) {
     const avg = withAging.length ? Math.round(withAging.reduce((s, r) => s + r.aging_days, 0) / withAging.length) : null;
     const bucket = avg === null ? null : agingBucket(avg, warnDays, critDays);
     const color = bucket ? agingColor(bucket) : '#9ca3af';
-    const connector = i < AGING_STAGES.length - 1 ? `<div class="aging-tl-connector" style="background:${color};"></div>` : '';
+
+    let connector = '';
+    if (i < AGING_STAGES.length - 1) {
+      const nextKey = AGING_STAGES[i + 1][0];
+      const transitionDays = [];
+      filteredRows.forEach(r => {
+        if (!r.stage_progress) return;
+        const cur = r.stage_progress.find(sp => sp.stage === statusKey && sp.date);
+        const next = r.stage_progress.find(sp => sp.stage === nextKey && sp.date);
+        if (cur && next) transitionDays.push(next.days - cur.days);
+      });
+      const avgTransition = transitionDays.length
+        ? Math.round(transitionDays.reduce((a, b) => a + b, 0) / transitionDays.length)
+        : null;
+      connector = `
+        <div class="aging-tl-connector-wrap">
+          <div class="aging-tl-connector-label">${avgTransition !== null ? `~${avgTransition} hari` : '-'}</div>
+          <div class="aging-tl-connector-line" style="background:${color};"></div>
+        </div>
+      `;
+    }
+
     return `
-      <div class="aging-tl-item">
+      <div class="aging-tl-item" data-status="${esc2(statusKey)}" data-label="${esc2(label)}" title="Klik untuk lihat daftar lokasi di tahap ini">
         <div class="aging-tl-count">${fmtNum2(rowsInStage.length)}</div>
         <div class="aging-tl-dot" style="background:${color};"></div>
         <div class="aging-tl-label">${esc2(label)}</div>
-        <div class="aging-tl-aging" style="color:${color};">${avg !== null ? `Rata-rata ${avg} hari` : 'Belum ada data'}</div>
       </div>
       ${connector}
     `;
   }).join('');
   el.innerHTML = `<div class="aging-tl-row">${itemsHtml}</div>`;
+}
+
+document.getElementById('agingFunnel').addEventListener('click', (e) => {
+  const item = e.target.closest('.aging-tl-item');
+  if (!item || !agingCache) return;
+  openStageListModal(item.dataset.status, item.dataset.label);
+});
+
+function openStageListModal(statusKey, label) {
+  const warnDays = agingCache.warning_days, critDays = agingCache.critical_days;
+  const rows = getAgingFilteredRows()
+    .filter(r => r.status_z === statusKey && r.aging_days !== null)
+    .slice()
+    .sort((a, b) => b.aging_days - a.aging_days);
+  branchModalCache = { branch: label, rows, warnDays, critDays };
+  renderBranchListView();
+  document.getElementById('agingModalOverlay').classList.add('open');
 }
 
 function renderAgingBranchTable(filteredRows, warnDays, critDays) {
@@ -362,8 +400,48 @@ document.getElementById('agingLopTableWrap').addEventListener('click', (e) => {
   if (rowData) openAgingModal(rowData);
 });
 
+// Timeline progress PER LOP: kumulatif hari dari Tanggal NDE (AP) ke tiap
+// tahap yang sudah dilalui (atau ke hari ini untuk tahap yang sedang
+// berjalan), plus total hari progress di paling kanan.
+function renderLopStageTimeline(rowData, warnDays, critDays) {
+  const sp = rowData.stage_progress || [];
+  if (!sp.length) return '<div class="empty-state" style="padding:10px 0;">Belum ada data tahapan (AP atau tanggal tahap kosong).</div>';
+
+  const itemsHtml = sp.map((entry, i) => {
+    const stageLabel = (AGING_STAGES.find(s => s[0] === entry.stage) || [null, entry.stage])[1];
+    const bucket = entry.days !== null ? agingBucket(entry.days, warnDays, critDays) : null;
+    const color = bucket ? agingColor(bucket) : '#9ca3af';
+    const connector = i < sp.length - 1
+      ? `<div class="aging-lop-tl-connector" style="background:${color};"></div>` : '';
+    return `
+      <div class="aging-lop-tl-item">
+        <div class="aging-lop-tl-dot" style="background:${color};"></div>
+        <div class="aging-lop-tl-label">${esc2(stageLabel)}${entry.is_current ? '<br><span class="badge">saat ini</span>' : ''}</div>
+        <div class="aging-lop-tl-days" style="color:${color};">${entry.days !== null ? entry.days + ' hr' : '-'}</div>
+      </div>
+      ${connector}
+    `;
+  }).join('');
+
+  const total = sp[sp.length - 1];
+  const totalBucket = total.days !== null ? agingBucket(total.days, warnDays, critDays) : null;
+  const totalColor = totalBucket ? agingColor(totalBucket) : '#9ca3af';
+
+  return `
+    <label style="display:block; margin-top:14px;">Alur Tahapan LOP Ini</label>
+    <div class="aging-lop-tl-row">
+      ${itemsHtml}
+      <div class="aging-lop-tl-total" style="border-color:${totalColor}; color:${totalColor};">
+        <div class="aging-lop-tl-total-label">Total Progress</div>
+        <div class="aging-lop-tl-total-value">${total.days !== null ? total.days : '-'} hari</div>
+      </div>
+    </div>
+  `;
+}
+
 function openAgingModal(rowData) {
-  const bucket = rowData.aging_days !== null ? agingBucket(rowData.aging_days, agingCache.warning_days, agingCache.critical_days) : null;
+  const warnDays = agingCache.warning_days, critDays = agingCache.critical_days;
+  const bucket = rowData.aging_days !== null ? agingBucket(rowData.aging_days, warnDays, critDays) : null;
   const color = bucket ? agingColor(bucket) : '#9ca3af';
   const modalBox = document.getElementById('agingModalBox');
   modalBox.innerHTML = `
@@ -381,6 +459,7 @@ function openAgingModal(rowData) {
         ? `<span style="color:${color}; font-weight:700;">${rowData.aging_days} hari (${agingLabel(bucket)})</span>`
         : 'Tidak bisa dihitung (tanggal AP kosong/tidak valid)'}</td></tr>
     </table>
+    ${renderLopStageTimeline(rowData, warnDays, critDays)}
     <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
       <button type="button" onclick="window.location.href='/?openRow=${rowData.row}'">Update Status</button>
       <button type="button" class="btn-ghost" id="agingViewFullDetailBtn">Lihat Detail Lengkap</button>
@@ -391,6 +470,7 @@ function openAgingModal(rowData) {
   document.getElementById('agingViewFullDetailBtn').addEventListener('click', () => loadAgingFullDetail(rowData.row));
   document.getElementById('agingModalOverlay').classList.add('open');
 }
+
 
 async function loadAgingFullDetail(rowNum) {
   const wrap = document.getElementById('agingFullDetailWrap');

@@ -84,6 +84,7 @@ DASHBOARD_STATUSES = [
 PIVOT_STATUS_GROUPS = {
     "GOLIVE": ["06. GOLIVE", "07. UT", "09. REKON", "10. BAST"],
     "DROP": ["00. DROP", "10.1 BAST 2025"],
+    "DROP MOM": ["01. DROP MOM"],
 }
 
 # Nilai di kolom BH yang tidak ditampilkan di "Kategori Drop" (nyasar dari
@@ -93,6 +94,7 @@ BH_EXCLUDE_VALUES = ["10. BAST"]
 # ── Z (Status Fisik) dropdown options ─────────────────────────────────
 Z_OPTIONS = [
     "00. DROP",
+    "01. DROP MOM",
     "01. PERIJINAN",
     "02. PERSIAPAN",
     "03. MATDEV",
@@ -164,12 +166,15 @@ STATUS_COLUMN_MAP = {
     "10. BAST":              {"date_col": "BD", "note_col": "BE"},
     "00. DROP":              {"date_col": "BF", "note_col": "BG"},
     "10.1 BAST 2025":        {"date_col": "BF", "note_col": "BG"},
+    # ASUMSI: "01. DROP MOM" pakai kolom yang sama seperti Drop biasa (BF/BG).
+    # Kalau ternyata harus beda, kabari saya untuk saya ganti.
+    "01. DROP MOM":          {"date_col": "BF", "note_col": "BG"},
 }
 
 # ── Aging ────────────────────────────────────────────────────────────
 COL_TANGGAL_NDE = "AP"   # tanggal awal (start) untuk hitung aging
-AGING_WARNING_DAYS = 15   # > segini = kuning ("Perhatian")
-AGING_CRITICAL_DAYS = 35  # > segini = merah ("Kritis")
+AGING_WARNING_DAYS = 35   # > segini = kuning ("Perhatian")
+AGING_CRITICAL_DAYS = 60  # > segini = merah ("Kritis")
 
 # Status Z yang aging-nya dihitung sampai tanggal TETAP (bukan sampai hari
 # ini) -> AP s/d kolom di bawah ini. Fallback ke hari ini kalau kolomnya
@@ -177,6 +182,7 @@ AGING_CRITICAL_DAYS = 35  # > segini = merah ("Kritis")
 AGING_FIXED_END_COLUMNS = {
     "00. DROP":        "BF",
     "10.1 BAST 2025":  "BF",
+    "01. DROP MOM":    "BF",
     "06. GOLIVE":      "BD",
     "07. UT":          "BD",
     "09. REKON":       "BD",
@@ -209,8 +215,8 @@ COL_SEMESTA_STO = "E"
 COL_SEMESTA_BATCH = "F"
 COL_SEMESTA_BRANCH = "G"
 COL_SEMESTA_REGIONAL = "H"      # BANTEN / JAKARTA / Eastern Jabotabek / Jabar / dst
-COL_SEMESTA_STATUS_LOP = "I"    # status LOP -- posisi aktual di sheet (bukan V)
-COL_SEMESTA_POTENSI = "W"       # baru: isian "P1 AUG", "P2 SEP", dst (cek ulang kalau masih tidak cocok)
+COL_SEMESTA_STATUS_LOP = "I"    # posisi aktual di sheet
+COL_SEMESTA_POTENSI = "W"       # baru: isian "P1 AUG", "P2 SEP", dst
 COL_SEMESTA_FINAL_PORT = "J"
 COL_SEMESTA_TGL_FI = "K"
 COL_SEMESTA_TGL_GOLIVE = "L"
@@ -228,14 +234,12 @@ STATUS_POTENSI = "3.OGP DEPLOY"
 SHEET_NAME_TARGET = os.environ.get("SHEET_NAME_TARGET", "TARGET")
 HEADER_ROW_TARGET = 1
 DATA_START_ROW_TARGET = 2
-# 1 baris = 1 Regional + 1 Program (PT2/PT3) + 1 Bulan + TARGET PORT-nya.
-# PENTING: kalau Regional "JABAR" dan "JAKARTA" ditarget terpisah, harus
-# jadi 2 baris sendiri-sendiri di sheet ini (bukan digabung "JABAR&JAKARTA"),
-# karena data aktual (sheet Semesta) memisahkan kedua Regional itu.
+# 1 baris = 1 Regional + 1 Bulan. TARGET PORT = total; PT2/PT3 = pembagiannya.
 COL_TARGET_REGIONAL = "A"
-COL_TARGET_PROGRAM = "B"   # PT2 / PT3
-COL_TARGET_BULAN = "C"
-COL_TARGET_PORT = "D"
+COL_TARGET_BULAN = "B"
+COL_TARGET_PORT = "C"
+COL_TARGET_PT2 = "D"
+COL_TARGET_PT3 = "E"
 
 MONTH_NAMES_ID = [
     "januari", "februari", "maret", "april", "mei", "juni",

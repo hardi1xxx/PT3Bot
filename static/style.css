@@ -383,6 +383,13 @@ table.pivot-combined tbody tr.subtotal-row th {
   text-align: center;
   flex: 1 1 0;
   min-width: 110px;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px;
+  transition: background 0.15s;
+}
+.aging-tl-item:hover {
+  background: var(--panel-alt, #f8fafc);
 }
 .aging-tl-count {
   font-size: 1.5rem;
@@ -405,16 +412,26 @@ table.pivot-combined tbody tr.subtotal-row th {
   font-weight: 700;
   color: var(--text);
 }
-.aging-tl-aging {
-  font-size: 0.74rem;
-  font-weight: 600;
-  margin-top: 3px;
+.aging-tl-connector-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 56px;
+  margin-top: 18px;
+  padding-bottom: 17px;
 }
-.aging-tl-connector {
-  flex: 0 0 32px;
+.aging-tl-connector-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--muted, #64748b);
+  white-space: nowrap;
+  margin-bottom: 3px;
+}
+.aging-tl-connector-line {
+  width: 100%;
   height: 4px;
   border-radius: 2px;
-  margin-top: 36px;
   opacity: 0.55;
 }
 @media (max-width: 720px) {
@@ -422,9 +439,88 @@ table.pivot-combined tbody tr.subtotal-row th {
   .aging-tl-item { flex-direction: row; justify-content: flex-start; text-align: left; gap: 10px; min-width: 0; padding: 6px 0; }
   .aging-tl-count { height: auto; width: 44px; }
   .aging-tl-dot { margin: 0; }
-  .aging-tl-connector { width: 4px; height: 22px; flex: 0 0 22px; margin: 0 0 0 60px; }
+  .aging-tl-connector-wrap { flex-direction: row; justify-content: flex-start; padding: 0 0 0 60px; margin: 0; }
+  .aging-tl-connector-line { width: 22px; height: 4px; }
+  .aging-tl-connector-label { margin: 0 8px 0 0; }
 }
 
+/* ── Timeline per-LOP (di dalam modal detail lokasi) ─────────────────── */
+.aging-lop-tl-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 0;
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--panel-alt, #f6f8fb);
+  border-radius: 10px;
+}
+.aging-lop-tl-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 74px;
+}
+.aging-lop-tl-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--panel);
+  box-shadow: 0 0 0 2px var(--border);
+  margin-bottom: 6px;
+}
+.aging-lop-tl-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.25;
+}
+.aging-lop-tl-label .badge {
+  margin-top: 2px;
+  font-size: 0.62rem;
+  padding: 1px 6px;
+}
+.aging-lop-tl-days {
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-top: 3px;
+}
+.aging-lop-tl-connector {
+  flex: 0 0 20px;
+  height: 3px;
+  border-radius: 2px;
+  margin: 0 2px 26px;
+  opacity: 0.6;
+}
+.aging-lop-tl-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 84px;
+  margin-left: 8px;
+  padding: 8px 10px;
+  border: 2px solid;
+  border-radius: 10px;
+  background: var(--panel);
+}
+.aging-lop-tl-total-label {
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.aging-lop-tl-total-value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin-top: 2px;
+}
+@media (max-width: 480px) {
+  .aging-lop-tl-row { overflow-x: auto; flex-wrap: nowrap; }
+}
 /* ── BH table ─────────────────────────────────────────────────────── */
 .bh-grid {
   display: grid;
