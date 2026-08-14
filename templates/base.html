@@ -9,11 +9,17 @@
   <style>
     /* ── Sidebar: bisa disembunyikan + grup menu FBB (kotak berbayang + garis penghubung) ── */
     .sidebar {
-      transition: margin-left .22s ease, opacity .18s ease;
+      transition: width .22s ease, opacity .18s ease, padding .22s ease;
       position: relative;
     }
     .sidebar.is-hidden {
-      margin-left: -260px;
+      width: 0 !important;
+      min-width: 0 !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      border-left-width: 0 !important;
+      border-right-width: 0 !important;
+      overflow: hidden;
       opacity: 0;
       pointer-events: none;
     }
@@ -36,18 +42,18 @@
       color: var(--muted, #64748b);
       font-size: 0.8rem;
       line-height: 1;
+      flex-shrink: 0;
     }
     .sidebar-hide-btn:hover {
       background: rgba(15,23,42,0.05);
     }
-    .sidebar-show-btn {
-      position: fixed;
-      top: 14px;
-      left: 14px;
-      z-index: 40;
+
+    /* Tombol toggle menu di topbar -- selalu ada di alur normal (bukan
+       fixed/overlay) supaya tidak pernah menimpa judul halaman, baik saat
+       sidebar terbuka maupun tersembunyi. */
+    .topbar-menu-btn {
       background: #fff;
       border: 1px solid rgba(15,23,42,0.12);
-      box-shadow: 0 4px 14px rgba(15,23,42,0.12);
       border-radius: 10px;
       width: 38px;
       height: 38px;
@@ -56,10 +62,21 @@
       justify-content: center;
       cursor: pointer;
       font-size: 1.05rem;
+      flex-shrink: 0;
     }
-    .sidebar-show-btn.visible { display: flex; }
+    .topbar-menu-btn.visible {
+      display: flex;
+    }
+    .topbar-menu-btn:hover {
+      background: rgba(15,23,42,0.05);
+    }
+    .topbar-title-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
 
-    .menu-group { margin-top: 2px; }
+    .menu-group { margin-top: 2px; flex: none; height: auto; }
     .menu-group-title {
       font-weight: 700;
       text-transform: uppercase;
@@ -79,8 +96,8 @@
       content: "";
       position: absolute;
       left: 12px;
-      top: 16px;
-      bottom: 16px;
+      top: 21px;
+      bottom: 21px;
       width: 2px;
       background: #e2e8f0;
     }
@@ -127,12 +144,13 @@
       </nav>
     </aside>
 
-    <button type="button" class="sidebar-show-btn" id="sidebarShowBtn" title="Tampilkan menu">&#9776;</button>
-
     <div class="main">
       <header class="topbar">
         <div class="topbar-title">
-          <h1>{% block page_title %}Dashboard PT3{% endblock %}</h1>
+          <div class="topbar-title-row">
+            <button type="button" class="topbar-menu-btn" id="sidebarShowBtn" title="Tampilkan menu">&#9776;</button>
+            <h1>{% block page_title %}Dashboard PT3{% endblock %}</h1>
+          </div>
           <p class="topbar-sub">{% block page_sub %}Monitoring status fisik & update lapangan{% endblock %}</p>
         </div>
         <div class="topbar-logos">

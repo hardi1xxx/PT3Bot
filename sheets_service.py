@@ -8,6 +8,7 @@ import re
 import datetime
 import calendar
 import threading
+import time
 
 import gspread
 from dateutil import parser as date_parser
@@ -59,6 +60,75 @@ def get_worksheet():
 
 
 _semesta_worksheet = None
+
+
+# ── Cache singkat untuk get_all_values() ────────────────────────────────
+# Beberapa endpoint (mis. /api/fbb-data dan /api/fbb-summary) baca sheet
+# yang SAMA (Semesta) hampir bersamaan tiap kali halaman FBB dibuka --
+# tanpa cache, itu jadi 2x baca penuh 18rb+ baris dari Google Sheets API,
+# itulah penyebab jeda ~2 detik sebelum tabel muncul. TTL pendek (bukan
+# selamanya) supaya data tetap terasa segar, tapi permintaan yang datang
+# berdekatan cukup 1x round-trip ke Google.
+#
+# PENTING: kalau 2 request itu datang BENAR-BENAR bersamaan (frontend
+# fbb.html memang manggil loadFbb() dan loadFbbSummary() balik-balikan
+# tanpa nunggu satu selesai), dua-duanya bisa sama-sama cek cache di
+# saat masih kosong -> dua-duanya sama-sama nembak Google Sheets API,
+# cache-nya nggak kepakai sama sekali. Makanya perlu lock PER SHEET:
+# request kedua yang datang selagi request pertama masih fetch harus
+# NUNGGU hasil yang pertama, bukan ikut fetch sendiri.
+_values_cache = {}
+_values_cache_lock = threading.Lock()
+_values_fetch_locks = {}
+_VALUES_CACHE_TTL_SECONDS = 20
+
+
+def _get_sheet_fetch_lock(key):
+    with _values_cache_lock:
+        lock = _values_fetch_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _values_fetch_locks[key] = lock
+        return lock
+
+
+def _cached_get_all_values(ws):
+    key = ws.title
+
+    def _fresh_entry():
+        entry = _values_cache.get(key)
+        if entry and (time.time() - entry[0]) < _VALUES_CACHE_TTL_SECONDS:
+            return entry[1]
+        return None
+
+    with _values_cache_lock:
+        hit = _fresh_entry()
+    if hit is not None:
+        return hit
+
+    # Cache kosong/basi -- ambil lock khusus sheet ini. Kalau ada request lain
+    # yang lebih dulu masuk sini duluan, kita nunggu dia selesai lalu pakai
+    # hasilnya (bukan ikut fetch sendiri ke Google).
+    fetch_lock = _get_sheet_fetch_lock(key)
+    with fetch_lock:
+        with _values_cache_lock:
+            hit = _fresh_entry()
+        if hit is not None:
+            return hit
+        values = ws.get_all_values()
+        with _values_cache_lock:
+            _values_cache[key] = (time.time(), values)
+        return values
+
+
+def invalidate_sheet_cache(sheet_title=None):
+    """Panggil ini dari route 'Update Data' kalau butuh paksa baca ulang dari
+    Google (skip cache), bukan nunggu TTL habis. Tanpa argumen -> hapus semua."""
+    with _values_cache_lock:
+        if sheet_title:
+            _values_cache.pop(sheet_title, None)
+        else:
+            _values_cache.clear()
 
 
 def get_semesta_worksheet():
@@ -241,7 +311,7 @@ def get_dashboard_data():
     only affect the pivot table like before.
     """
     ws = get_worksheet()
-    all_values = ws.get_all_values()
+    all_values = _cached_get_all_values(ws)
 
     idx = {
         "order": _col_to_index(config.COL_ORDER) - 1,
@@ -512,7 +582,7 @@ def get_aging_data():
     aging_days bernilai None kalau AP kosong/tidak bisa di-parse.
     """
     ws = get_worksheet()
-    all_values = ws.get_all_values()
+    all_values = _cached_get_all_values(ws)
 
     # Only the fixed-end columns actually referenced in config need reading.
     fixed_end_cols = sorted(set(config.AGING_FIXED_END_COLUMNS.values()))
@@ -600,7 +670,7 @@ def get_pending_updates():
     dengan format itu persis — jadi tidak perlu parsing tanggal yang berat.
     """
     ws = get_worksheet()
-    all_values = ws.get_all_values()
+    all_values = _cached_get_all_values(ws)
     today_str = datetime.date.today().strftime("%d/%m/%y")
 
     date_cols = sorted(set(config.NOTIFY_STATUS_DATE_MAP.values()))
@@ -686,7 +756,7 @@ def get_fbb_data():
     menyusul setelah rumusnya dikonfirmasi.
     """
     ws = get_semesta_worksheet()
-    all_values = ws.get_all_values()
+    all_values = _cached_get_all_values(ws)
 
     idx = {
         "tanggal_nde": _col_to_index(config.COL_SEMESTA_TANGGAL_NDE) - 1,
@@ -794,7 +864,7 @@ def get_target_data():
     """List of {regional, program(PT2/PT3 atau ""), month(1-12), target_port}
     dari sheet TARGET. 1 baris sheet = 1 Regional + 1 Program + 1 Bulan."""
     ws = get_target_worksheet()
-    all_values = ws.get_all_values()
+    all_values = _cached_get_all_values(ws)
     idx = {
         "regional": _col_to_index(config.COL_TARGET_REGIONAL) - 1,
         "program": _col_to_index(config.COL_TARGET_PROGRAM) - 1,
@@ -863,7 +933,7 @@ def _month_end_date(year: int, month: int) -> datetime.date:
 def _load_semesta_rows_for_summary():
     """Baca sheet Semesta dengan tanggal Golive (kolom L) sudah di-parse ke date object."""
     ws = get_semesta_worksheet()
-    all_values = ws.get_all_values()
+    all_values = _cached_get_all_values(ws)
     idx = {
         "program": _col_to_index(config.COL_SEMESTA_PROGRAM) - 1,
         "ihld": _col_to_index(config.COL_SEMESTA_ID_IHLD) - 1,
@@ -1064,7 +1134,7 @@ def get_pt2_dashboard_data():
     is_golive_today / is_golive_month dari kolom TGL CLOSE WO).
     """
     ws = get_pt2_worksheet()
-    all_values = ws.get_all_values()
+    all_values = _cached_get_all_values(ws)
 
     idx = {
         "ihld": _col_to_index(config.COL_PT2_ID_IHLD) - 1,
