@@ -5,6 +5,21 @@
 
 {% block content %}
 
+<!-- Filter Branch (kolom J, sheet Detail PT2) -->
+<div class="card" id="pt2FilterCard" style="margin-bottom:22px;">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div style="font-size:0.9rem;">Filter Branch (kolom J) &mdash; <span id="pt2FilterBranchSummary">semua branch dipilih</span></div>
+    <button type="button" class="btn-ghost" id="pt2FilterToggleBtn">Tampilkan &#9662;</button>
+  </div>
+  <div id="pt2FilterBranchPanel" style="display:none; margin-top:14px;">
+    <div style="display:flex; gap:10px; margin-bottom:10px;">
+      <button type="button" class="btn-ghost btn-sm" id="pt2FilterSelectAllBtn">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="pt2FilterClearAllBtn">Kosongkan</button>
+    </div>
+    <div id="pt2FilterBranchChecks" style="display:flex; flex-wrap:wrap; gap:10px 18px;"></div>
+  </div>
+</div>
+
 <!-- Stat cards (klik untuk lihat daftar) -->
 <div class="stat-grid" id="pt2StatGrid">
   <div class="stat-card pt2-clickable-card" onclick="pt2CardClick('total_lop')" title="Klik untuk lihat daftar">
@@ -63,6 +78,7 @@
     <div class="pt2-trend-mode-toggle">
       <button type="button" class="pt2-trend-mode-btn active" id="pt2TrendModeWeek">Per Minggu</button>
       <button type="button" class="pt2-trend-mode-btn" id="pt2TrendModeDay">Harian</button>
+      <button type="button" class="pt2-trend-mode-btn" id="pt2TrendModeMonth">Per Bulan</button>
     </div>
     <div class="pt2-trend-field">
       <label>Dari tanggal (TGL CLOSE WO)</label>
@@ -119,6 +135,10 @@
 
 <style>
   .stat-value .stat-value-sub { font-size:0.5em; font-weight:600; color:var(--muted, #64748b); margin-left:6px; }
+
+  .pt2-branch-pill { display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px; border:1px solid var(--border, #e2e8f0); background:#f8fafc; font-size:0.84rem; cursor:pointer; user-select:none; }
+  .pt2-branch-pill input { accent-color:#1d4ed8; cursor:pointer; }
+  .pt2-branch-pill.checked { background:#eff6ff; border-color:#93c5fd; }
 
   .pt2-donut-wrap { display:flex; align-items:center; gap:28px; flex-wrap:wrap; }
   .pt2-donut-canvas-box { position:relative; width:230px; height:230px; flex:0 0 auto; }
@@ -193,6 +213,8 @@
 
 <script>
 let pt2Cache = null;      // { statuses, status_colors, golive_status, exclude_from_denom, regionals, branches, current_month_label, rows }
+let pt2AllRows = [];      // seluruh baris tanpa filter Branch -- pt2Cache.rows diganti jadi subset dari ini
+let pt2ActiveBranches = null; // Set aktif; null = belum diinisialisasi
 let pt2Donut = null;
 
 function pt2FmtNum(n) {
@@ -800,6 +822,22 @@ function pt2RenderTrendChart() {
     }
     titleEl.textContent = `Golive per Minggu (${pt2FmtShortDate(from)} - ${pt2FmtShortDate(to)})`;
     hintEl.style.display = 'block';
+  } else if (pt2TrendMode === 'month') {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    let cursor = new Date(from.getFullYear(), from.getMonth(), 1);
+    const endCursor = new Date(to.getFullYear(), to.getMonth(), 1);
+    let guard = 0;
+    while (cursor <= endCursor && guard < 36) { // batas wajar biar tidak infinite kalau tanggal salah input
+      const natEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+      const bucketEnd = natEnd > to ? new Date(to) : natEnd;
+      const bucketStart = cursor < from ? new Date(from) : cursor;
+      values.push(pt2GoliveCountInRange(bucketStart, bucketEnd));
+      labels.push(`${monthNames[cursor.getMonth()]} ${cursor.getFullYear()}`);
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      guard++;
+    }
+    titleEl.textContent = `Golive per Bulan (${pt2FmtShortDate(from)} - ${pt2FmtShortDate(to)})`;
+    hintEl.style.display = 'none';
   } else {
     const weekStart = pt2TrendDayWeekStart || pt2StartOfWeek(new Date());
     for (let i = 0; i < 7; i++) {
@@ -871,6 +909,7 @@ function pt2SetTrendMode(mode) {
   pt2TrendMode = mode;
   document.getElementById('pt2TrendModeWeek').classList.toggle('active', mode === 'week');
   document.getElementById('pt2TrendModeDay').classList.toggle('active', mode === 'day');
+  document.getElementById('pt2TrendModeMonth').classList.toggle('active', mode === 'month');
   document.getElementById('pt2TrendDayNav').style.display = mode === 'day' ? 'flex' : 'none';
   if (mode === 'day' && !pt2TrendDayWeekStart) pt2TrendDayWeekStart = pt2StartOfWeek(new Date());
   pt2RenderTrendChart();
@@ -878,8 +917,9 @@ function pt2SetTrendMode(mode) {
 
 document.getElementById('pt2TrendModeWeek').addEventListener('click', () => pt2SetTrendMode('week'));
 document.getElementById('pt2TrendModeDay').addEventListener('click', () => pt2SetTrendMode('day'));
-document.getElementById('pt2TrendFrom').addEventListener('change', () => { if (pt2TrendMode === 'week') pt2RenderTrendChart(); });
-document.getElementById('pt2TrendTo').addEventListener('change', () => { if (pt2TrendMode === 'week') pt2RenderTrendChart(); });
+document.getElementById('pt2TrendModeMonth').addEventListener('click', () => pt2SetTrendMode('month'));
+document.getElementById('pt2TrendFrom').addEventListener('change', () => { if (pt2TrendMode !== 'day') pt2RenderTrendChart(); });
+document.getElementById('pt2TrendTo').addEventListener('change', () => { if (pt2TrendMode !== 'day') pt2RenderTrendChart(); });
 document.getElementById('pt2TrendPrevWeek').addEventListener('click', () => {
   pt2TrendDayWeekStart = pt2AddDays(pt2TrendDayWeekStart || pt2StartOfWeek(new Date()), -7);
   pt2RenderTrendChart();
@@ -901,7 +941,83 @@ function pt2InitTrendDefaults() {
   pt2TrendDayWeekStart = pt2StartOfWeek(today);
 }
 
+// ── Filter Branch (kolom J, sheet Detail PT2) ──────────────────────
+function pt2InitBranchFilter() {
+  const branches = pt2Cache.branches || [];
+  pt2ActiveBranches = new Set(branches); // default: semua dipilih
+  const checksWrap = document.getElementById('pt2FilterBranchChecks');
+  checksWrap.innerHTML = branches.map(b => `
+    <label class="pt2-branch-pill checked" data-branch="${pt2Esc(b)}">
+      <input type="checkbox" checked>
+      <span>${pt2Esc(b)}</span>
+    </label>
+  `).join('');
+  checksWrap.querySelectorAll('.pt2-branch-pill').forEach(pill => {
+    pill.addEventListener('click', (e) => {
+      e.preventDefault();
+      const branch = pill.dataset.branch;
+      const cb = pill.querySelector('input');
+      if (pt2ActiveBranches.has(branch)) {
+        pt2ActiveBranches.delete(branch);
+        cb.checked = false;
+        pill.classList.remove('checked');
+      } else {
+        pt2ActiveBranches.add(branch);
+        cb.checked = true;
+        pill.classList.add('checked');
+      }
+      pt2ApplyBranchFilter();
+    });
+  });
+  pt2UpdateBranchSummary();
+}
+
+function pt2UpdateBranchSummary() {
+  const total = (pt2Cache.branches || []).length;
+  const active = pt2ActiveBranches.size;
+  const summary = document.getElementById('pt2FilterBranchSummary');
+  summary.textContent = active === total ? `semua branch dipilih (${total})` : `${active} dari ${total} branch dipilih`;
+}
+
+function pt2ApplyBranchFilter() {
+  pt2UpdateBranchSummary();
+  pt2Cache.rows = pt2AllRows.filter(r => pt2ActiveBranches.has(r.branch));
+  pt2RenderDashboardBody();
+}
+
+document.getElementById('pt2FilterToggleBtn').addEventListener('click', () => {
+  const panel = document.getElementById('pt2FilterBranchPanel');
+  const btn = document.getElementById('pt2FilterToggleBtn');
+  const nowOpen = panel.style.display === 'none';
+  panel.style.display = nowOpen ? 'block' : 'none';
+  btn.innerHTML = nowOpen ? 'Sembunyikan &#9652;' : 'Tampilkan &#9662;';
+});
+document.getElementById('pt2FilterSelectAllBtn').addEventListener('click', () => {
+  pt2ActiveBranches = new Set(pt2Cache.branches || []);
+  document.querySelectorAll('#pt2FilterBranchChecks .pt2-branch-pill').forEach(pill => {
+    pill.classList.add('checked');
+    pill.querySelector('input').checked = true;
+  });
+  pt2ApplyBranchFilter();
+});
+document.getElementById('pt2FilterClearAllBtn').addEventListener('click', () => {
+  pt2ActiveBranches = new Set();
+  document.querySelectorAll('#pt2FilterBranchChecks .pt2-branch-pill').forEach(pill => {
+    pill.classList.remove('checked');
+    pill.querySelector('input').checked = false;
+  });
+  pt2ApplyBranchFilter();
+});
+
 // ── Load ─────────────────────────────────────────────────────────────
+function pt2RenderDashboardBody() {
+  if (!pt2Cache) return;
+  pt2RenderPivotTable(pt2Cache);
+  pt2RenderBatchPivotTable(pt2Cache);
+  pt2RenderKendala(pt2Cache);
+  pt2RenderTrendChart();
+}
+
 async function loadPt2Dashboard() {
   document.getElementById('pt2PivotWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
   document.getElementById('pt2KendalaGrid').innerHTML = '<div class="skeleton">Memuat data...</div>';
@@ -913,11 +1029,10 @@ async function loadPt2Dashboard() {
       return;
     }
     pt2Cache = json.data;
-    pt2RenderPivotTable(pt2Cache);
-    pt2RenderBatchPivotTable(pt2Cache);
-    pt2RenderKendala(pt2Cache);
+    pt2AllRows = pt2Cache.rows.slice();
+    pt2InitBranchFilter();
     if (!document.getElementById('pt2TrendFrom').value) pt2InitTrendDefaults();
-    pt2RenderTrendChart();
+    pt2RenderDashboardBody();
   } catch (e) {
     document.getElementById('pt2PivotWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
   }
