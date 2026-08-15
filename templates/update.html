@@ -10,6 +10,31 @@
     <span class="badge status">Status saat ini: {{ snapshot.status_z or '-' }}</span>
     <span class="badge">Sub: {{ snapshot.status_aa or '-' }}</span>
   </div>
+  {% if snapshot.progress_stage_label == 'Drop' %}
+    <div class="badge" style="background:#7f1d1d; margin-bottom:10px; display:inline-block;">Status: Drop — di luar progress tahapan</div>
+  {% elif not snapshot.wo_terbit %}
+    <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:10px;">WO terbit (kolom D) belum terisi — aging &amp; deadline belum bisa dihitung.</div>
+  {% else %}
+    <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; font-size:0.85rem; color:var(--muted); margin-bottom:6px;">
+        <span>WO terbit: <strong style="color:var(--text);">{{ snapshot.wo_terbit }}</strong></span>
+        <span>Aging: <strong style="color:var(--text);">{{ snapshot.aging_days if snapshot.aging_days is not none else '-' }} hari</strong></span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
+        <span>Progress — {{ snapshot.progress_stage_label or '-' }}</span>
+        <span><strong>{{ snapshot.progress_percent | round | int if snapshot.progress_percent is not none else 0 }}%</strong></span>
+      </div>
+      <div style="background:#0002; border-radius:6px; overflow:hidden; height:8px; margin-bottom:6px;">
+        <div style="width:{{ [snapshot.progress_percent or 0, 100] | min }}%; height:100%; background:{{ '#dc2626' if snapshot.is_overdue else '#16a34a' if (snapshot.progress_percent or 0) >= 100 else 'var(--brand-blue, #29467a)' }};"></div>
+      </div>
+      <div style="font-size:0.8rem; color:var(--muted);">
+        Deadline tahap ini:
+        <strong style="color: {{ '#dc2626' if snapshot.is_overdue else 'var(--text)' }};">{{ snapshot.current_stage_deadline }}</strong>
+        {% if snapshot.is_overdue %}<span class="badge" style="background:#dc2626;">Lewat deadline</span>{% endif %}
+        &nbsp;·&nbsp; Target Golive: {{ snapshot.final_deadline }}
+      </div>
+    </div>
+  {% endif %}
   {% if snapshot.note_preview %}
     <label>Riwayat keterangan (terbaru di atas)</label>
     <div class="note-preview">{{ snapshot.note_preview }}</div>

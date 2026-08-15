@@ -126,6 +126,47 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// ── Aging (WO terbit / kolom D) + progress %/deadline per tahapan ────
+function fmtDateISO(iso) {
+  if (!iso) return '-';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function renderAgingProgress(snapshot) {
+  if (snapshot.progress_stage_label === 'Drop') {
+    return `<div class="badge" style="background:#7f1d1d; margin-bottom:10px; display:inline-block;">Status: Drop — di luar progress tahapan</div>`;
+  }
+  if (!snapshot.wo_terbit) {
+    return `<div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:10px;">WO terbit (kolom D) belum terisi — aging &amp; deadline belum bisa dihitung.</div>`;
+  }
+
+  const pct = snapshot.progress_percent == null ? 0 : Math.round(snapshot.progress_percent);
+  const barColor = snapshot.is_overdue ? '#dc2626' : (pct >= 100 ? '#16a34a' : 'var(--brand-blue, #29467a)');
+  const agingLabel = snapshot.aging_days == null ? '-' : `${fmtNum(snapshot.aging_days)} hari`;
+
+  return `
+    <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; font-size:0.8rem; color:var(--muted); margin-bottom:6px;">
+        <span>WO terbit: <strong style="color:var(--text);">${esc(snapshot.wo_terbit)}</strong></span>
+        <span>Aging: <strong style="color:var(--text);">${agingLabel}</strong></span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
+        <span>Progress — ${esc(snapshot.progress_stage_label || '-')}</span>
+        <span><strong>${pct}%</strong></span>
+      </div>
+      <div style="background:#0002; border-radius:6px; overflow:hidden; height:8px; margin-bottom:6px;">
+        <div style="width:${Math.min(pct,100)}%; height:100%; background:${barColor};"></div>
+      </div>
+      <div style="font-size:0.78rem; color:var(--muted);">
+        Deadline tahap ini: <strong style="color:${snapshot.is_overdue ? '#dc2626' : 'var(--text)'};">${fmtDateISO(snapshot.current_stage_deadline)}</strong>
+        ${snapshot.is_overdue ? ' <span class="badge" style="background:#dc2626;">Lewat deadline</span>' : ''}
+        &nbsp;·&nbsp; Target Golive: ${fmtDateISO(snapshot.final_deadline)}
+      </div>
+    </div>
+  `;
+}
+
 // ── Single source of truth: filter raw rows by selected branches ─────
 function getFilteredRows() {
   if (!dashboardCache) return [];
@@ -554,6 +595,7 @@ async function openRow(rowNum) {
         <span class="badge status">Status saat ini: ${esc(snapshot.status_z) || '-'}</span>
         <span class="badge">Sub: ${esc(snapshot.status_aa) || '-'}</span>
       </div>
+      ${renderAgingProgress(snapshot)}
       ${snapshot.last_note ? `
         <label>Keterangan sebelumnya</label>
         <div class="note-preview" style="border-color:var(--brand-blue); color:var(--text); margin-bottom:10px;">${esc(snapshot.last_note)}</div>

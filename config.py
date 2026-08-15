@@ -171,7 +171,45 @@ STATUS_COLUMN_MAP = {
     "01. DROP MOM":          {"date_col": "BF", "note_col": "BG"},
 }
 
-# ── Aging ────────────────────────────────────────────────────────────
+# ── Aging per-LOP (panel detail dashboard PT3) ─────────────────────────
+# Beda dari COL_TANGGAL_NDE (dipakai khusus di halaman /aging) -- ini
+# aging yang tampil di panel "Update Status" waktu sebuah LOP dipilih di
+# dashboard PT3, dihitung dari WO terbit (kolom D) sampai hari ini.
+COL_WO_TERBIT = "D"
+
+# ── Progress % & deadline per tahapan pekerjaan LOP ────────────────────
+# Dipakai di panel detail LOP dashboard PT3 untuk menghitung:
+#   - progress_percent: berapa % LOP ini sudah selesai
+#   - deadline per tahapan: WO_terbit + akumulasi target_days s/d tahapan itu
+#
+# Aturan progress (persis seperti disepakati): bobot suatu tahap baru
+# dihitung SETELAH status pindah ke tahap berikutnya (bukan saat masih di
+# tahap itu) -- KECUALI Golive, yang bobotnya langsung dihitung begitu
+# status dipilih ke Golive (karena Golive adalah tahap terakhir).
+# NDE selalu otomatis 5% begitu order/baris muncul, terlepas dari kolom Z.
+#
+# target_days = estimasi lama pengerjaan tahap ini (hari kalender), dipakai
+# untuk menghitung deadline kumulatif dari WO terbit. z_values = None berarti
+# "NDE", tidak terikat ke satu nilai kolom Z tertentu (selalu tercapai begitu
+# baris ada). Kalau target_days ternyata maksudnya hari KERJA (bukan hari
+# kalender), atau bobotnya mau diubah, tinggal edit angka di sini -- tidak
+# ada logic lain yang perlu disentuh.
+PROGRESS_STAGES = [
+    {"key": "nde",            "label": "NDE",               "weight": 5,  "target_days": 1, "z_values": None},
+    {"key": "survey",         "label": "Survey",            "weight": 5,  "target_days": 1, "z_values": ["0.1 SURVEI"]},
+    {"key": "permit",         "label": "Permit",            "weight": 10, "target_days": 2, "z_values": ["01. PERIJINAN"]},
+    {"key": "prepair",        "label": "Prepair",           "weight": 20, "target_days": 4, "z_values": ["02. PERSIAPAN"]},
+    {"key": "matdev",         "label": "Matdev",            "weight": 10, "target_days": 2, "z_values": ["03. MATDEV"]},
+    {"key": "instalasi",      "label": "Instalasi",         "weight": 30, "target_days": 6, "z_values": ["04. INSTALASI"]},
+    {"key": "finish_install", "label": "Finish Instalasi",  "weight": 15, "target_days": 3, "z_values": ["05. FINISH INSTALASI"]},
+    {"key": "golive",         "label": "Golive",            "weight": 5,  "target_days": 1,
+     "z_values": ["06. GOLIVE", "07. UT", "08. PEMBERKASAN", "09. REKON", "10. BAST", "10.1 BAST 2025"]},
+]
+# Status Z yang dianggap "Drop" -- tidak masuk sequence progress di atas,
+# ditampilkan terpisah (bukan %) di panel detail.
+PROGRESS_DROP_STATUSES = ["00. DROP", "01. DROP MOM"]
+
+# ── Aging (halaman /aging, terpisah dari aging per-LOP di atas) ────────
 COL_TANGGAL_NDE = "AP"   # tanggal awal (start) untuk hitung aging
 AGING_WARNING_DAYS = 35   # > segini = kuning ("Perhatian")
 AGING_CRITICAL_DAYS = 60  # > segini = merah ("Kritis")

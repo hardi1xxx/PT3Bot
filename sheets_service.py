@@ -389,6 +389,64 @@ def get_dashboard_data():
     }
 
 
+def _find_progress_stage_index(status_z: str):
+    """Index of `status_z` in config.PROGRESS_STAGES (skip the NDE entry,
+    which has no fixed Z value), or None if status_z is Drop/kosong/tidak
+    dikenal (di luar sequence progress)."""
+    for i, stage in enumerate(config.PROGRESS_STAGES):
+        if stage["z_values"] and status_z in stage["z_values"]:
+            return i
+    return None
+
+
+def compute_progress(status_z: str, has_order: bool = True):
+    """
+    Return (percent, stage_label, stage_index) for one LOP.
+    - percent: 0-100
+    - stage_label: label tahap yang sedang berjalan ("NDE", "Survey", ...,
+      "Golive"), atau "Drop" kalau status_z ada di PROGRESS_DROP_STATUSES,
+      atau None kalau belum ada order sama sekali.
+    - stage_index: index di config.PROGRESS_STAGES yang dipakai buat cari
+      deadline tahap ini (lihat compute_stage_deadlines), atau None.
+
+    Aturan (lihat komentar PROGRESS_STAGES di config.py): bobot suatu tahap
+    dihitung begitu status SUDAH PINDAH ke tahap berikutnya -- kecuali
+    Golive (tahap terakhir), yang bobotnya langsung masuk begitu Golive
+    dipilih.
+    """
+    stages = config.PROGRESS_STAGES
+    if not has_order:
+        return 0, None, None
+
+    if status_z in config.PROGRESS_DROP_STATUSES:
+        return None, "Drop", None
+
+    idx = _find_progress_stage_index(status_z)
+    nde_weight = stages[0]["weight"]
+
+    if idx is None:
+        # Belum ada status Z terisi (baris baru) -> baru NDE yang tercapai.
+        return nde_weight, stages[0]["label"], 0
+
+    completed = sum(s["weight"] for s in stages[1:idx])  # tahap 1..idx-1, tuntas
+    if idx == len(stages) - 1:  # Golive: bobotnya sendiri ikut dihitung
+        completed += stages[idx]["weight"]
+
+    return nde_weight + completed, stages[idx]["label"], idx
+
+
+def compute_stage_deadlines(wo_terbit_date: datetime.date):
+    """Deadline kumulatif tiap tahap dari WO terbit, mengikuti target_days
+    di config.PROGRESS_STAGES berurutan. Return list sepanjang
+    PROGRESS_STAGES, masing-masing {"key", "label", "deadline": date}."""
+    deadlines = []
+    cursor = wo_terbit_date
+    for stage in config.PROGRESS_STAGES:
+        cursor = cursor + datetime.timedelta(days=stage["target_days"])
+        deadlines.append({"key": stage["key"], "label": stage["label"], "deadline": cursor})
+    return deadlines
+
+
 def get_row_snapshot(row_num: int):
     """Return current Z, AA and keterangan info for the update panel.
     `last_note` = topmost entry dari kolom keterangan STATUS SAAT INI (mis. BA
@@ -413,6 +471,26 @@ def get_row_snapshot(row_num: int):
     for key, col in config.EXTRA_FIELD_COLUMNS.items():
         extra_fields[key] = ws.acell(f"{col}{row_num}").value or ""
 
+    # ── Aging per-LOP (kolom D = WO terbit -> hari ini) + progress % ────
+    wo_terbit_raw = ws.acell(f"{config.COL_WO_TERBIT}{row_num}").value or ""
+    wo_terbit_date = _parse_date(wo_terbit_raw)
+    today = datetime.date.today()
+    aging_days = (today - wo_terbit_date).days if wo_terbit_date else None
+
+    progress_percent, progress_stage_label, stage_idx = compute_progress(z_val, has_order=True)
+
+    current_stage_deadline = None
+    final_deadline = None
+    is_overdue = False
+    if wo_terbit_date:
+        stage_deadlines = compute_stage_deadlines(wo_terbit_date)
+        final_deadline = stage_deadlines[-1]["deadline"].isoformat()
+        target_idx = stage_idx if stage_idx is not None else 0
+        if 0 <= target_idx < len(stage_deadlines):
+            deadline_date = stage_deadlines[target_idx]["deadline"]
+            current_stage_deadline = deadline_date.isoformat()
+            is_overdue = today > deadline_date
+
     return {
         "row": row_num,
         "status_z": z_val,
@@ -420,6 +498,13 @@ def get_row_snapshot(row_num: int):
         "note_preview": note_preview,
         "last_note": last_note,
         "extra_fields": extra_fields,
+        "wo_terbit": wo_terbit_date.strftime("%d/%m/%Y") if wo_terbit_date else (wo_terbit_raw or None),
+        "aging_days": aging_days,
+        "progress_percent": progress_percent,
+        "progress_stage_label": progress_stage_label,
+        "current_stage_deadline": current_stage_deadline,
+        "final_deadline": final_deadline,
+        "is_overdue": is_overdue,
     }
 
 
