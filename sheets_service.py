@@ -435,16 +435,55 @@ def compute_progress(status_z: str, has_order: bool = True):
     return nde_weight + completed, stages[idx]["label"], idx
 
 
-def compute_stage_deadlines(wo_terbit_date: datetime.date):
+def compute_stage_deadlines(wo_terbit_date: datetime.date, target_fi_date: datetime.date = None):
     """Deadline kumulatif tiap tahap dari WO terbit, mengikuti target_days
-    di config.PROGRESS_STAGES berurutan. Return list sepanjang
-    PROGRESS_STAGES, masing-masing {"key", "label", "deadline": date}."""
+    di config.PROGRESS_STAGES berurutan.
+
+    Kalau `target_fi_date` diisi (kolom AL -- komit manual tanggal target
+    selesai Instalasi), itu DIPAKAI GANTI hasil estimasi WO_terbit+akumulasi
+    untuk tahap 'instalasi' dan seterusnya (finish_install, golive dihitung
+    lanjut dari situ) -- estimasi statis hanya dipakai sebelum ada komitmen
+    manual. Return list sepanjang PROGRESS_STAGES, masing-masing
+    {"key", "label", "deadline": date}."""
     deadlines = []
     cursor = wo_terbit_date
     for stage in config.PROGRESS_STAGES:
-        cursor = cursor + datetime.timedelta(days=stage["target_days"])
+        if target_fi_date and stage["key"] == "instalasi":
+            cursor = target_fi_date  # override: komit manual kolom AL
+        else:
+            cursor = cursor + datetime.timedelta(days=stage["target_days"])
         deadlines.append({"key": stage["key"], "label": stage["label"], "deadline": cursor})
     return deadlines
+
+
+def get_target_fi(row_num: int):
+    """Nilai kolom AL (Target Finish Instalasi) saat ini. Return
+    (parsed_date_or_None, raw_string)."""
+    ws = get_worksheet()
+    raw = ws.acell(f"{config.COL_TARGET_FI}{row_num}").value or ""
+    return _parse_date(raw), raw
+
+
+def validate_target_fi(row_num: int, z_value: str, raw: str):
+    """
+    Kolom AL wajib terisi setiap kali update dengan status Z yang masih di
+    config.PRE_FINISH_INSTALL_STATUSES -- KECUALI kolom AL di sheet sudah
+    ada isinya dari update sebelumnya (boleh dibiarkan/diabaikan, tidak
+    perlu diisi ulang). Returns (ok: bool, message: str).
+    """
+    if z_value not in config.PRE_FINISH_INSTALL_STATUSES:
+        return True, ""
+
+    raw = (raw or "").strip()
+    if raw:
+        if not _parse_date(raw):
+            return False, "Format tanggal tidak valid."
+        return True, ""
+
+    existing_date, _ = get_target_fi(row_num)
+    if existing_date:
+        return True, ""
+    return False, "Tanggal Target Finish Instalasi (kolom AL) wajib diisi untuk status sebelum Finish Instalasi."
 
 
 def get_row_snapshot(row_num: int):
@@ -477,13 +516,16 @@ def get_row_snapshot(row_num: int):
     today = datetime.date.today()
     aging_days = (today - wo_terbit_date).days if wo_terbit_date else None
 
+    target_fi_raw = ws.acell(f"{config.COL_TARGET_FI}{row_num}").value or ""
+    target_fi_date = _parse_date(target_fi_raw)
+
     progress_percent, progress_stage_label, stage_idx = compute_progress(z_val, has_order=True)
 
     current_stage_deadline = None
     final_deadline = None
     is_overdue = False
     if wo_terbit_date:
-        stage_deadlines = compute_stage_deadlines(wo_terbit_date)
+        stage_deadlines = compute_stage_deadlines(wo_terbit_date, target_fi_date)
         final_deadline = stage_deadlines[-1]["deadline"].isoformat()
         target_idx = stage_idx if stage_idx is not None else 0
         if 0 <= target_idx < len(stage_deadlines):
@@ -505,6 +547,9 @@ def get_row_snapshot(row_num: int):
         "current_stage_deadline": current_stage_deadline,
         "final_deadline": final_deadline,
         "is_overdue": is_overdue,
+        "target_fi": target_fi_date.strftime("%d/%m/%Y") if target_fi_date else None,
+        "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
+        "target_fi_required": z_val in config.PRE_FINISH_INSTALL_STATUSES,
     }
 
 
@@ -571,13 +616,17 @@ def validate_extra_field(key: str, raw: str):
 
 
 def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
-                   extra_fields: dict = None, when: datetime.date = None):
+                   extra_fields: dict = None, target_fi: str = None, when: datetime.date = None):
     """
     Apply one update to a row:
       1. Write Z and AA dropdown values.
       2. Resolve the (date_col, note_col) pair from Z.
       3. Prepend "DD/MM/YY : note_text" above whatever is already in note_col.
       4. Overwrite date_col with today's date (or `when` if given).
+      5. Kalau `target_fi` diisi, tulis ke kolom AL (Target Finish Instalasi)
+         -- kosong/None berarti "jangan diubah", nilai lama tetap dipertahankan
+         (validasi wajib-isi untuk status pra-Finish-Instalasi dilakukan
+         terpisah lewat validate_target_fi(), BUKAN di sini).
     Returns the (date_col, note_col) pair used.
     """
     if z_value not in config.STATUS_COLUMN_MAP:
@@ -630,6 +679,14 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                 if not raw_value:
                     continue
             ws.update_acell(f"{col}{row_num}", raw_value)
+
+    # 5. Target Finish Instalasi (kolom AL) — sama seperti field tambahan:
+    #    kosong = tidak diubah (nilai lama, kalau ada, tetap dipakai).
+    target_fi = (target_fi or "").strip()
+    if target_fi:
+        parsed_target_fi = _parse_date(target_fi)
+        if parsed_target_fi:
+            ws.update_acell(f"{config.COL_TARGET_FI}{row_num}", parsed_target_fi.strftime("%d/%m/%Y"))
 
     return date_col, note_col
 

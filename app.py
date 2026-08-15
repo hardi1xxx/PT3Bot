@@ -47,6 +47,7 @@ def api_row(row_num):
             "aa_options": config.AA_OPTIONS,
             "extra_fields_by_status": config.EXTRA_FIELDS_BY_STATUS,
             "extra_field_meta": config.EXTRA_FIELD_META,
+            "pre_finish_install_statuses": config.PRE_FINISH_INSTALL_STATUSES,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -69,6 +70,7 @@ def api_row_update(row_num):
     aa_value = (payload.get("status_aa") or "").strip()
     note_text = (payload.get("note_text") or "").strip()
     extra_fields = payload.get("extra_fields") or {}
+    target_fi = (payload.get("target_fi") or "").strip()
 
     if not z_value:
         return jsonify({"ok": False, "error": "Status (kolom Z) wajib dipilih."}), 400
@@ -82,9 +84,15 @@ def api_row_update(row_num):
             label = config.EXTRA_FIELD_META.get(key, {}).get("label", key)
             return jsonify({"ok": False, "error": f"{label}: {message}"}), 400
 
+    # Target Finish Instalasi (kolom AL) — wajib terisi (baru atau lama)
+    # untuk status sebelum Finish Instalasi.
+    ok, message = sheets_service.validate_target_fi(row_num, z_value, target_fi)
+    if not ok:
+        return jsonify({"ok": False, "error": message}), 400
+
     try:
         date_col, note_col = sheets_service.update_status(
-            row_num, z_value, aa_value, note_text, extra_fields=extra_fields
+            row_num, z_value, aa_value, note_text, extra_fields=extra_fields, target_fi=target_fi
         )
         return jsonify({"ok": True, "date_col": date_col, "note_col": note_col})
     except Exception as e:
@@ -174,6 +182,7 @@ def update_form(row_num):
         snapshot=snapshot,
         z_options=config.Z_OPTIONS,
         aa_options=config.AA_OPTIONS,
+        pre_finish_install_statuses=config.PRE_FINISH_INSTALL_STATUSES,
     )
 
 
@@ -182,6 +191,7 @@ def do_update(row_num):
     z_value = request.form.get("status_z", "").strip()
     aa_value = request.form.get("status_aa", "").strip()
     note_text = request.form.get("note_text", "").strip()
+    target_fi = request.form.get("target_fi", "").strip()
 
     if not z_value:
         flash("Status (kolom Z) wajib dipilih.", "error")
@@ -190,8 +200,15 @@ def do_update(row_num):
         flash("Keterangan tidak boleh kosong.", "error")
         return redirect(url_for("update_form", row_num=row_num))
 
+    ok, message = sheets_service.validate_target_fi(row_num, z_value, target_fi)
+    if not ok:
+        flash(message, "error")
+        return redirect(url_for("update_form", row_num=row_num))
+
     try:
-        date_col, note_col = sheets_service.update_status(row_num, z_value, aa_value, note_text)
+        date_col, note_col = sheets_service.update_status(
+            row_num, z_value, aa_value, note_text, target_fi=target_fi
+        )
         flash(f"Berhasil diupdate ke kolom {note_col} (tanggal di {date_col}).", "success")
     except Exception as e:
         flash(f"Gagal update: {type(e).__name__}: {e}", "error")

@@ -177,6 +177,27 @@ STATUS_COLUMN_MAP = {
 # dashboard PT3, dihitung dari WO terbit (kolom D) sampai hari ini.
 COL_WO_TERBIT = "D"
 
+# ── Target Finish Instalasi (kolom AL) — tanggal komit manual ──────────
+# Diisi field/PIC sebagai target tanggal SELESAI Instalasi (mulai Finish
+# Instalasi). Begitu terisi, dipakai GANTI estimasi otomatis (WO terbit +
+# akumulasi target_days) untuk deadline tahap Instalasi dan seterusnya
+# (Finish Instalasi, Golive) -- karena komitmen lapangan lebih akurat
+# daripada estimasi statis.
+COL_TARGET_FI = "AL"
+
+# Status Z di mana kolom AL WAJIB terisi setiap kali update (boleh nilai
+# lama yang sudah ada di sheet -- tidak harus diisi ulang tiap update,
+# tapi TIDAK BOLEH kosong sama sekali). Begitu status sudah mencapai
+# Finish Instalasi (atau lebih), target ini sudah tidak relevan lagi
+# (bukan wajib).
+PRE_FINISH_INSTALL_STATUSES = [
+    "0.1 SURVEI",
+    "01. PERIJINAN",
+    "02. PERSIAPAN",
+    "03. MATDEV",
+    "04. INSTALASI",
+]
+
 # ── Progress % & deadline per tahapan pekerjaan LOP ────────────────────
 # Dipakai di panel detail LOP dashboard PT3 untuk menghitung:
 #   - progress_percent: berapa % LOP ini sudah selesai

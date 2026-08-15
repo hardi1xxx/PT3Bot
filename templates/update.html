@@ -61,6 +61,13 @@
     </select>
   </div>
   <div class="field">
+    <label for="target_fi">
+      Target Finish Instalasi (kolom AL)
+      {% if snapshot.status_z in pre_finish_install_statuses %}<span style="color:#dc2626;">*wajib diisi (boleh biarkan tanggal lama)</span>{% else %}<span style="color:var(--muted); font-weight:400;">(opsional, sudah tidak wajib di tahap ini)</span>{% endif %}
+    </label>
+    <input type="date" name="target_fi" id="target_fi" value="{{ snapshot.target_fi_iso or '' }}">
+  </div>
+  <div class="field">
     <label for="note_text">Keterangan update</label>
     <textarea name="note_text" id="note_text" placeholder="cth: penarikan kabel selesai 80%..." required></textarea>
   </div>
