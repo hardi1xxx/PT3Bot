@@ -346,6 +346,44 @@ PT2_STATUS_COLORS = {
     "5.GOLIVE": "#16a34a",
 }
 
+# ── Dokumen per-LOP (upload ke Google Drive) ────────────────────────────
+# Folder Drive tujuan (di-share Editor ke service account -- lihat
+# /debug/sheet-check untuk email-nya). Diambil dari env var Railway.
+DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "")
+
+# Tiap jenis dokumen wajib diupload begitu status Z mencapai
+# required_status (boleh sudah ada dari update sebelumnya -- tidak perlu
+# upload ulang tiap update, lihat sheets_service.validate_documents_for_status).
+# link_col menyimpan URL Drive file terkini; log_col menyimpan riwayat
+# catatan revisi (apa yang diubah/dihapus/ditambah), terbaru di baris
+# paling atas -- MIRIP pola catatan status di STATUS_COLUMN_MAP, tapi
+# revisi dokumen MENIMPA file lamanya (bukan menyimpan semua versi).
+DOCUMENT_TYPES = {
+    "bast": {
+        "label": "BAST",
+        "required_status": "06. GOLIVE",
+        "link_col": "BR",
+        "log_col": "BS",
+    },
+    "foto_instalasi": {
+        "label": "Foto Instalasi",
+        "required_status": "05. FINISH INSTALASI",
+        "link_col": "BT",
+        "log_col": "BU",
+    },
+    "berita_acara_perijinan": {
+        "label": "Berita Acara Perijinan",
+        "required_status": "03. MATDEV",
+        "link_col": "BV",
+        "log_col": "BW",
+    },
+}
+
+# Reverse index: status Z -> daftar doc_key yang wajib di status itu.
+DOCUMENT_TYPES_BY_STATUS = {}
+for _dkey, _dmeta in DOCUMENT_TYPES.items():
+    DOCUMENT_TYPES_BY_STATUS.setdefault(_dmeta["required_status"], []).append(_dkey)
+
 # ── Env / secrets ──────────────────────────────────────────────────────
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")

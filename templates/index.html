@@ -574,6 +574,8 @@ let currentExtraFieldsByStatus = {};
 let currentExtraFieldMeta = {};
 let currentPreFinishInstallStatuses = [];
 let currentTargetFiHasExisting = false;
+let currentDocuments = {};
+let currentDocumentTypesByStatus = {};
 
 async function openRow(rowNum) {
   selectedRow = rowNum;
@@ -587,12 +589,14 @@ async function openRow(rowNum) {
     const json = await res.json();
     if (!json.ok) { panel.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
 
-    const { snapshot, label, z_options, aa_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses } = json;
+    const { snapshot, label, z_options, aa_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses, document_types_by_status } = json;
     currentExtraValues = snapshot.extra_fields || {};
     currentExtraFieldsByStatus = extra_fields_by_status || {};
     currentExtraFieldMeta = extra_field_meta || {};
     currentPreFinishInstallStatuses = pre_finish_install_statuses || [];
     currentTargetFiHasExisting = !!snapshot.target_fi;
+    currentDocuments = snapshot.documents || {};
+    currentDocumentTypesByStatus = document_types_by_status || {};
 
     panel.innerHTML = `
       <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${esc(label.ihld)} · ${esc(label.lokasi)}</div>
@@ -611,7 +615,7 @@ async function openRow(rowNum) {
       ` : ''}
       <div class="field" style="margin-top:14px;">
         <label for="status_z">Status (kolom Z)</label>
-        <select id="status_z" onchange="renderExtraFields(this.value); refreshTargetFiHint(this.value);">
+        <select id="status_z" onchange="renderExtraFields(this.value); refreshTargetFiHint(this.value); renderDocumentsSection(${rowNum}, this.value);">
           <option value="">-- pilih status --</option>
           ${z_options.map(o => `<option value="${o}" ${o === snapshot.status_z ? 'selected' : ''}>${o}</option>`).join('')}
         </select>
@@ -627,6 +631,10 @@ async function openRow(rowNum) {
         <label for="target_fi">Target Finish Instalasi (kolom AL) <span id="targetFiHint"></span></label>
         <input type="date" id="target_fi" value="${snapshot.target_fi_iso || ''}">
       </div>
+      <div class="field">
+        <label>Dokumen LOP</label>
+        <div id="documentsContainer"></div>
+      </div>
       <div id="extraFieldsContainer"></div>
       <div class="field">
         <label for="note_text">Keterangan update</label>
@@ -638,6 +646,7 @@ async function openRow(rowNum) {
     `;
     renderExtraFields(snapshot.status_z);
     refreshTargetFiHint(snapshot.status_z);
+    renderDocumentsSection(rowNum, snapshot.status_z);
   } catch (e) {
     panel.innerHTML = `<div class="flash error">Gagal memuat baris: ${e}</div>`;
   }
@@ -648,6 +657,62 @@ async function openRow(rowNum) {
 // yang tampil. Selalu di-prefill dari nilai yang sudah ada di sheet,
 // supaya (mis.) Jumlah ODP/Port yang sudah diisi saat Finish Instalasi
 // otomatis kelihatan lagi saat status diganti ke Golive.
+// ── Dokumen LOP (upload/revisi ke Google Drive) ───────────────────────
+function renderDocumentsSection(rowNum, currentStatusZ) {
+  const container = document.getElementById('documentsContainer');
+  if (!container) return;
+
+  container.innerHTML = Object.entries(currentDocuments).map(([key, doc]) => {
+    const requiredNow = doc.required_status === currentStatusZ && !doc.url;
+    return `
+      <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:0.85rem;">
+          <strong>${esc(doc.label)}</strong>
+          <span style="font-size:0.72rem; color:var(--muted);">wajib saat ${esc(doc.required_status)}</span>
+        </div>
+        ${doc.url
+          ? `<div style="font-size:0.8rem; margin:4px 0;"><a href="${esc(doc.url)}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>`
+          : `<div style="font-size:0.8rem; color:${requiredNow ? '#dc2626' : 'var(--muted)'}; margin:4px 0;">${requiredNow ? 'Belum diupload — wajib untuk status ini' : 'Belum diupload'}</div>`}
+        ${doc.log ? `<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">${esc(doc.log)}</div>` : ''}
+        <input type="file" id="docfile_${key}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+        <input type="text" id="docnote_${key}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%; margin-bottom:4px;">
+        <button type="button" class="btn-ghost btn-sm" onclick="uploadDocument(${rowNum}, '${key}')">Upload${doc.url ? ' / Revisi' : ''}</button>
+        <div id="docmsg_${key}"></div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function uploadDocument(rowNum, docKey) {
+  const fileInput = document.getElementById(`docfile_${docKey}`);
+  const noteInput = document.getElementById(`docnote_${docKey}`);
+  const msg = document.getElementById(`docmsg_${docKey}`);
+  const file = fileInput.files[0];
+
+  if (!file) { msg.innerHTML = '<div class="flash error">Pilih file dulu.</div>'; return; }
+
+  const isRevision = !!(currentDocuments[docKey] && currentDocuments[docKey].url);
+  if (isRevision && !noteInput.value.trim()) {
+    msg.innerHTML = '<div class="flash error">Catatan revisi wajib diisi (apa yang diubah/dihapus/ditambah).</div>';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('note', noteInput.value.trim());
+
+  msg.innerHTML = '<div class="skeleton">Mengupload...</div>';
+  try {
+    const res = await fetch(`/api/row/${rowNum}/document/${docKey}`, { method: 'POST', body: formData });
+    const json = await res.json();
+    if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+    msg.innerHTML = '<div class="flash success">Tersimpan.</div>';
+    openRow(rowNum);
+  } catch (e) {
+    msg.innerHTML = `<div class="flash error">Gagal upload: ${e}</div>`;
+  }
+}
+
 // Target Finish Instalasi (kolom AL) wajib diisi selama status yang DIPILIH
 // masih sebelum Finish Instalasi -- kecuali kolom AL sudah ada isi lama
 // (boleh dibiarkan). Dicek ulang tiap dropdown Status diganti.
@@ -702,6 +767,14 @@ async function saveUpdate(rowNum) {
   if (!note_text.trim()) { msg.innerHTML = '<div class="flash error">Keterangan tidak boleh kosong.</div>'; return; }
   if (currentPreFinishInstallStatuses.includes(status_z) && !target_fi && !currentTargetFiHasExisting) {
     msg.innerHTML = '<div class="flash error">Target Finish Instalasi (kolom AL) wajib diisi untuk status sebelum Finish Instalasi.</div>';
+    return;
+  }
+  const requiredDocKeys = currentDocumentTypesByStatus[status_z] || [];
+  const missingDocs = requiredDocKeys
+    .filter(key => !(currentDocuments[key] && currentDocuments[key].url))
+    .map(key => currentDocuments[key] ? currentDocuments[key].label : key);
+  if (missingDocs.length) {
+    msg.innerHTML = `<div class="flash error">Dokumen wajib belum diupload: ${missingDocs.map(esc).join(', ')}.</div>`;
     return;
   }
 

@@ -2,6 +2,7 @@ import json
 import traceback
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from werkzeug.utils import secure_filename
 
 import config
 import sheets_service
@@ -48,6 +49,7 @@ def api_row(row_num):
             "extra_fields_by_status": config.EXTRA_FIELDS_BY_STATUS,
             "extra_field_meta": config.EXTRA_FIELD_META,
             "pre_finish_install_statuses": config.PRE_FINISH_INSTALL_STATUSES,
+            "document_types_by_status": config.DOCUMENT_TYPES_BY_STATUS,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -90,11 +92,43 @@ def api_row_update(row_num):
     if not ok:
         return jsonify({"ok": False, "error": message}), 400
 
+    # Dokumen wajib (BAST/Foto Instalasi/Berita Acara) — harus sudah
+    # diupload (sesi ini atau sebelumnya) untuk status yang dituju.
+    ok, message = sheets_service.validate_documents_for_status(row_num, z_value)
+    if not ok:
+        return jsonify({"ok": False, "error": message}), 400
+
     try:
         date_col, note_col = sheets_service.update_status(
             row_num, z_value, aa_value, note_text, extra_fields=extra_fields, target_fi=target_fi
         )
         return jsonify({"ok": True, "date_col": date_col, "note_col": note_col})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/row/<int:row_num>/document/<doc_key>", methods=["POST"])
+def api_row_document_upload(row_num, doc_key):
+    """Upload/revisi 1 dokumen (BAST / Foto Instalasi / Berita Acara
+    Perijinan) untuk 1 LOP. multipart/form-data: file=<file>, note=<catatan
+    revisi opsional -- wajib diisi kalau ini revisi (sudah ada file lama),
+    validasinya di sisi JS supaya user dikasih tahu sebelum upload jalan."""
+    if doc_key not in config.DOCUMENT_TYPES:
+        return jsonify({"ok": False, "error": "Jenis dokumen tidak dikenal."}), 400
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "File belum dipilih."}), 400
+
+    note = (request.form.get("note") or "").strip()
+    filename = secure_filename(file.filename) or "dokumen"
+    mimetype = file.mimetype or "application/octet-stream"
+
+    try:
+        url = sheets_service.upload_row_document(
+            row_num, doc_key, filename, file.stream, mimetype, revision_note=note
+        )
+        return jsonify({"ok": True, "url": url})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
@@ -183,6 +217,7 @@ def update_form(row_num):
         z_options=config.Z_OPTIONS,
         aa_options=config.AA_OPTIONS,
         pre_finish_install_statuses=config.PRE_FINISH_INSTALL_STATUSES,
+        document_types=config.DOCUMENT_TYPES,
     )
 
 
@@ -201,6 +236,29 @@ def do_update(row_num):
         return redirect(url_for("update_form", row_num=row_num))
 
     ok, message = sheets_service.validate_target_fi(row_num, z_value, target_fi)
+    if not ok:
+        flash(message, "error")
+        return redirect(url_for("update_form", row_num=row_num))
+
+    # Dokumen (BAST/Foto Instalasi/Berita Acara) -- form ini tidak pakai JS
+    # terpisah seperti dashboard utama, jadi file yang dipilih diupload
+    # langsung di sini, SEBELUM validasi wajib-dokumen, supaya upload di
+    # submission yang sama ikut dihitung.
+    for doc_key, meta in config.DOCUMENT_TYPES.items():
+        file = request.files.get(f"doc_{doc_key}")
+        if file and file.filename:
+            note = request.form.get(f"doc_note_{doc_key}", "").strip()
+            filename = secure_filename(file.filename) or "dokumen"
+            try:
+                sheets_service.upload_row_document(
+                    row_num, doc_key, filename, file.stream, file.mimetype or "application/octet-stream",
+                    revision_note=note,
+                )
+            except Exception as e:
+                flash(f"Gagal upload {meta['label']}: {type(e).__name__}: {e}", "error")
+                return redirect(url_for("update_form", row_num=row_num))
+
+    ok, message = sheets_service.validate_documents_for_status(row_num, z_value)
     if not ok:
         flash(message, "error")
         return redirect(url_for("update_form", row_num=row_num))

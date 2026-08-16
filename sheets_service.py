@@ -15,10 +15,13 @@ from dateutil import parser as date_parser
 from google.oauth2.service_account import Credentials
 
 import config
+import drive_service
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.readonly",
+    # Full Drive access (bukan drive.readonly lagi) -- fitur upload/revisi
+    # dokumen LOP butuh bikin folder, upload, dan hapus file lama.
+    "https://www.googleapis.com/auth/drive",
 ]
 
 _client_lock = threading.Lock()
@@ -34,19 +37,25 @@ def _col_to_index(col_letters: str) -> int:
     return result
 
 
+def _get_credentials():
+    """Satu tempat untuk build Credentials dari GOOGLE_SERVICE_ACCOUNT_JSON --
+    dipakai gspread (get_client() di bawah) MAUPUN drive_service.py, supaya
+    keduanya konsisten pakai service account & scope yang sama."""
+    if not config.GOOGLE_SERVICE_ACCOUNT_JSON:
+        raise RuntimeError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON env var is not set. "
+            "Paste the full service-account JSON key content as this variable "
+            "in Railway's environment settings."
+        )
+    info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
+    return Credentials.from_service_account_info(info, scopes=SCOPES)
+
+
 def get_client():
     global _gspread_client
     with _client_lock:
         if _gspread_client is None:
-            if not config.GOOGLE_SERVICE_ACCOUNT_JSON:
-                raise RuntimeError(
-                    "GOOGLE_SERVICE_ACCOUNT_JSON env var is not set. "
-                    "Paste the full service-account JSON key content as this variable "
-                    "in Railway's environment settings."
-                )
-            info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
-            creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-            _gspread_client = gspread.authorize(creds)
+            _gspread_client = gspread.authorize(_get_credentials())
         return _gspread_client
 
 
@@ -486,6 +495,90 @@ def validate_target_fi(row_num: int, z_value: str, raw: str):
     return False, "Tanggal Target Finish Instalasi (kolom AL) wajib diisi untuk status sebelum Finish Instalasi."
 
 
+def get_document_snapshot(row_num: int):
+    """Link + catatan revisi terkini untuk tiap jenis dokumen (BAST, Foto
+    Instalasi, Berita Acara Perijinan) satu LOP."""
+    ws = get_worksheet()
+    result = {}
+    for key, meta in config.DOCUMENT_TYPES.items():
+        url = (ws.acell(f"{meta['link_col']}{row_num}").value or "").strip()
+        log = ws.acell(f"{meta['log_col']}{row_num}").value or ""
+        result[key] = {
+            "label": meta["label"],
+            "required_status": meta["required_status"],
+            "url": url or None,
+            "log": log,
+        }
+    return result
+
+
+def validate_documents_for_status(row_num: int, z_value: str):
+    """Cek dokumen wajib untuk status_z yang mau disimpan. Wajib SUDAH ADA
+    link-nya di sheet (baru diupload sesi ini, atau sudah pernah ada dari
+    update sebelumnya -- tidak perlu upload ulang tiap kali update).
+    Returns (ok: bool, message: str)."""
+    required_keys = config.DOCUMENT_TYPES_BY_STATUS.get(z_value, [])
+    if not required_keys:
+        return True, ""
+    ws = get_worksheet()
+    missing_labels = []
+    for key in required_keys:
+        meta = config.DOCUMENT_TYPES[key]
+        url = (ws.acell(f"{meta['link_col']}{row_num}").value or "").strip()
+        if not url:
+            missing_labels.append(meta["label"])
+    if missing_labels:
+        return False, f"Dokumen wajib belum diupload untuk status ini: {', '.join(missing_labels)}."
+    return True, ""
+
+
+def upload_row_document(row_num: int, doc_key: str, filename: str, file_stream, mimetype: str,
+                         revision_note: str = ""):
+    """
+    Upload/revisi satu dokumen untuk satu LOP:
+      1. Upload file BARU ke Drive dulu (folder khusus LOP ini, dibuat kalau
+         belum ada) -- baru setelah itu hapus file LAMA (kalau ada). Urutan
+         ini sengaja: kalau upload baru gagal, file lama tetap aman/utuh.
+      2. Tulis link baru ke link_col di sheet (menimpa link lama).
+      3. Prepend catatan revisi ke log_col ("DD/MM/YYYY : <catatan>",
+         terbaru di atas) -- mencatat apa yang diubah/dihapus/ditambah,
+         SEBELUM file lama benar-benar dihapus dari Drive.
+    Returns URL file yang baru.
+    """
+    meta = config.DOCUMENT_TYPES.get(doc_key)
+    if not meta:
+        raise ValueError(f"Jenis dokumen tidak dikenal: {doc_key}")
+
+    ws = get_worksheet()
+    old_url = (ws.acell(f"{meta['link_col']}{row_num}").value or "").strip()
+
+    label = get_row_label(row_num)
+    lop_label = f"{label.get('ihld') or ''} {label.get('lokasi') or ''}".strip() or f"row{row_num}"
+
+    _new_file_id, new_url = drive_service.upload_document(
+        row_num, lop_label, meta["label"], filename, file_stream, mimetype
+    )
+
+    ws.update_acell(f"{meta['link_col']}{row_num}", new_url)
+
+    note = (revision_note or "").strip()
+    if not note:
+        note = "Upload pertama" if not old_url else "Revisi dokumen (tanpa catatan detail)"
+    today_str = datetime.date.today().strftime("%d/%m/%Y")
+    entry = f"{today_str} : {note}"
+    old_log = (ws.acell(f"{meta['log_col']}{row_num}").value or "").strip()
+    new_log = entry if not old_log else f"{entry}\n{old_log}"
+    ws.update_acell(f"{meta['log_col']}{row_num}", new_log)
+
+    if old_url:
+        try:
+            drive_service.delete_document(old_url)
+        except Exception:
+            pass  # jangan gagalkan seluruh request cuma karena hapus file lama gagal
+
+    return new_url
+
+
 def get_row_snapshot(row_num: int):
     """Return current Z, AA and keterangan info for the update panel.
     `last_note` = topmost entry dari kolom keterangan STATUS SAAT INI (mis. BA
@@ -550,6 +643,7 @@ def get_row_snapshot(row_num: int):
         "target_fi": target_fi_date.strftime("%d/%m/%Y") if target_fi_date else None,
         "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
         "target_fi_required": z_val in config.PRE_FINISH_INSTALL_STATUSES,
+        "documents": get_document_snapshot(row_num),
     }
 
 

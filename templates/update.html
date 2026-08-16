@@ -41,7 +41,7 @@
   {% endif %}
 </div>
 
-<form method="post" class="card" style="max-width:640px; margin:0 auto;">
+<form method="post" class="card" style="max-width:640px; margin:0 auto;" enctype="multipart/form-data">
   <div class="field">
     <label for="status_z">Status (kolom Z)</label>
     <select name="status_z" id="status_z" required>
@@ -67,6 +67,27 @@
     </label>
     <input type="date" name="target_fi" id="target_fi" value="{{ snapshot.target_fi_iso or '' }}">
   </div>
+
+  <div class="field">
+    <label>Dokumen LOP</label>
+    {% for doc_key, doc in snapshot.documents.items() %}
+      <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
+          <strong>{{ doc.label }}</strong>
+          <span style="font-size:0.72rem; color:var(--muted);">wajib saat {{ doc.required_status }}</span>
+        </div>
+        {% if doc.url %}
+          <div style="font-size:0.8rem; margin:4px 0;"><a href="{{ doc.url }}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>
+        {% else %}
+          <div style="font-size:0.8rem; color:{{ '#dc2626' if doc.required_status == snapshot.status_z else 'var(--muted)' }}; margin:4px 0;">Belum diupload</div>
+        {% endif %}
+        {% if doc.log %}<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">{{ doc.log }}</div>{% endif %}
+        <input type="file" name="doc_{{ doc_key }}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+        <input type="text" name="doc_note_{{ doc_key }}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%;">
+      </div>
+    {% endfor %}
+  </div>
+
   <div class="field">
     <label for="note_text">Keterangan update</label>
     <textarea name="note_text" id="note_text" placeholder="cth: penarikan kabel selesai 80%..." required></textarea>
