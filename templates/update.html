@@ -62,15 +62,17 @@
   </div>
   <div class="field">
     <label for="target_fi">
-      Target Finish Instalasi (kolom AL)
+      Target Finish Instalasi (kolom AK)
       {% if snapshot.status_z in pre_finish_install_statuses %}<span style="color:#dc2626;">*wajib diisi (boleh biarkan tanggal lama)</span>{% else %}<span style="color:var(--muted); font-weight:400;">(opsional, sudah tidak wajib di tahap ini)</span>{% endif %}
     </label>
-    <input type="date" name="target_fi" id="target_fi" value="{{ snapshot.target_fi_iso or '' }}">
+    <input type="date" name="target_fi" id="target_fi" min="{{ today_iso }}" value="{{ snapshot.target_fi_iso or '' }}">
   </div>
 
   <div class="field">
     <label>Dokumen LOP</label>
     {% for doc_key, doc in snapshot.documents.items() %}
+      {% set mode = document_modes.get(doc_key, 'hidden') %}
+      {% if mode != 'hidden' %}
       <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
         <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
           <strong>{{ doc.label }}</strong>
@@ -79,12 +81,15 @@
         {% if doc.url %}
           <div style="font-size:0.8rem; margin:4px 0;"><a href="{{ doc.url }}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>
         {% else %}
-          <div style="font-size:0.8rem; color:{{ '#dc2626' if doc.required_status == snapshot.status_z else 'var(--muted)' }}; margin:4px 0;">Belum diupload</div>
+          <div style="font-size:0.8rem; color:{{ '#dc2626' if mode == 'upload' else 'var(--muted)' }}; margin:4px 0;">Belum diupload</div>
         {% endif %}
         {% if doc.log %}<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">{{ doc.log }}</div>{% endif %}
-        <input type="file" name="doc_{{ doc_key }}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
-        <input type="text" name="doc_note_{{ doc_key }}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%;">
+        {% if mode == 'upload' %}
+          <input type="file" name="doc_{{ doc_key }}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+          <input type="text" name="doc_note_{{ doc_key }}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%;">
+        {% endif %}
       </div>
+      {% endif %}
     {% endfor %}
   </div>
 

@@ -163,7 +163,7 @@ function renderAgingProgress(snapshot) {
         Deadline tahap ini: <strong style="color:${snapshot.is_overdue ? '#dc2626' : 'var(--text)'};">${fmtDateISO(snapshot.current_stage_deadline)}</strong>
         ${snapshot.is_overdue ? ' <span class="badge" style="background:#dc2626;">Lewat deadline</span>' : ''}
         &nbsp;·&nbsp; Target Golive: ${fmtDateISO(snapshot.final_deadline)}
-        ${snapshot.target_fi ? `<br>Berdasarkan komit Target Finish Instalasi (AL): <strong style="color:var(--text);">${esc(snapshot.target_fi)}</strong>` : '<br>Berdasarkan estimasi WO terbit (belum ada komit di kolom AL)'}
+        ${snapshot.target_fi ? `<br>Berdasarkan komit Target Finish Instalasi (AK): <strong style="color:var(--text);">${esc(snapshot.target_fi)}</strong>` : '<br>Berdasarkan estimasi WO terbit (belum ada komit di kolom AK)'}
       </div>
     </div>
   `;
@@ -642,6 +642,8 @@ let currentPreFinishInstallStatuses = [];
 let currentTargetFiHasExisting = false;
 let currentDocuments = {};
 let currentDocumentTypesByStatus = {};
+let currentProgressStages = [];
+let currentDocumentKeysHidden = [];
 
 async function openRow(rowNum) {
   selectedRow = rowNum;
@@ -655,7 +657,7 @@ async function openRow(rowNum) {
     const json = await res.json();
     if (!json.ok) { panel.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
 
-    const { snapshot, label, z_options, aa_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses, document_types_by_status } = json;
+    const { snapshot, label, z_options, aa_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses, document_types_by_status, progress_stages, document_keys_hidden } = json;
     currentExtraValues = snapshot.extra_fields || {};
     currentExtraFieldsByStatus = extra_fields_by_status || {};
     currentExtraFieldMeta = extra_field_meta || {};
@@ -663,6 +665,8 @@ async function openRow(rowNum) {
     currentTargetFiHasExisting = !!snapshot.target_fi;
     currentDocuments = snapshot.documents || {};
     currentDocumentTypesByStatus = document_types_by_status || {};
+    currentProgressStages = progress_stages || [];
+    currentDocumentKeysHidden = document_keys_hidden || [];
 
     panel.innerHTML = `
       <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${esc(label.ihld)} · ${esc(label.lokasi)}</div>
@@ -694,8 +698,8 @@ async function openRow(rowNum) {
         </select>
       </div>
       <div class="field">
-        <label for="target_fi">Target Finish Instalasi (kolom AL) <span id="targetFiHint"></span></label>
-        <input type="date" id="target_fi" value="${snapshot.target_fi_iso || ''}">
+        <label for="target_fi">Target Finish Instalasi (kolom AK) <span id="targetFiHint"></span></label>
+        <input type="date" id="target_fi" min="${new Date().toISOString().slice(0,10)}" value="${snapshot.target_fi_iso || ''}">
       </div>
       <div class="field">
         <label>Dokumen LOP</label>
@@ -724,29 +728,67 @@ async function openRow(rowNum) {
 // supaya (mis.) Jumlah ODP/Port yang sudah diisi saat Finish Instalasi
 // otomatis kelihatan lagi saat status diganti ke Golive.
 // ── Dokumen LOP (upload/revisi ke Google Drive) ───────────────────────
+// Cari index tahap (di currentProgressStages) yang cocok dengan sebuah
+// nilai status Z -- mirror dari _find_progress_stage_index() di backend
+// (sheets_service.py), supaya urutan "sebelum/pas/setelah" konsisten
+// dengan cara progress % dihitung. Return -1 kalau tidak match (status
+// kosong, Drop, atau di luar sequence progress).
+function findProgressStageIndex(statusZ) {
+  for (let i = 0; i < currentProgressStages.length; i++) {
+    const stage = currentProgressStages[i];
+    if (stage.z_values && stage.z_values.includes(statusZ)) return i;
+  }
+  return -1;
+}
+
+// Mode tampilan 1 dokumen berdasarkan status Z yang SEDANG DIPILIH (bukan
+// cuma status tersimpan) dibanding required_status dokumen itu:
+//   'hidden' -> status yang dipilih masih SEBELUM required_status (belum relevan)
+//   'upload' -> status yang dipilih PERSIS required_status (saatnya upload)
+//   'view'   -> status yang dipilih SUDAH LEWAT required_status (cuma lihat file)
+function getDocumentMode(doc, statusZ) {
+  const requiredIdx = findProgressStageIndex(doc.required_status);
+  const currentIdx = findProgressStageIndex(statusZ);
+  if (currentIdx === -1 || requiredIdx === -1) return 'hidden';
+  if (currentIdx < requiredIdx) return 'hidden';
+  if (currentIdx === requiredIdx) return 'upload';
+  return 'view';
+}
+
 function renderDocumentsSection(rowNum, currentStatusZ) {
   const container = document.getElementById('documentsContainer');
   if (!container) return;
 
-  container.innerHTML = Object.entries(currentDocuments).map(([key, doc]) => {
-    const requiredNow = doc.required_status === currentStatusZ && !doc.url;
+  const entries = Object.entries(currentDocuments).filter(([key]) => !currentDocumentKeysHidden.includes(key));
+
+  container.innerHTML = entries.map(([key, doc]) => {
+    const mode = getDocumentMode(doc, currentStatusZ);
+    if (mode === 'hidden') return '';
+
+    const fileBlock = doc.url
+      ? `<div style="font-size:0.8rem; margin:4px 0;"><a href="${esc(doc.url)}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>`
+      : `<div style="font-size:0.8rem; color:${mode === 'upload' ? '#dc2626' : 'var(--muted)'}; margin:4px 0;">${mode === 'upload' ? 'Belum diupload — wajib untuk status ini' : 'Belum diupload'}</div>`;
+    const logBlock = doc.log ? `<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">${esc(doc.log)}</div>` : '';
+
+    const uploadControls = mode === 'upload' ? `
+        <input type="file" id="docfile_${key}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+        <input type="text" id="docnote_${key}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%; margin-bottom:4px;">
+        <button type="button" class="btn-ghost btn-sm" onclick="uploadDocument(${rowNum}, '${key}')">Upload${doc.url ? ' / Revisi' : ''}</button>
+        <div id="docmsg_${key}"></div>
+      ` : '';
+
     return `
       <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:0.85rem;">
           <strong>${esc(doc.label)}</strong>
           <span style="font-size:0.72rem; color:var(--muted);">wajib saat ${esc(doc.required_status)}</span>
         </div>
-        ${doc.url
-          ? `<div style="font-size:0.8rem; margin:4px 0;"><a href="${esc(doc.url)}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>`
-          : `<div style="font-size:0.8rem; color:${requiredNow ? '#dc2626' : 'var(--muted)'}; margin:4px 0;">${requiredNow ? 'Belum diupload — wajib untuk status ini' : 'Belum diupload'}</div>`}
-        ${doc.log ? `<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">${esc(doc.log)}</div>` : ''}
-        <input type="file" id="docfile_${key}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
-        <input type="text" id="docnote_${key}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%; margin-bottom:4px;">
-        <button type="button" class="btn-ghost btn-sm" onclick="uploadDocument(${rowNum}, '${key}')">Upload${doc.url ? ' / Revisi' : ''}</button>
-        <div id="docmsg_${key}"></div>
+        ${fileBlock}
+        ${logBlock}
+        ${uploadControls}
       </div>
     `;
-  }).join('');
+  }).join('') || '<div class="sub" style="color:var(--muted); font-size:0.8rem;">Tidak ada dokumen yang relevan untuk status ini.</div>';
 }
 
 async function uploadDocument(rowNum, docKey) {
@@ -779,8 +821,8 @@ async function uploadDocument(rowNum, docKey) {
   }
 }
 
-// Target Finish Instalasi (kolom AL) wajib diisi selama status yang DIPILIH
-// masih sebelum Finish Instalasi -- kecuali kolom AL sudah ada isi lama
+// Target Finish Instalasi (kolom AK) wajib diisi selama status yang DIPILIH
+// masih sebelum Finish Instalasi -- kecuali kolom AK sudah ada isi lama
 // (boleh dibiarkan). Dicek ulang tiap dropdown Status diganti.
 function refreshTargetFiHint(statusZ) {
   const hint = document.getElementById('targetFiHint');
@@ -831,8 +873,12 @@ async function saveUpdate(rowNum) {
 
   if (!status_z) { msg.innerHTML = '<div class="flash error">Status (kolom Z) wajib dipilih.</div>'; return; }
   if (!note_text.trim()) { msg.innerHTML = '<div class="flash error">Keterangan tidak boleh kosong.</div>'; return; }
+  if (target_fi && target_fi < new Date().toISOString().slice(0,10)) {
+    msg.innerHTML = '<div class="flash error">Tanggal Target Finish Instalasi tidak boleh tanggal yang sudah lewat.</div>';
+    return;
+  }
   if (currentPreFinishInstallStatuses.includes(status_z) && !target_fi && !currentTargetFiHasExisting) {
-    msg.innerHTML = '<div class="flash error">Target Finish Instalasi (kolom AL) wajib diisi untuk status sebelum Finish Instalasi.</div>';
+    msg.innerHTML = '<div class="flash error">Target Finish Instalasi (kolom AK) wajib diisi untuk status sebelum Finish Instalasi.</div>';
     return;
   }
   const requiredDocKeys = currentDocumentTypesByStatus[status_z] || [];

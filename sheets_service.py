@@ -469,7 +469,7 @@ def compute_stage_deadlines(wo_terbit_date: datetime.date, target_fi_date: datet
     """Deadline kumulatif tiap tahap dari WO terbit, mengikuti target_days
     di config.PROGRESS_STAGES berurutan.
 
-    Kalau `target_fi_date` diisi (kolom AL -- komit manual tanggal target
+    Kalau `target_fi_date` diisi (kolom AK -- komit manual tanggal target
     selesai Instalasi), itu DIPAKAI GANTI hasil estimasi WO_terbit+akumulasi
     untuk tahap 'instalasi' dan seterusnya (finish_install, golive dihitung
     lanjut dari situ) -- estimasi statis hanya dipakai sebelum ada komitmen
@@ -479,7 +479,7 @@ def compute_stage_deadlines(wo_terbit_date: datetime.date, target_fi_date: datet
     cursor = wo_terbit_date
     for stage in config.PROGRESS_STAGES:
         if target_fi_date and stage["key"] == "instalasi":
-            cursor = target_fi_date  # override: komit manual kolom AL
+            cursor = target_fi_date  # override: komit manual kolom AK
         else:
             cursor = cursor + datetime.timedelta(days=stage["target_days"])
         deadlines.append({"key": stage["key"], "label": stage["label"], "deadline": cursor})
@@ -487,7 +487,7 @@ def compute_stage_deadlines(wo_terbit_date: datetime.date, target_fi_date: datet
 
 
 def get_target_fi(row_num: int):
-    """Nilai kolom AL (Target Finish Instalasi) saat ini. Return
+    """Nilai kolom AK (Target Finish Instalasi) saat ini. Return
     (parsed_date_or_None, raw_string)."""
     ws = get_worksheet()
     raw = ws.acell(f"{config.COL_TARGET_FI}{row_num}").value or ""
@@ -496,24 +496,62 @@ def get_target_fi(row_num: int):
 
 def validate_target_fi(row_num: int, z_value: str, raw: str):
     """
-    Kolom AL wajib terisi setiap kali update dengan status Z yang masih di
-    config.PRE_FINISH_INSTALL_STATUSES -- KECUALI kolom AL di sheet sudah
-    ada isinya dari update sebelumnya (boleh dibiarkan/diabaikan, tidak
-    perlu diisi ulang). Returns (ok: bool, message: str).
+    Kolom AK (Target Finish Instalasi):
+      - Kalau ada nilai BARU (`raw` terisi): formatnya harus tanggal valid,
+        dan TIDAK BOLEH tanggal yang sudah lewat (harus hari ini atau
+        setelahnya) -- berlaku kapan pun nilainya diisi/diupdate, apapun
+        status Z-nya saat itu.
+      - WAJIB ada isinya (baru ATAU sudah ada dari update sebelumnya)
+        selama status Z masih di config.PRE_FINISH_INSTALL_STATUSES --
+        kalau kolom AK di sheet sudah terisi sebelumnya, boleh dibiarkan
+        (tidak perlu diisi ulang tiap update).
+    Returns (ok: bool, message: str).
     """
+    raw = (raw or "").strip()
+    if raw:
+        parsed = _parse_date(raw)
+        if not parsed:
+            return False, "Format tanggal tidak valid."
+        if parsed < datetime.date.today():
+            return False, "Tanggal Target Finish Instalasi tidak boleh tanggal yang sudah lewat."
+
     if z_value not in config.PRE_FINISH_INSTALL_STATUSES:
         return True, ""
 
-    raw = (raw or "").strip()
     if raw:
-        if not _parse_date(raw):
-            return False, "Format tanggal tidak valid."
         return True, ""
 
     existing_date, _ = get_target_fi(row_num)
     if existing_date:
         return True, ""
-    return False, "Tanggal Target Finish Instalasi (kolom AL) wajib diisi untuk status sebelum Finish Instalasi."
+    return False, "Tanggal Target Finish Instalasi (kolom AK) wajib diisi untuk status sebelum Finish Instalasi."
+
+
+def get_document_ui_modes(status_z: str):
+    """Mode tampilan tiap dokumen (selain yang di
+    config.DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE) untuk SATU status Z tertentu:
+      'hidden' -> status ini masih SEBELUM required_status dokumen itu
+      'upload' -> status ini PERSIS required_status-nya (saatnya upload)
+      'view'   -> status ini SUDAH LEWAT required_status (cuma lihat file)
+    Dipakai update.html (form biasa, server-rendered) -- versi JS
+    (index.html) menghitung ini sendiri di client pakai progress_stages
+    yang dikirim /api/row, tapi logikanya sama persis (lihat
+    _find_progress_stage_index di atas)."""
+    current_idx = _find_progress_stage_index(status_z)
+    modes = {}
+    for key, meta in config.DOCUMENT_TYPES.items():
+        if key in config.DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE:
+            continue
+        required_idx = _find_progress_stage_index(meta["required_status"])
+        if current_idx is None or required_idx is None:
+            modes[key] = "hidden"
+        elif current_idx < required_idx:
+            modes[key] = "hidden"
+        elif current_idx == required_idx:
+            modes[key] = "upload"
+        else:
+            modes[key] = "view"
+    return modes
 
 
 def get_document_snapshot(row_num: int):
@@ -738,7 +776,7 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
       2. Resolve the (date_col, note_col) pair from Z.
       3. Prepend "DD/MM/YY : note_text" above whatever is already in note_col.
       4. Overwrite date_col with today's date (or `when` if given).
-      5. Kalau `target_fi` diisi, tulis ke kolom AL (Target Finish Instalasi)
+      5. Kalau `target_fi` diisi, tulis ke kolom AK (Target Finish Instalasi)
          -- kosong/None berarti "jangan diubah", nilai lama tetap dipertahankan
          (validasi wajib-isi untuk status pra-Finish-Instalasi dilakukan
          terpisah lewat validate_target_fi(), BUKAN di sini).
@@ -795,7 +833,7 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                     continue
             ws.update_acell(f"{col}{row_num}", raw_value)
 
-    # 5. Target Finish Instalasi (kolom AL) — sama seperti field tambahan:
+    # 5. Target Finish Instalasi (kolom AK) — sama seperti field tambahan:
     #    kosong = tidak diubah (nilai lama, kalau ada, tetap dipakai).
     target_fi = (target_fi or "").strip()
     if target_fi:

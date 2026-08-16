@@ -1,5 +1,6 @@
 import json
 import traceback
+import datetime
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from werkzeug.utils import secure_filename
@@ -50,6 +51,8 @@ def api_row(row_num):
             "extra_field_meta": config.EXTRA_FIELD_META,
             "pre_finish_install_statuses": config.PRE_FINISH_INSTALL_STATUSES,
             "document_types_by_status": config.DOCUMENT_TYPES_BY_STATUS,
+            "progress_stages": config.PROGRESS_STAGES,
+            "document_keys_hidden": config.DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -86,7 +89,7 @@ def api_row_update(row_num):
             label = config.EXTRA_FIELD_META.get(key, {}).get("label", key)
             return jsonify({"ok": False, "error": f"{label}: {message}"}), 400
 
-    # Target Finish Instalasi (kolom AL) — wajib terisi (baru atau lama)
+    # Target Finish Instalasi (kolom AK) — wajib terisi (baru atau lama)
     # untuk status sebelum Finish Instalasi.
     ok, message = sheets_service.validate_target_fi(row_num, z_value, target_fi)
     if not ok:
@@ -218,6 +221,8 @@ def update_form(row_num):
         aa_options=config.AA_OPTIONS,
         pre_finish_install_statuses=config.PRE_FINISH_INSTALL_STATUSES,
         document_types=config.DOCUMENT_TYPES,
+        document_modes=sheets_service.get_document_ui_modes(snapshot["status_z"]),
+        today_iso=datetime.date.today().isoformat(),
     )
 
 
@@ -245,6 +250,8 @@ def do_update(row_num):
     # langsung di sini, SEBELUM validasi wajib-dokumen, supaya upload di
     # submission yang sama ikut dihitung.
     for doc_key, meta in config.DOCUMENT_TYPES.items():
+        if doc_key in config.DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE:
+            continue
         file = request.files.get(f"doc_{doc_key}")
         if file and file.filename:
             note = request.form.get(f"doc_note_{doc_key}", "").strip()

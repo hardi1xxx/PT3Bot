@@ -185,15 +185,15 @@ STATUS_COLUMN_MAP = {
 # dashboard PT3, dihitung dari WO terbit (kolom D) sampai hari ini.
 COL_WO_TERBIT = "D"
 
-# ── Target Finish Instalasi (kolom AL) — tanggal komit manual ──────────
+# ── Target Finish Instalasi (kolom AK) — tanggal komit manual ──────────
 # Diisi field/PIC sebagai target tanggal SELESAI Instalasi (mulai Finish
 # Instalasi). Begitu terisi, dipakai GANTI estimasi otomatis (WO terbit +
 # akumulasi target_days) untuk deadline tahap Instalasi dan seterusnya
 # (Finish Instalasi, Golive) -- karena komitmen lapangan lebih akurat
-# daripada estimasi statis.
-COL_TARGET_FI = "AL"
+# daripada estimasi statis. PINDAH dari kolom AK ke AK (permintaan user).
+COL_TARGET_FI = "AK"
 
-# Status Z di mana kolom AL WAJIB terisi setiap kali update (boleh nilai
+# Status Z di mana kolom AK WAJIB terisi setiap kali update (boleh nilai
 # lama yang sudah ada di sheet -- tidak harus diisi ulang tiap update,
 # tapi TIDAK BOLEH kosong sama sekali). Begitu status sudah mencapai
 # Finish Instalasi (atau lebih), target ini sudah tidak relevan lagi
@@ -366,6 +366,13 @@ DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "")
 # catatan revisi (apa yang diubah/dihapus/ditambah), terbaru di baris
 # paling atas -- MIRIP pola catatan status di STATUS_COLUMN_MAP, tapi
 # revisi dokumen MENIMPA file lamanya (bukan menyimpan semua versi).
+#
+# required_status DI SINI JUGA menentukan kapan tombol Upload muncul di
+# panel detail LOP (lihat index.html renderDocumentsSection): SEBELUM
+# required_status -> slot disembunyikan sepenuhnya, PAS di required_status
+# -> tombol upload muncul, SETELAH required_status -> jadi view-only
+# (cuma link file, tanpa tombol upload). Urutan "sebelum/pas/setelah"
+# dihitung dari PROGRESS_STAGES di bawah.
 DOCUMENT_TYPES = {
     "bast": {
         "label": "BAST",
@@ -381,15 +388,28 @@ DOCUMENT_TYPES = {
     },
     "berita_acara_perijinan": {
         "label": "Berita Acara Perijinan",
-        "required_status": "03. MATDEV",
+        # Diubah dari "03. MATDEV" ke "01. PERIJINAN" -- upload-nya sekarang
+        # HANYA muncul di status Perijinan (bukan Matdev), jadi wajib-nya
+        # ikut dipindah ke situ juga supaya tidak ada status yang butuh
+        # dokumen ini tapi tombol upload-nya sudah disembunyikan.
+        "required_status": "01. PERIJINAN",
         "link_col": "BV",
         "log_col": "BW",
     },
 }
 
-# Reverse index: status Z -> daftar doc_key yang wajib di status itu.
+# Status Z yang panel dokumennya TIDAK ditampilkan sama sekali di halaman
+# ini (BAST rencananya dikelola di halaman terpisah nanti, mirip
+# Pemberkasan) -- jadi juga dikeluarkan dari pengecekan wajib supaya tidak
+# memblokir simpan status Golive padahal tidak ada cara upload-nya di sini.
+DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE = ["bast"]
+
+# Reverse index: status Z -> daftar doc_key yang wajib di status itu
+# (BAST dikecualikan -- lihat DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE di atas).
 DOCUMENT_TYPES_BY_STATUS = {}
 for _dkey, _dmeta in DOCUMENT_TYPES.items():
+    if _dkey in DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE:
+        continue
     DOCUMENT_TYPES_BY_STATUS.setdefault(_dmeta["required_status"], []).append(_dkey)
 
 # ── Env / secrets ──────────────────────────────────────────────────────
