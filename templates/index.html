@@ -88,6 +88,7 @@
   <div class="card">
     <label for="q">Cari IHLD / Lokasi IHLD</label>
     <input type="text" id="q" placeholder="Ketik untuk mencari, atau lihat semua di bawah...">
+    <div id="cellFilterChip" style="margin-top:8px;"></div>
     <div class="loc-list" id="locList" style="margin-top: 12px;">
       <div class="skeleton">Memuat lokasi aktif...</div>
     </div>
@@ -206,21 +207,79 @@ function renderCombinedTable(el, portTable, lopTable, statuses) {
   portTable.forEach(portRow => {
     const lopRow = lopByBatch[portRow.batch] || { values: {}, total: 0 };
     const isTotal = portRow.batch === 'TOTAL';
+    const batchArg = isTotal ? 'null' : `'${escJs(portRow.batch)}'`;
     html += `<tr${isTotal ? ' class="grand-total-row"' : ''}><th>${esc(portRow.batch)}</th>`;
     statuses.forEach(s => {
       const lopV = lopRow.values[s] || 0;
       const portV = portRow.values[s] || 0;
-      html += `<td>${fmtNum(lopV)}</td><td>${fmtNum(portV)}</td>`;
+      const clickAttr = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk filter daftar di bawah" onclick="setCellFilter(${batchArg}, '${escJs(s)}')"`;
+      html += `<td ${clickAttr}>${fmtNum(lopV)}</td><td ${clickAttr}>${fmtNum(portV)}</td>`;
     });
-    html += `<td class="total-col">${fmtNum(lopRow.total)}</td><td class="total-col">${fmtNum(portRow.total)}</td>`;
+    if (!isTotal) {
+      const totalClickAttr = `class="total-col pivot-clickable" style="cursor:pointer;" title="Klik untuk filter daftar di bawah" onclick="setCellFilter(${batchArg}, null)"`;
+      html += `<td ${totalClickAttr}>${fmtNum(lopRow.total)}</td><td ${totalClickAttr}>${fmtNum(portRow.total)}</td>`;
+    } else {
+      html += `<td class="total-col">${fmtNum(lopRow.total)}</td><td class="total-col">${fmtNum(portRow.total)}</td>`;
+    }
     html += '</tr>';
   });
   html += '</tbody></table>';
   el.innerHTML = html;
 }
 
+function escJs(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// Klik angka di tabel "Rekap Port & LOP per Batch" -> filter daftar
+// "Lokasi Sedang Berjalan & Update Status" di bawah SAJA (chart, KPI,
+// tabel Detail Lokasi TIDAK ikut berubah -- murni buat mempermudah cari
+// lokasi dari angka yang diklik, termasuk Drop/Drop MOM/Golive yang
+// biasanya tidak masuk daftar itu).
+let activeCellFilter = null;  // { batch: string|null, column: string|null }
+
+function setCellFilter(batch, column) {
+  if (batch === null && column === null) { clearCellFilter(); return; }
+  activeCellFilter = { batch, column };
+  refreshAll();
+  const locCard = document.getElementById('locList');
+  if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function clearCellFilter() {
+  activeCellFilter = null;
+  refreshAll();
+}
+
+function renderCellFilterChip() {
+  const el = document.getElementById('cellFilterChip');
+  if (!el) return;
+  if (!activeCellFilter) { el.innerHTML = ''; return; }
+  const parts = [];
+  if (activeCellFilter.batch) parts.push(`Batch: ${esc(activeCellFilter.batch)}`);
+  if (activeCellFilter.column) parts.push(`Status: ${esc(activeCellFilter.column.replace(/^\d+\.\s*/, ''))}`);
+  el.innerHTML = `<span class="badge status">${parts.join(' · ')} <a href="#" onclick="clearCellFilter(); return false;" style="margin-left:6px; color:inherit; text-decoration:underline;">Hapus filter</a></span>`;
+}
+
+// Daftar untuk "Lokasi Sedang Berjalan & Update Status": kalau ada filter
+// dari klik tabel pivot, pakai itu (termasuk GOLIVE/DROP/DROP MOM yang
+// biasanya tidak masuk daftar ini) -- kalau tidak, balik ke perilaku lama
+// (cuma yang statusnya salah satu dari 5 status "berjalan").
+function getLocListRows(filteredRows) {
+  if (activeCellFilter) {
+    return filteredRows.filter(r => {
+      if (activeCellFilter.column && r.pivot_group !== activeCellFilter.column) return false;
+      if (activeCellFilter.batch && r.batch !== activeCellFilter.batch) return false;
+      return true;
+    });
+  }
+  return filteredRows.filter(r => r.status);
+}
+
 // ── Build port/LOP pivot tables from filtered rows ────────────────
-function computePivotTables(filteredRows, batches, statuses) {
+// groupField: 'status' (5 status utama, dipakai chart) atau 'pivot_group'
+// (status utama + GOLIVE/DROP/DROP MOM, dipakai tabel Rekap Port & LOP).
+function computePivotTables(filteredRows, batches, statuses, groupField = 'status') {
   const pivotPort = {};
   const pivotLop = {};
   const ensure = (b) => {
@@ -231,10 +290,11 @@ function computePivotTables(filteredRows, batches, statuses) {
   };
   batches.forEach(ensure);
   filteredRows.forEach(r => {
-    if (!r.status) return;
+    const key = r[groupField];
+    if (!key) return;
     ensure(r.batch);
-    pivotPort[r.batch][r.status] += (r.port || 0);
-    pivotLop[r.batch][r.status] += 1;
+    pivotPort[r.batch][key] += (r.port || 0);
+    pivotLop[r.batch][key] += 1;
   });
 
   function buildTable(pivot) {
@@ -340,19 +400,25 @@ function refreshAll() {
   updateBranchDropdownLabel();
   refreshStats(filtered);
 
-  const { portTable, lopTable } = computePivotTables(filtered, dashboardCache.batches, dashboardCache.statuses);
-  renderCombinedTable(document.getElementById('pivotTableWrap'), portTable, lopTable, dashboardCache.statuses);
+  // Tabel "Rekap Port & LOP per Batch": DROP MOM, DROP, 5 status utama,
+  // GOLIVE (lihat config.PIVOT_COLUMNS di backend) -- beda dari chart di
+  // bawah yang tetap 5 status utama saja.
+  const pivotColumns = dashboardCache.pivot_columns || dashboardCache.statuses;
+  const { portTable, lopTable } = computePivotTables(filtered, dashboardCache.batches, pivotColumns, 'pivot_group');
+  renderCombinedTable(document.getElementById('pivotTableWrap'), portTable, lopTable, pivotColumns);
 
   try {
     if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
-    renderChart(lopTable, dashboardCache.statuses);
+    const chartLopTable = computePivotTables(filtered, dashboardCache.batches, dashboardCache.statuses, 'status').lopTable;
+    renderChart(chartLopTable, dashboardCache.statuses);
   } catch (e) {
     document.querySelector('.chart-card').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
   }
 
   renderDetailTable(filtered);
   renderBH(filtered);
-  renderLocList(filtered.filter(r => r.status), document.getElementById('q').value);
+  renderCellFilterChip();
+  renderLocList(getLocListRows(filtered), document.getElementById('q').value);
 }
 
 document.getElementById('branchFilterGrid').addEventListener('change', (e) => {
@@ -566,7 +632,7 @@ async function loadDashboard() {
 }
 
 document.getElementById('q').addEventListener('input', (e) => {
-  if (dashboardCache) renderLocList(getFilteredRows().filter(r => r.status), e.target.value);
+  if (dashboardCache) renderLocList(getLocListRows(getFilteredRows()), e.target.value);
 });
 
 let currentExtraValues = {};
@@ -579,7 +645,7 @@ let currentDocumentTypesByStatus = {};
 
 async function openRow(rowNum) {
   selectedRow = rowNum;
-  if (dashboardCache) renderLocList(getFilteredRows().filter(r => r.status), document.getElementById('q').value);
+  if (dashboardCache) renderLocList(getLocListRows(getFilteredRows()), document.getElementById('q').value);
 
   const panel = document.getElementById('updatePanel');
   panel.innerHTML = '<div class="skeleton">Memuat baris...</div>';

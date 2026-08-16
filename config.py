@@ -87,6 +87,14 @@ PIVOT_STATUS_GROUPS = {
     "DROP MOM": ["01. DROP MOM"],
 }
 
+# Urutan kolom di tabel "Rekap Port & LOP per Batch": DROP MOM & DROP
+# ditaruh di SEBELUM Perijinan, GOLIVE ditaruh persis SETELAH Finish
+# Instalasi -- bukan digabung di ujung seperti sebelumnya (dulu inline di
+# sheets_service.py: DASHBOARD_STATUSES + list(PIVOT_STATUS_GROUPS.keys())).
+# "08. PEMBERKASAN" sengaja TIDAK dimasukkan (rencananya jadi halaman
+# terpisah nanti).
+PIVOT_COLUMNS = ["DROP MOM", "DROP"] + DASHBOARD_STATUSES + ["GOLIVE"]
+
 # Nilai di kolom BH yang tidak ditampilkan di "Kategori Drop" (nyasar dari
 # input manual, duplikat status Z).
 BH_EXCLUDE_VALUES = ["10. BAST"]

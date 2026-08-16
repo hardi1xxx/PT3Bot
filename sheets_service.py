@@ -391,7 +391,7 @@ def get_dashboard_data():
 
     return {
         "statuses": config.DASHBOARD_STATUSES,
-        "pivot_columns": config.DASHBOARD_STATUSES + list(config.PIVOT_STATUS_GROUPS.keys()),
+        "pivot_columns": config.PIVOT_COLUMNS,
         "batches": batch_order,
         "branches": sorted(branch_set, key=lambda b: b.lower()),
         "rows": rows,
