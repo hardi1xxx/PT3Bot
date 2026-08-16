@@ -301,12 +301,13 @@ STATUS_POTENSI = "3.OGP DEPLOY"
 SHEET_NAME_TARGET = os.environ.get("SHEET_NAME_TARGET", "TARGET")
 HEADER_ROW_TARGET = 1
 DATA_START_ROW_TARGET = 2
-# 1 baris = 1 Regional + 1 Bulan. TARGET PORT = total; PT2/PT3 = pembagiannya.
+# Urutan kolom sebenarnya: REGIONAL, PROGRAM, BULAN, TARGET PORT (1 baris
+# = 1 Regional + 1 Program (PT2/PT3) + 1 Bulan -- BUKAN kolom PT2/PT3
+# terpisah seperti asumsi sebelumnya).
 COL_TARGET_REGIONAL = "A"
-COL_TARGET_BULAN = "B"
-COL_TARGET_PORT = "C"
-COL_TARGET_PT2 = "D"
-COL_TARGET_PT3 = "E"
+COL_TARGET_PROGRAM = "B"
+COL_TARGET_BULAN = "C"
+COL_TARGET_PORT = "D"
 
 MONTH_NAMES_ID = [
     "januari", "februari", "maret", "april", "mei", "juni",
