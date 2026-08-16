@@ -1156,15 +1156,21 @@ def _parse_month_to_num(raw):
 
 
 def get_target_data():
-    """List of {regional, program(PT2/PT3 atau ""), month(1-12), target_port}
-    dari sheet TARGET. 1 baris sheet = 1 Regional + 1 Program + 1 Bulan."""
+    """List of {regional, program("PT2"/"PT3"), month(1-12), target_port}
+    dari sheet TARGET. 1 baris sheet = 1 Regional + 1 Bulan, dengan target
+    PT2 & PT3 di KOLOM TERPISAH (config.COL_TARGET_PT2 / COL_TARGET_PT3) --
+    BUKAN 1 kolom "program" seperti yang diasumsikan versi sebelumnya
+    (itu penyebab AttributeError: config.COL_TARGET_PROGRAM tidak pernah
+    ada). Tiap baris sheet dipecah jadi 2 entri di sini (satu per program)
+    supaya konsumennya (get_fbb_summary) tetap bisa lookup per program
+    seperti biasa, tanpa perlu ubah apapun di situ."""
     ws = get_target_worksheet()
     all_values = _cached_get_all_values(ws)
     idx = {
         "regional": _col_to_index(config.COL_TARGET_REGIONAL) - 1,
-        "program": _col_to_index(config.COL_TARGET_PROGRAM) - 1,
         "bulan": _col_to_index(config.COL_TARGET_BULAN) - 1,
-        "target_port": _col_to_index(config.COL_TARGET_PORT) - 1,
+        "pt2": _col_to_index(config.COL_TARGET_PT2) - 1,
+        "pt3": _col_to_index(config.COL_TARGET_PT3) - 1,
     }
     data_rows = all_values[config.DATA_START_ROW_TARGET - 1:]
     targets = []
@@ -1173,15 +1179,16 @@ def get_target_data():
             i = idx[key]
             return row[i].strip() if i < len(row) else ""
         regional = cell("regional")
-        program = _norm_label(cell("program"))
         month_num = _parse_month_to_num(cell("bulan"))
         if not regional or not month_num:
             continue
         targets.append({
-            "regional": regional,
-            "program": program,
-            "month": month_num,
-            "target_port": _to_number(cell("target_port")),
+            "regional": regional, "program": "PT2", "month": month_num,
+            "target_port": _to_number(cell("pt2")),
+        })
+        targets.append({
+            "regional": regional, "program": "PT3", "month": month_num,
+            "target_port": _to_number(cell("pt3")),
         })
     return targets
 
