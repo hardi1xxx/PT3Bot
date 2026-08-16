@@ -59,12 +59,33 @@ def get_client():
         return _gspread_client
 
 
+def _required_min_col_index():
+    """Kolom paling kanan yang dipakai konfigurasi saat ini (target_fi +
+    semua link_col/log_col dokumen) -- dipakai buat mastiin grid sheet
+    cukup lebar, biar nggak kena 'Range exceeds grid limits' pas nulis ke
+    kolom yang belum ada di sheet (mis. BT-BW yang lebih kanan dari BS)."""
+    cols = [config.COL_TARGET_FI]
+    for meta in config.DOCUMENT_TYPES.values():
+        cols.append(meta["link_col"])
+        cols.append(meta["log_col"])
+    return max(_col_to_index(c) for c in cols)
+
+
+def _ensure_min_cols(ws, min_col_index: int):
+    """Auto-expand grid worksheet kalau lebar sheet saat ini kurang dari
+    yang dibutuhkan konfigurasi -- sekali per proses (dicek tiap
+    get_worksheet() pertama kali buka worksheet)."""
+    if ws.col_count < min_col_index:
+        ws.add_cols(min_col_index - ws.col_count)
+
+
 def get_worksheet():
     global _worksheet
     if _worksheet is None:
         client = get_client()
         sh = client.open_by_key(config.SPREADSHEET_ID)
         _worksheet = sh.worksheet(config.SHEET_NAME)
+        _ensure_min_cols(_worksheet, _required_min_col_index())
     return _worksheet
 
 
