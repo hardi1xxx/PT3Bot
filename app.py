@@ -53,6 +53,7 @@ def api_row(row_num):
             "document_types_by_status": config.DOCUMENT_TYPES_BY_STATUS,
             "progress_stages": config.PROGRESS_STAGES,
             "document_keys_hidden": config.DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE,
+            "document_upload_required": config.DOCUMENT_UPLOAD_REQUIRED,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -222,6 +223,7 @@ def update_form(row_num):
         pre_finish_install_statuses=config.PRE_FINISH_INSTALL_STATUSES,
         document_types=config.DOCUMENT_TYPES,
         document_modes=sheets_service.get_document_ui_modes(snapshot["status_z"]),
+        document_upload_required=config.DOCUMENT_UPLOAD_REQUIRED,
         today_iso=datetime.date.today().isoformat(),
     )
 

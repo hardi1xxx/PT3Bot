@@ -76,7 +76,7 @@
       <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
         <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
           <strong>{{ doc.label }}</strong>
-          <span style="font-size:0.72rem; color:var(--muted);">wajib saat {{ doc.required_status }}</span>
+          <span style="font-size:0.72rem; color:var(--muted);">{{ 'wajib saat ' + doc.required_status if document_upload_required else 'opsional sementara' }}</span>
         </div>
         {% if doc.url %}
           <div style="font-size:0.8rem; margin:4px 0;"><a href="{{ doc.url }}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>

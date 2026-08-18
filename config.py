@@ -405,6 +405,13 @@ DOCUMENT_TYPES = {
 # memblokir simpan status Golive padahal tidak ada cara upload-nya di sini.
 DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE = ["bast"]
 
+# Sementara DIMATIKAN: upload masih error (HttpError) di Railway, jadi
+# jangan sampai LOP kepending gara-gara dokumen wajib yang gagal keupload.
+# Upload tetap bisa dicoba (fitur tidak dihapus) -- ini cuma matiin
+# BLOKIR-nya kalau kosong. Set True lagi begitu penyebab HttpError-nya
+# sudah ketemu & fix.
+DOCUMENT_UPLOAD_REQUIRED = False
+
 # Reverse index: status Z -> daftar doc_key yang wajib di status itu
 # (BAST dikecualikan -- lihat DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE di atas).
 DOCUMENT_TYPES_BY_STATUS = {}

@@ -576,6 +576,8 @@ def validate_documents_for_status(row_num: int, z_value: str):
     link-nya di sheet (baru diupload sesi ini, atau sudah pernah ada dari
     update sebelumnya -- tidak perlu upload ulang tiap kali update).
     Returns (ok: bool, message: str)."""
+    if not config.DOCUMENT_UPLOAD_REQUIRED:
+        return True, ""
     required_keys = config.DOCUMENT_TYPES_BY_STATUS.get(z_value, [])
     if not required_keys:
         return True, ""

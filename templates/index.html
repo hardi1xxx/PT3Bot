@@ -644,6 +644,7 @@ let currentDocuments = {};
 let currentDocumentTypesByStatus = {};
 let currentProgressStages = [];
 let currentDocumentKeysHidden = [];
+let currentDocumentUploadRequired = true;
 
 async function openRow(rowNum) {
   selectedRow = rowNum;
@@ -657,7 +658,7 @@ async function openRow(rowNum) {
     const json = await res.json();
     if (!json.ok) { panel.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
 
-    const { snapshot, label, z_options, aa_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses, document_types_by_status, progress_stages, document_keys_hidden } = json;
+    const { snapshot, label, z_options, aa_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses, document_types_by_status, progress_stages, document_keys_hidden, document_upload_required } = json;
     currentExtraValues = snapshot.extra_fields || {};
     currentExtraFieldsByStatus = extra_fields_by_status || {};
     currentExtraFieldMeta = extra_field_meta || {};
@@ -667,6 +668,7 @@ async function openRow(rowNum) {
     currentDocumentTypesByStatus = document_types_by_status || {};
     currentProgressStages = progress_stages || [];
     currentDocumentKeysHidden = document_keys_hidden || [];
+    currentDocumentUploadRequired = document_upload_required !== false;
 
     panel.innerHTML = `
       <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${esc(label.ihld)} · ${esc(label.lokasi)}</div>
@@ -765,9 +767,10 @@ function renderDocumentsSection(rowNum, currentStatusZ) {
     const mode = getDocumentMode(doc, currentStatusZ);
     if (mode === 'hidden') return '';
 
+    const isReallyRequired = mode === 'upload' && currentDocumentUploadRequired;
     const fileBlock = doc.url
       ? `<div style="font-size:0.8rem; margin:4px 0;"><a href="${esc(doc.url)}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>`
-      : `<div style="font-size:0.8rem; color:${mode === 'upload' ? '#dc2626' : 'var(--muted)'}; margin:4px 0;">${mode === 'upload' ? 'Belum diupload — wajib untuk status ini' : 'Belum diupload'}</div>`;
+      : `<div style="font-size:0.8rem; color:${isReallyRequired ? '#dc2626' : 'var(--muted)'}; margin:4px 0;">${isReallyRequired ? 'Belum diupload — wajib untuk status ini' : 'Belum diupload'}</div>`;
     const logBlock = doc.log ? `<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">${esc(doc.log)}</div>` : '';
 
     const uploadControls = mode === 'upload' ? `
@@ -781,7 +784,7 @@ function renderDocumentsSection(rowNum, currentStatusZ) {
       <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:0.85rem;">
           <strong>${esc(doc.label)}</strong>
-          <span style="font-size:0.72rem; color:var(--muted);">wajib saat ${esc(doc.required_status)}</span>
+          <span style="font-size:0.72rem; color:var(--muted);">${currentDocumentUploadRequired ? `wajib saat ${esc(doc.required_status)}` : 'opsional sementara'}</span>
         </div>
         ${fileBlock}
         ${logBlock}
@@ -881,7 +884,7 @@ async function saveUpdate(rowNum) {
     msg.innerHTML = '<div class="flash error">Target Finish Instalasi (kolom AK) wajib diisi untuk status sebelum Finish Instalasi.</div>';
     return;
   }
-  const requiredDocKeys = currentDocumentTypesByStatus[status_z] || [];
+  const requiredDocKeys = currentDocumentUploadRequired ? (currentDocumentTypesByStatus[status_z] || []) : [];
   const missingDocs = requiredDocKeys
     .filter(key => !(currentDocuments[key] && currentDocuments[key].url))
     .map(key => currentDocuments[key] ? currentDocuments[key].label : key);
