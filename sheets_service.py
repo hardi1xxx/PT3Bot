@@ -28,6 +28,13 @@ _client_lock = threading.Lock()
 _gspread_client = None
 _worksheet = None
 
+# Status fisik (kolom Z) yang dianggap "sudah golive ke atas" -- dipakai
+# kalender Target FI/Golive di dashboard (get_dashboard_data) untuk
+# menentukan tanggal mana yang dipakai (Golive kolom BD, atau Target FI
+# kolom AK kalau belum sampai tahap ini). Dicocokkan lewat _normalize_status
+# (uppercase + tanpa spasi), jadi variasi format tetap kena.
+GOLIVE_STAGE_STATUSES = {"06.GOLIVE", "07.UT", "09.REKON", "10.BAST"}
+
 
 def _col_to_index(col_letters: str) -> int:
     """'A' -> 1, 'Z' -> 26, 'AA' -> 27, etc."""
@@ -360,6 +367,7 @@ def get_dashboard_data():
         "cpp_o": _col_to_index(config.COL_CPP_O) - 1,
         "target_fi": _col_to_index(config.COL_TARGET_FI) - 1,
         "regional": _col_to_index(getattr(config, "COL_REGIONAL", "T")) - 1,
+        "golive_date": _col_to_index(getattr(config, "COL_GOLIVE_DATE", "BD")) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW - 1:]
@@ -393,6 +401,14 @@ def get_dashboard_data():
             batch_order.append(batch_val)
 
         target_fi_date = _parse_date(cell("target_fi"))
+        golive_date_date = _parse_date(cell("golive_date"))
+
+        # Kalender: kalau status fisik (kolom Z) sudah salah satu dari
+        # tahap golive ke atas, pakai tanggal Golive (kolom BD); kalau
+        # belum, tetap pakai Target FI (kolom AK).
+        is_golive_stage = _normalize_status(status_raw) in GOLIVE_STAGE_STATUSES
+        cal_date = golive_date_date if is_golive_stage else target_fi_date
+        cal_date_source = "golive" if (is_golive_stage and golive_date_date) else ("target_fi" if cal_date else None)
 
         rows.append({
             "row": row_num,
@@ -414,6 +430,11 @@ def get_dashboard_data():
             "bh": cell("bh") if cell("bh").strip().upper() not in {v.strip().upper() for v in config.BH_EXCLUDE_VALUES} else "",
             "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
             "target_fi_display": target_fi_date.strftime("%d/%m/%Y") if target_fi_date else None,
+            "golive_date_iso": golive_date_date.isoformat() if golive_date_date else None,
+            "golive_date_display": golive_date_date.strftime("%d/%m/%Y") if golive_date_date else None,
+            "cal_date_iso": cal_date.isoformat() if cal_date else None,
+            "cal_date_display": cal_date.strftime("%d/%m/%Y") if cal_date else None,
+            "cal_date_source": cal_date_source,  # "golive" atau "target_fi"
             "regional": cell("regional") or "(TANPA REGIONAL)",
         })
 

@@ -117,7 +117,7 @@
 
   <div class="card fi-cal-card">
     <div class="fi-cal-head">
-      <div class="fi-cal-title">Kalender Target FI <span class="hint" style="font-weight:400;">(kolom AK)</span></div>
+      <div class="fi-cal-title">Kalender Target FI &amp; Golive <span class="hint" style="font-weight:400;">(AK / BD)</span></div>
       <div class="fi-cal-nav">
         <button type="button" id="fiCalPrevBtn" title="Bulan sebelumnya">&#8249;</button>
         <div class="fi-cal-month-label" id="fiCalMonthLabel">–</div>
@@ -126,9 +126,9 @@
       </div>
     </div>
     <div class="fi-cal-legend">
-      <span><span class="dot" style="background:#dc2626;"></span>Lewat target, belum Finish Instalasi</span>
-      <span><span class="dot" style="background:var(--brand-blue,#29467a);"></span>Terjadwal</span>
-      <span><span class="dot" style="background:#16a34a;"></span>Sudah Finish Instalasi</span>
+      <span><span class="dot" style="background:#dc2626;"></span>Lewat Target FI, belum Golive</span>
+      <span><span class="dot" style="background:var(--brand-blue,#29467a);"></span>Terjadwal (Target FI)</span>
+      <span><span class="dot" style="background:#16a34a;"></span>Sudah Golive (GOLIVE/UT/REKON/BAST)</span>
     </div>
     <div class="fi-cal-grid" id="fiCalGrid"><div class="skeleton">Memuat kalender...</div></div>
   </div>
@@ -331,11 +331,18 @@ function sortRegionals(names) {
 }
 
 function computeRegionalBranchTable(filteredRows, pivotColumns) {
-  // regional -> branch -> status -> count, plus regional-level & grand totals
+  // regional -> branch -> status -> { lop, port }, plus regional-level &
+  // grand totals (Port dari kolom AG, sama field 'port' yang sudah dipakai
+  // tabel "Rekap Port & LOP per Batch").
+  const emptyStatusMap = () => {
+    const m = {};
+    pivotColumns.forEach(s => { m[s] = { lop: 0, port: 0 }; });
+    return m;
+  };
+
   const regionals = {};
   const regionalTotals = {};
-  const grandTotal = {};
-  pivotColumns.forEach(s => { grandTotal[s] = 0; });
+  const grandTotal = emptyStatusMap();
 
   filteredRows.forEach(r => {
     const key = r.pivot_group;
@@ -345,17 +352,18 @@ function computeRegionalBranchTable(filteredRows, pivotColumns) {
 
     if (!regionals[regional]) {
       regionals[regional] = {};
-      regionalTotals[regional] = {};
-      pivotColumns.forEach(s => { regionalTotals[regional][s] = 0; });
+      regionalTotals[regional] = emptyStatusMap();
     }
     if (!regionals[regional][branch]) {
-      regionals[regional][branch] = {};
-      pivotColumns.forEach(s => { regionals[regional][branch][s] = 0; });
+      regionals[regional][branch] = emptyStatusMap();
     }
 
-    regionals[regional][branch][key] += 1;
-    regionalTotals[regional][key] += 1;
-    grandTotal[key] += 1;
+    regionals[regional][branch][key].lop += 1;
+    regionals[regional][branch][key].port += (r.port || 0);
+    regionalTotals[regional][key].lop += 1;
+    regionalTotals[regional][key].port += (r.port || 0);
+    grandTotal[key].lop += 1;
+    grandTotal[key].port += (r.port || 0);
   });
 
   const orderedRegionals = sortRegionals(Object.keys(regionals)).map(regional => ({
@@ -369,7 +377,23 @@ function computeRegionalBranchTable(filteredRows, pivotColumns) {
 }
 
 function rbRowTotal(values, pivotColumns) {
-  return pivotColumns.reduce((sum, s) => sum + (values[s] || 0), 0);
+  return pivotColumns.reduce((acc, s) => {
+    acc.lop += values[s].lop;
+    acc.port += values[s].port;
+    return acc;
+  }, { lop: 0, port: 0 });
+}
+
+// Klik angka (LOP atau Port) di tabel Regional & Branch -> filter daftar
+// "Lokasi Sedang Berjalan & Update Status" di bawah, sama seperti klik
+// tabel "Rekap Port & LOP per Batch" -- pakai activeCellFilter yang sama,
+// cuma nambah dimensi regional/branch di samping batch/column.
+function setRegionalCellFilter(regional, branch, column) {
+  if (regional === null && branch === null && column === null) { clearCellFilter(); return; }
+  activeCellFilter = { regional, branch, column };
+  refreshAll();
+  const locCard = document.getElementById('locList');
+  if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function renderRegionalBranchTable(filteredRows, pivotColumns) {
@@ -384,25 +408,36 @@ function renderRegionalBranchTable(filteredRows, pivotColumns) {
 
   const shortLabel = s => esc(s.replace(/^\d+\.\s*/, ''));
 
-  let html = '<table class="rb-table"><thead><tr><th>Regional / Branch</th>';
-  pivotColumns.forEach(s => { html += `<th>${shortLabel(s)}</th>`; });
-  html += '<th class="rb-total-col">Total</th></tr></thead><tbody>';
+  let html = '<table class="rb-table pivot-combined"><thead><tr><th rowspan="2">Regional / Branch</th>';
+  pivotColumns.forEach(s => { html += `<th colspan="2">${shortLabel(s)}</th>`; });
+  html += '<th colspan="2" class="rb-total-col">Total</th></tr><tr>';
+  pivotColumns.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th class="rb-total-col">LOP</th><th class="rb-total-col">Port</th></tr></thead><tbody>';
+
+  function cellsHtml(values, regionalArg, branchArg) {
+    let out = '';
+    pivotColumns.forEach(s => {
+      const v = values[s];
+      const clickAttr = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk filter daftar di bawah" onclick="setRegionalCellFilter(${regionalArg}, ${branchArg}, '${escJs(s)}')"`;
+      out += `<td ${clickAttr}>${fmtNum(v.lop)}</td><td ${clickAttr}>${fmtNum(v.port)}</td>`;
+    });
+    const total = rbRowTotal(values, pivotColumns);
+    const totalClickAttr = `class="rb-total-col pivot-clickable" style="cursor:pointer;" title="Klik untuk filter daftar di bawah" onclick="setRegionalCellFilter(${regionalArg}, ${branchArg}, null)"`;
+    out += `<td ${totalClickAttr}>${fmtNum(total.lop)}</td><td ${totalClickAttr}>${fmtNum(total.port)}</td>`;
+    return out;
+  }
 
   orderedRegionals.forEach(({ regional, totals, branches }) => {
-    html += `<tr class="rb-regional-row"><td>${esc(regional)}</td>`;
-    pivotColumns.forEach(s => { html += `<td>${fmtNum(totals[s])}</td>`; });
-    html += `<td class="rb-total-col">${fmtNum(rbRowTotal(totals, pivotColumns))}</td></tr>`;
+    const regionalArg = `'${escJs(regional)}'`;
+    html += `<tr class="rb-regional-row"><td>${esc(regional)}</td>${cellsHtml(totals, regionalArg, 'null')}</tr>`;
 
     branches.forEach(({ branch, values }) => {
-      html += `<tr class="rb-branch-row"><td>${esc(branch)}</td>`;
-      pivotColumns.forEach(s => { html += `<td>${fmtNum(values[s])}</td>`; });
-      html += `<td class="rb-total-col">${fmtNum(rbRowTotal(values, pivotColumns))}</td></tr>`;
+      const branchArg = `'${escJs(branch)}'`;
+      html += `<tr class="rb-branch-row"><td>${esc(branch)}</td>${cellsHtml(values, regionalArg, branchArg)}</tr>`;
     });
   });
 
-  html += `<tr class="rb-total-row"><td>TOTAL</td>`;
-  pivotColumns.forEach(s => { html += `<td>${fmtNum(grandTotal[s])}</td>`; });
-  html += `<td class="rb-total-col">${fmtNum(rbRowTotal(grandTotal, pivotColumns))}</td></tr>`;
+  html += `<tr class="rb-total-row"><td>TOTAL</td>${cellsHtml(grandTotal, 'null', 'null')}</tr>`;
   html += '</tbody></table>';
 
   el.innerHTML = html;
@@ -434,19 +469,24 @@ function renderCellFilterChip() {
   if (!activeCellFilter) { el.innerHTML = ''; return; }
   const parts = [];
   if (activeCellFilter.batch) parts.push(`Batch: ${esc(activeCellFilter.batch)}`);
+  if (activeCellFilter.regional) parts.push(`Regional: ${esc(activeCellFilter.regional)}`);
+  if (activeCellFilter.branch) parts.push(`Branch: ${esc(activeCellFilter.branch)}`);
   if (activeCellFilter.column) parts.push(`Status: ${esc(activeCellFilter.column.replace(/^\d+\.\s*/, ''))}`);
   el.innerHTML = `<span class="badge status">${parts.join(' · ')} <a href="#" onclick="clearCellFilter(); return false;" style="margin-left:6px; color:inherit; text-decoration:underline;">Hapus filter</a></span>`;
 }
 
 // Daftar untuk "Lokasi Sedang Berjalan & Update Status": kalau ada filter
-// dari klik tabel pivot, pakai itu (termasuk GOLIVE/DROP/DROP MOM yang
-// biasanya tidak masuk daftar ini) -- kalau tidak, balik ke perilaku lama
-// (cuma yang statusnya salah satu dari 5 status "berjalan").
+// dari klik tabel pivot (Batch, atau Regional/Branch), pakai itu (termasuk
+// GOLIVE/DROP/DROP MOM yang biasanya tidak masuk daftar ini) -- kalau
+// tidak, balik ke perilaku lama (cuma yang statusnya salah satu dari 5
+// status "berjalan").
 function getLocListRows(filteredRows) {
   if (activeCellFilter) {
     return filteredRows.filter(r => {
       if (activeCellFilter.column && r.pivot_group !== activeCellFilter.column) return false;
       if (activeCellFilter.batch && r.batch !== activeCellFilter.batch) return false;
+      if (activeCellFilter.regional && r.regional !== activeCellFilter.regional) return false;
+      if (activeCellFilter.branch && r.branch !== activeCellFilter.branch) return false;
       return true;
     });
   }
@@ -658,12 +698,15 @@ function renderChart(lopTable, statuses) {
   `).join('');
 }
 
-// ── Kalender Target FI (kolom AK) ─────────────────────────────────
+// ── Kalender Target FI (kolom AK) & Golive (kolom BD) ─────────────
+// Tanggal yang dipakai per baris (cal_date_iso) sudah ditentukan di
+// backend (get_dashboard_data): kalau status fisik (kolom Z) sudah salah
+// satu dari 06.GOLIVE/07.UT/09.REKON/10.BAST, pakai tanggal Golive
+// (kolom BD); kalau belum, pakai Target FI (kolom AK). cal_date_source
+// bilang tanggal mana yang lagi dipakai ("golive" atau "target_fi").
 function fiCalClassify(row) {
-  // 'over' = lewat target & belum Finish Instalasi, 'done' = sudah Finish
-  // Instalasi, 'upcoming' = terjadwal (hari ini/masa depan, belum selesai).
-  if (row.status === '05. FINISH INSTALASI') return 'done';
-  if (row.target_fi_iso < today0.toISOString().slice(0, 10)) return 'over';
+  if (row.cal_date_source === 'golive') return 'done';
+  if (row.cal_date_iso < today0.toISOString().slice(0, 10)) return 'over';
   return 'upcoming';
 }
 
@@ -671,12 +714,13 @@ function renderFiCalendar(filteredRows) {
   const monthLabel = document.getElementById('fiCalMonthLabel');
   if (monthLabel) monthLabel.textContent = `${FI_CAL_MONTH_NAMES[fiCalMonth]} ${fiCalYear}`;
 
-  // Index semua baris yang punya Target FI (kolom AK) berdasarkan tanggal,
-  // supaya bisa dipakai lintas bulan (navigasi prev/next tanpa fetch ulang).
+  // Index semua baris yang punya tanggal kalender (cal_date_iso) berdasarkan
+  // tanggal, supaya bisa dipakai lintas bulan (navigasi prev/next tanpa
+  // fetch ulang).
   fiCalDayIndex = {};
   filteredRows.forEach(r => {
-    if (!r.target_fi_iso) return;
-    (fiCalDayIndex[r.target_fi_iso] = fiCalDayIndex[r.target_fi_iso] || []).push(r);
+    if (!r.cal_date_iso) return;
+    (fiCalDayIndex[r.cal_date_iso] = fiCalDayIndex[r.cal_date_iso] || []).push(r);
   });
 
   const grid = document.getElementById('fiCalGrid');
@@ -747,7 +791,7 @@ function openFiCalDay(iso) {
   const modalBox = document.getElementById('bhModalBox');
   modalBox.innerHTML = `
     <div class="modal-header">
-      <div class="modal-title">Target FI — ${fiCalFmtDate(iso)} <span class="badge">${fmtNum(items.length)}</span></div>
+      <div class="modal-title">Target FI / Golive — ${fiCalFmtDate(iso)} <span class="badge">${fmtNum(items.length)}</span></div>
       <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
     </div>
     <div class="loc-list" style="margin-top:10px;" id="fiCalModalList">
@@ -757,9 +801,10 @@ function openFiCalDay(iso) {
           <div class="meta">
             <span class="badge">${esc(r.batch) || '-'}</span>
             ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
+            <span class="badge">${r.cal_date_source === 'golive' ? 'Golive' : 'Target FI'}: ${esc(r.cal_date_display) || '-'}</span>
           </div>
         </div>
-      `).join('') : '<div class="empty-state">Tidak ada lokasi dengan Target FI di tanggal ini.</div>'}
+      `).join('') : '<div class="empty-state">Tidak ada lokasi dengan Target FI/Golive di tanggal ini.</div>'}
     </div>
   `;
   document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
