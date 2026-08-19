@@ -240,7 +240,8 @@ function refreshFbb() {
 function renderRegionalTable(filteredRows) {
   const table = document.getElementById('fbbRegionalTable');
   const programs = fbbCache.programs;
-  const regionals = Array.from(new Set(filteredRows.map(r => r.regional))).sort((a, b) => a.localeCompare(b));
+  const regionalsRaw = Array.from(new Set(filteredRows.map(r => r.regional))).map(reg => ({ regional: reg }));
+  const regionals = sortRegionalsForDisplay(regionalsRaw).map(r => r.regional);
 
   if (!regionals.length) { table.innerHTML = '<tr><td class="empty-state">Tidak ada data.</td></tr>'; return; }
 
@@ -349,6 +350,22 @@ function summaryRowHtml(label, m, regionalKey, programKey, opts) {
   `;
 }
 
+// Urutan tampilan tetap untuk baris Regional pada tabel ringkasan,
+// terlepas dari urutan yang dikembalikan backend. Regional yang tidak
+// ada di daftar ini akan ditampilkan di akhir, urut alfabetis.
+const FBB_REGIONAL_DISPLAY_ORDER = ['BANTEN', 'JAKARTA', 'EASTERN JABOTABEK', 'JABAR'];
+
+function sortRegionalsForDisplay(regionals) {
+  return regionals.slice().sort((a, b) => {
+    const ia = FBB_REGIONAL_DISPLAY_ORDER.indexOf((a.regional || '').toUpperCase());
+    const ib = FBB_REGIONAL_DISPLAY_ORDER.indexOf((b.regional || '').toUpperCase());
+    const ra = ia === -1 ? FBB_REGIONAL_DISPLAY_ORDER.length : ia;
+    const rb = ib === -1 ? FBB_REGIONAL_DISPLAY_ORDER.length : ib;
+    if (ra !== rb) return ra - rb;
+    return (a.regional || '').localeCompare(b.regional || '');
+  });
+}
+
 function renderSummaryTable(data) {
   const wrap = document.getElementById('fbbSummaryTableWrap');
   const monthLabel = data.current_month_label;
@@ -380,7 +397,7 @@ function renderSummaryTable(data) {
   html += '<th rowspan="2">ACH Total</th>';
   html += '</tr><tr></tr></thead><tbody>';
 
-  data.regionals.forEach(reg => {
+  sortRegionalsForDisplay(data.regionals).forEach(reg => {
     html += summaryRowHtml(reg.regional, reg.combined, reg.regional, null, { rowClass: 'regional-row' });
     data.programs.forEach(prog => {
       const m = reg.programs[prog];

@@ -358,6 +358,8 @@ def get_dashboard_data():
         "port_m": _col_to_index(config.COL_PORT_M) - 1,
         "boq_n": _col_to_index(config.COL_BOQ_N) - 1,
         "cpp_o": _col_to_index(config.COL_CPP_O) - 1,
+        "target_fi": _col_to_index(config.COL_TARGET_FI) - 1,
+        "regional": _col_to_index(getattr(config, "COL_REGIONAL", "T")) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW - 1:]
@@ -390,6 +392,8 @@ def get_dashboard_data():
             seen_batches.add(batch_val)
             batch_order.append(batch_val)
 
+        target_fi_date = _parse_date(cell("target_fi"))
+
         rows.append({
             "row": row_num,
             "has_order": bool(order_val),
@@ -408,6 +412,9 @@ def get_dashboard_data():
             "boq_n": cell("boq_n"),
             "cpp_o": cell("cpp_o"),
             "bh": cell("bh") if cell("bh").strip().upper() not in {v.strip().upper() for v in config.BH_EXCLUDE_VALUES} else "",
+            "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
+            "target_fi_display": target_fi_date.strftime("%d/%m/%Y") if target_fi_date else None,
+            "regional": cell("regional") or "(TANPA REGIONAL)",
         })
 
     return {

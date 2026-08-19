@@ -5,6 +5,46 @@
 
 {% block content %}
 
+<style>
+  .split-half { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 22px; }
+  @media (max-width: 920px) { .split-half { grid-template-columns: 1fr; } }
+  .split-half > .card { margin-bottom: 0; }
+
+  .fi-cal-card { display: flex; flex-direction: column; }
+  .fi-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .fi-cal-title { font-weight: 800; font-size: 0.95rem; color: var(--text); }
+  .fi-cal-nav { display: flex; align-items: center; gap: 6px; }
+  .fi-cal-nav button { border: none; background: var(--panel-alt); color: var(--text); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; font-size: 0.85rem; line-height: 1; }
+  .fi-cal-nav button:hover { background: var(--brand-blue, #29467a); color: #fff; }
+  .fi-cal-month-label { font-weight: 700; font-size: 0.82rem; color: var(--muted); min-width: 108px; text-align: center; }
+  .fi-cal-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.7rem; color: var(--muted); margin-bottom: 10px; }
+  .fi-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .fi-cal-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .fi-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .fi-cal-daylabel { text-align: center; font-size: 0.64rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 0 6px; }
+  .fi-cal-cell { min-height: 52px; border-radius: 8px; background: var(--panel-alt); padding: 4px 5px; font-size: 0.72rem; display: flex; flex-direction: column; gap: 3px; }
+  .fi-cal-cell.fi-outside { opacity: 0.35; }
+  .fi-cal-cell.fi-today { outline: 2px solid var(--brand-blue, #29467a); outline-offset: -2px; }
+  .fi-cal-daynum { font-weight: 700; color: var(--text); }
+  .fi-cal-badges { display: flex; flex-wrap: wrap; gap: 3px; }
+  .fi-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 16px; padding: 0 4px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; color: #fff; cursor: pointer; line-height: 1; }
+  .fi-badge.fi-over { background: #dc2626; }
+  .fi-badge.fi-upcoming { background: var(--brand-blue, #29467a); }
+  .fi-badge.fi-done { background: #16a34a; }
+  .fi-cal-empty { font-size: 0.78rem; color: var(--muted); padding: 10px 2px; }
+
+  .rb-table { width: 100%; border-collapse: collapse; }
+  .rb-table th, .rb-table td { padding: 7px 10px; text-align: right; font-size: 0.82rem; border-bottom: 1px solid var(--border, #2a3550); white-space: nowrap; }
+  .rb-table thead th { background: var(--brand-blue, #29467a); color: #fff; text-align: center; position: sticky; top: 0; }
+  .rb-table th:first-child, .rb-table td:first-child { text-align: left; }
+  .rb-table tbody tr.rb-regional-row { font-weight: 800; background: var(--panel-alt); }
+  .rb-table tbody tr.rb-regional-row td { border-top: 2px solid var(--brand-blue, #29467a); border-bottom: 2px solid var(--brand-blue, #29467a); }
+  .rb-table tbody tr.rb-branch-row td:first-child { padding-left: 26px; color: var(--muted); font-weight: 400; }
+  .rb-table tbody tr.rb-total-row { font-weight: 800; background: var(--panel-alt); }
+  .rb-table tbody tr.rb-total-row td { border-top: 2px solid var(--brand-blue, #29467a); }
+  .rb-table td.rb-total-col, .rb-table th.rb-total-col { font-weight: 800; }
+</style>
+
 <!-- Stat cards -->
 <div class="stat-grid" id="statGrid">
   <div class="stat-card">
@@ -58,11 +98,40 @@
   <div class="pivot-table-wrap" id="pivotTableWrap"><div class="skeleton">Memuat data...</div></div>
 </div>
 
-<!-- Chart -->
-<div class="section-title">Distribusi Status Pekerjaan</div>
-<div class="card chart-card" style="margin-bottom:22px;">
-  <canvas id="statusChart" height="90"></canvas>
-  <div class="chart-legend" id="chartLegend"></div>
+<!-- Rekap Regional & Branch (kolom T & S) per status -->
+<div class="section-title">
+  Rekap Regional &amp; Branch per Status
+  <span class="hint">baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z)</span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
+</div>
+
+<!-- Chart + Kalender Target FI (kolom AK) berdampingan -->
+<div class="section-title">Distribusi Status Pekerjaan &amp; Kalender Target FI</div>
+<div class="split-half">
+  <div class="card chart-card">
+    <canvas id="statusChart" height="90"></canvas>
+    <div class="chart-legend" id="chartLegend"></div>
+  </div>
+
+  <div class="card fi-cal-card">
+    <div class="fi-cal-head">
+      <div class="fi-cal-title">Kalender Target FI <span class="hint" style="font-weight:400;">(kolom AK)</span></div>
+      <div class="fi-cal-nav">
+        <button type="button" id="fiCalPrevBtn" title="Bulan sebelumnya">&#8249;</button>
+        <div class="fi-cal-month-label" id="fiCalMonthLabel">–</div>
+        <button type="button" id="fiCalNextBtn" title="Bulan berikutnya">&#8250;</button>
+        <button type="button" class="btn-ghost btn-sm" id="fiCalTodayBtn" style="margin-left:4px;">Hari ini</button>
+      </div>
+    </div>
+    <div class="fi-cal-legend">
+      <span><span class="dot" style="background:#dc2626;"></span>Lewat target, belum Finish Instalasi</span>
+      <span><span class="dot" style="background:var(--brand-blue,#29467a);"></span>Terjadwal</span>
+      <span><span class="dot" style="background:#16a34a;"></span>Sudah Finish Instalasi</span>
+    </div>
+    <div class="fi-cal-grid" id="fiCalGrid"><div class="skeleton">Memuat kalender...</div></div>
+  </div>
 </div>
 
 <!-- Detail Lokasi table (di bawah chart) -->
@@ -117,6 +186,15 @@ let dashboardCache = null;   // { statuses, batches, branches, rows }
 let selectedRow = null;
 let statusChart = null;
 let bhCurrentLabel = null;
+
+// ── Kalender Target FI (kolom AK) ─────────────────────────────────
+const FI_CAL_MONTH_NAMES = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const FI_CAL_DAY_LABELS = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+const today0 = new Date(); today0.setHours(0,0,0,0);
+let fiCalYear = today0.getFullYear();
+let fiCalMonth = today0.getMonth(); // 0-indexed
+let fiCalDayIndex = {}; // iso date -> array of row records, refreshed on every render
+let fiCalCurrentIso = null; // dipakai modal 'kembali'
 
 function fmtNum(n) {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0);
@@ -229,6 +307,105 @@ function renderCombinedTable(el, portTable, lopTable, statuses) {
 
 function escJs(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// ── Rekap Regional & Branch (kolom T & S) per status ──────────────
+// Urutan regional yang diminta: BANTEN, JAKARTA, EASTERN, JABAR -- dicocokkan
+// dengan awalan nama regional asli di sheet (mis. "EASTERN JABOTABEK" tetap
+// cocok dengan "EASTERN"), case-insensitive. Regional yang tidak ada di
+// daftar ini ditaruh di akhir, urut abjad.
+const REGIONAL_ORDER_PREFIXES = ['BANTEN', 'JAKARTA', 'EASTERN', 'JABAR'];
+
+function regionalSortRank(name) {
+  const upper = (name || '').toUpperCase();
+  const idx = REGIONAL_ORDER_PREFIXES.findIndex(p => upper.startsWith(p));
+  return idx === -1 ? REGIONAL_ORDER_PREFIXES.length : idx;
+}
+
+function sortRegionals(names) {
+  return [...names].sort((a, b) => {
+    const rankDiff = regionalSortRank(a) - regionalSortRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    return a.toLowerCase().localeCompare(b.toLowerCase());
+  });
+}
+
+function computeRegionalBranchTable(filteredRows, pivotColumns) {
+  // regional -> branch -> status -> count, plus regional-level & grand totals
+  const regionals = {};
+  const regionalTotals = {};
+  const grandTotal = {};
+  pivotColumns.forEach(s => { grandTotal[s] = 0; });
+
+  filteredRows.forEach(r => {
+    const key = r.pivot_group;
+    if (!key) return;
+    const regional = r.regional || '(TANPA REGIONAL)';
+    const branch = r.branch || '(TANPA BRANCH)';
+
+    if (!regionals[regional]) {
+      regionals[regional] = {};
+      regionalTotals[regional] = {};
+      pivotColumns.forEach(s => { regionalTotals[regional][s] = 0; });
+    }
+    if (!regionals[regional][branch]) {
+      regionals[regional][branch] = {};
+      pivotColumns.forEach(s => { regionals[regional][branch][s] = 0; });
+    }
+
+    regionals[regional][branch][key] += 1;
+    regionalTotals[regional][key] += 1;
+    grandTotal[key] += 1;
+  });
+
+  const orderedRegionals = sortRegionals(Object.keys(regionals)).map(regional => ({
+    regional,
+    totals: regionalTotals[regional],
+    branches: Object.keys(regionals[regional]).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .map(branch => ({ branch, values: regionals[regional][branch] })),
+  }));
+
+  return { orderedRegionals, grandTotal };
+}
+
+function rbRowTotal(values, pivotColumns) {
+  return pivotColumns.reduce((sum, s) => sum + (values[s] || 0), 0);
+}
+
+function renderRegionalBranchTable(filteredRows, pivotColumns) {
+  const el = document.getElementById('regionalBranchTableWrap');
+  if (!el) return;
+  const { orderedRegionals, grandTotal } = computeRegionalBranchTable(filteredRows, pivotColumns);
+
+  if (!orderedRegionals.length) {
+    el.innerHTML = '<div class="empty-state">Belum ada data Regional (kolom T) / Branch (kolom S).</div>';
+    return;
+  }
+
+  const shortLabel = s => esc(s.replace(/^\d+\.\s*/, ''));
+
+  let html = '<table class="rb-table"><thead><tr><th>Regional / Branch</th>';
+  pivotColumns.forEach(s => { html += `<th>${shortLabel(s)}</th>`; });
+  html += '<th class="rb-total-col">Total</th></tr></thead><tbody>';
+
+  orderedRegionals.forEach(({ regional, totals, branches }) => {
+    html += `<tr class="rb-regional-row"><td>${esc(regional)}</td>`;
+    pivotColumns.forEach(s => { html += `<td>${fmtNum(totals[s])}</td>`; });
+    html += `<td class="rb-total-col">${fmtNum(rbRowTotal(totals, pivotColumns))}</td></tr>`;
+
+    branches.forEach(({ branch, values }) => {
+      html += `<tr class="rb-branch-row"><td>${esc(branch)}</td>`;
+      pivotColumns.forEach(s => { html += `<td>${fmtNum(values[s])}</td>`; });
+      html += `<td class="rb-total-col">${fmtNum(rbRowTotal(values, pivotColumns))}</td></tr>`;
+    });
+  });
+
+  html += `<tr class="rb-total-row"><td>TOTAL</td>`;
+  pivotColumns.forEach(s => { html += `<td>${fmtNum(grandTotal[s])}</td>`; });
+  html += `<td class="rb-total-col">${fmtNum(rbRowTotal(grandTotal, pivotColumns))}</td></tr>`;
+  html += '</tbody></table>';
+
+  el.innerHTML = html;
 }
 
 // Klik angka di tabel "Rekap Port & LOP per Batch" -> filter daftar
@@ -406,6 +583,7 @@ function refreshAll() {
   const pivotColumns = dashboardCache.pivot_columns || dashboardCache.statuses;
   const { portTable, lopTable } = computePivotTables(filtered, dashboardCache.batches, pivotColumns, 'pivot_group');
   renderCombinedTable(document.getElementById('pivotTableWrap'), portTable, lopTable, pivotColumns);
+  renderRegionalBranchTable(filtered, pivotColumns);
 
   try {
     if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
@@ -417,6 +595,7 @@ function refreshAll() {
 
   renderDetailTable(filtered);
   renderBH(filtered);
+  renderFiCalendar(filtered);
   renderCellFilterChip();
   renderLocList(getLocListRows(filtered), document.getElementById('q').value);
 }
@@ -477,6 +656,124 @@ function renderChart(lopTable, statuses) {
   legend.innerHTML = statuses.map((s, i) => `
     <span><span class="dot" style="background:${colors[i]}"></span>${esc(labels[i])}: <strong>${fmtNum(values[i])}</strong></span>
   `).join('');
+}
+
+// ── Kalender Target FI (kolom AK) ─────────────────────────────────
+function fiCalClassify(row) {
+  // 'over' = lewat target & belum Finish Instalasi, 'done' = sudah Finish
+  // Instalasi, 'upcoming' = terjadwal (hari ini/masa depan, belum selesai).
+  if (row.status === '05. FINISH INSTALASI') return 'done';
+  if (row.target_fi_iso < today0.toISOString().slice(0, 10)) return 'over';
+  return 'upcoming';
+}
+
+function renderFiCalendar(filteredRows) {
+  const monthLabel = document.getElementById('fiCalMonthLabel');
+  if (monthLabel) monthLabel.textContent = `${FI_CAL_MONTH_NAMES[fiCalMonth]} ${fiCalYear}`;
+
+  // Index semua baris yang punya Target FI (kolom AK) berdasarkan tanggal,
+  // supaya bisa dipakai lintas bulan (navigasi prev/next tanpa fetch ulang).
+  fiCalDayIndex = {};
+  filteredRows.forEach(r => {
+    if (!r.target_fi_iso) return;
+    (fiCalDayIndex[r.target_fi_iso] = fiCalDayIndex[r.target_fi_iso] || []).push(r);
+  });
+
+  const grid = document.getElementById('fiCalGrid');
+  if (!grid) return;
+
+  const firstOfMonth = new Date(fiCalYear, fiCalMonth, 1);
+  const startOffset = firstOfMonth.getDay(); // 0=Minggu
+  const gridStart = new Date(fiCalYear, fiCalMonth, 1 - startOffset);
+  const todayIso = today0.toISOString().slice(0, 10);
+
+  let html = FI_CAL_DAY_LABELS.map(l => `<div class="fi-cal-daylabel">${l}</div>`).join('');
+
+  for (let i = 0; i < 42; i++) {
+    const cellDate = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+    const iso = cellDate.toISOString().slice(0, 10);
+    const isOutside = cellDate.getMonth() !== fiCalMonth;
+    const isToday = iso === todayIso;
+    const items = fiCalDayIndex[iso] || [];
+
+    const counts = { over: 0, upcoming: 0, done: 0 };
+    items.forEach(r => { counts[fiCalClassify(r)]++; });
+
+    const badges = ['over', 'upcoming', 'done']
+      .filter(k => counts[k] > 0)
+      .map(k => `<span class="fi-badge fi-${k}" data-fi-iso="${iso}" title="Klik untuk lihat daftar">${counts[k]}</span>`)
+      .join('');
+
+    html += `
+      <div class="fi-cal-cell${isOutside ? ' fi-outside' : ''}${isToday ? ' fi-today' : ''}">
+        <div class="fi-cal-daynum">${cellDate.getDate()}</div>
+        <div class="fi-cal-badges">${badges}</div>
+      </div>
+    `;
+  }
+
+  grid.innerHTML = html;
+}
+
+function fiCalShift(delta) {
+  fiCalMonth += delta;
+  if (fiCalMonth < 0) { fiCalMonth = 11; fiCalYear--; }
+  else if (fiCalMonth > 11) { fiCalMonth = 0; fiCalYear++; }
+  renderFiCalendar(getFilteredRows());
+}
+
+document.getElementById('fiCalPrevBtn').addEventListener('click', () => fiCalShift(-1));
+document.getElementById('fiCalNextBtn').addEventListener('click', () => fiCalShift(1));
+document.getElementById('fiCalTodayBtn').addEventListener('click', () => {
+  fiCalYear = today0.getFullYear();
+  fiCalMonth = today0.getMonth();
+  renderFiCalendar(getFilteredRows());
+});
+
+document.getElementById('fiCalGrid').addEventListener('click', (e) => {
+  const badge = e.target.closest('.fi-badge');
+  if (!badge) return;
+  openFiCalDay(badge.dataset.fiIso);
+});
+
+function fiCalFmtDate(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function openFiCalDay(iso) {
+  fiCalCurrentIso = iso;
+  const items = fiCalDayIndex[iso] || [];
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Target FI — ${fiCalFmtDate(iso)} <span class="badge">${fmtNum(items.length)}</span></div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="loc-list" style="margin-top:10px;" id="fiCalModalList">
+      ${items.length ? items.map(r => `
+        <div class="result-item" data-row="${r.row}">
+          <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
+          <div class="meta">
+            <span class="badge">${esc(r.batch) || '-'}</span>
+            ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state">Tidak ada lokasi dengan Target FI di tanggal ini.</div>'}
+    </div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  const list = document.getElementById('fiCalModalList');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) {
+        closeBhModal();
+        editFromDetail(parseInt(item.dataset.row, 10));
+      }
+    });
+  }
+  document.getElementById('bhModalOverlay').classList.add('open');
 }
 
 // ── Kategori Drop (kolom BH): card -> list -> detail (kolom I..AB) ───
