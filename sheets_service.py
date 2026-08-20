@@ -429,7 +429,7 @@ def get_dashboard_data():
             "cpp_o": cell("cpp_o"),
             "bh": cell("bh") if cell("bh").strip().upper() not in {v.strip().upper() for v in config.BH_EXCLUDE_VALUES} else "",
             "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
-            "target_fi_display": target_fi_date.strftime("%d/%m/%Y") if target_fi_date else None,
+            "target_fi_display": target_fi_date.strftime("%d/%b/%y") if target_fi_date else None,
             "golive_date_iso": golive_date_date.isoformat() if golive_date_date else None,
             "golive_date_display": golive_date_date.strftime("%d/%m/%Y") if golive_date_date else None,
             "cal_date_iso": cal_date.isoformat() if cal_date else None,
@@ -498,19 +498,31 @@ def compute_stage_deadlines(wo_terbit_date: datetime.date, target_fi_date: datet
     di config.PROGRESS_STAGES berurutan.
 
     Kalau `target_fi_date` diisi (kolom AK -- komit manual tanggal target
-    selesai Instalasi), itu DIPAKAI GANTI hasil estimasi WO_terbit+akumulasi
-    untuk tahap 'instalasi' dan seterusnya (finish_install, golive dihitung
-    lanjut dari situ) -- estimasi statis hanya dipakai sebelum ada komitmen
-    manual. Return list sepanjang PROGRESS_STAGES, masing-masing
-    {"key", "label", "deadline": date}."""
+    selesai Instalasi):
+      - Semua tahap SEBELUM & TERMASUK 'instalasi' memakai target_fi_date
+        langsung sebagai deadline-nya (bukan estimasi statis WO_terbit+
+        akumulasi lagi) -- begitu ada komit manual, deadline tahap yang
+        sedang berjalan mengikuti komit itu supaya tidak overdue palsu
+        akibat estimasi lama yang sudah usang.
+      - Tahap SESUDAH 'instalasi' (finish_install, golive, dst) tetap
+        dihitung kumulatif lanjut dari target_fi_date.
+    Kalau belum ada komitmen manual, semua tahap pakai estimasi statis
+    WO_terbit+akumulasi seperti biasa. Return list sepanjang
+    PROGRESS_STAGES, masing-masing {"key", "label", "deadline": date}."""
     deadlines = []
     cursor = wo_terbit_date
+    reached_instalasi = False
     for stage in config.PROGRESS_STAGES:
-        if target_fi_date and stage["key"] == "instalasi":
-            cursor = target_fi_date  # override: komit manual kolom AK
+        if target_fi_date and not reached_instalasi:
+            # Sebelum & saat tahap instalasi: ikut komit manual kolom AK.
+            deadline = target_fi_date
+            if stage["key"] == "instalasi":
+                cursor = target_fi_date
+                reached_instalasi = True
         else:
             cursor = cursor + datetime.timedelta(days=stage["target_days"])
-        deadlines.append({"key": stage["key"], "label": stage["label"], "deadline": cursor})
+            deadline = cursor
+        deadlines.append({"key": stage["key"], "label": stage["label"], "deadline": deadline})
     return deadlines
 
 
@@ -729,7 +741,7 @@ def get_row_snapshot(row_num: int):
         "current_stage_deadline": current_stage_deadline,
         "final_deadline": final_deadline,
         "is_overdue": is_overdue,
-        "target_fi": target_fi_date.strftime("%d/%m/%Y") if target_fi_date else None,
+        "target_fi": target_fi_date.strftime("%d/%b/%y") if target_fi_date else None,
         "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
         "target_fi_required": z_val in config.PRE_FINISH_INSTALL_STATUSES,
         "documents": get_document_snapshot(row_num),
@@ -865,11 +877,14 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
 
     # 5. Target Finish Instalasi (kolom AK) — sama seperti field tambahan:
     #    kosong = tidak diubah (nilai lama, kalau ada, tetap dipakai).
+    #    Ditulis dalam format DD/Mon/YY (mis. 05/Aug/26) -- bulan berupa
+    #    huruf supaya tidak pernah tertukar dengan DD/MM/YY atau MM/DD/YY,
+    #    termasuk kalau sheet dibuka di Excel dengan locale tanggal beda.
     target_fi = (target_fi or "").strip()
     if target_fi:
         parsed_target_fi = _parse_date(target_fi)
         if parsed_target_fi:
-            ws.update_acell(f"{config.COL_TARGET_FI}{row_num}", parsed_target_fi.strftime("%d/%m/%Y"))
+            ws.update_acell(f"{config.COL_TARGET_FI}{row_num}", parsed_target_fi.strftime("%d/%b/%y"))
 
     return date_col, note_col
 
@@ -884,7 +899,7 @@ def _parse_date(raw: str):
     raw = (raw or "").strip()
     if not raw:
         return None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y"):
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d-%m-%y", "%d/%b/%Y", "%d/%b/%y", "%d-%b-%Y", "%d-%b-%y"):
         try:
             return datetime.datetime.strptime(raw, fmt).date()
         except ValueError:
