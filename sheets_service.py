@@ -168,6 +168,24 @@ def invalidate_sheet_cache(sheet_title=None):
             _values_cache.clear()
 
 
+def _batch_get_cells(ws, cell_refs: list):
+    """Ambil banyak sel tunggal (mis. ["Z10", "AA10", "AB10", ...]) dalam
+    SATU panggilan API (ws.batch_get), bukan satu-satu lewat ws.acell().
+    Setiap ws.acell() adalah 1 HTTP round-trip terpisah ke Google Sheets --
+    fungsi yang butuh belasan kolom sekaligus (snapshot 1 baris, dsb) jadi
+    belasan round-trip kalau dipanggil satu-satu, itulah penyebab utama
+    lambatnya baca/update, BUKAN jumlah kolom yang dibaca. Return
+    dict {cell_ref: value_str}, dedup otomatis kalau ada ref yang sama."""
+    if not cell_refs:
+        return {}
+    unique_refs = list(dict.fromkeys(cell_refs))  # dedupe, preserve order
+    grids = ws.batch_get(unique_refs)
+    values = {}
+    for ref, grid in zip(unique_refs, grids):
+        values[ref] = grid[0][0] if grid and grid[0] else ""
+    return values
+
+
 def get_semesta_worksheet():
     """Sheet 'Semesta' (gabungan PT2+PT3) — tab lain, spreadsheet yang sama."""
     global _semesta_worksheet
@@ -596,12 +614,19 @@ def get_document_ui_modes(status_z: str):
 
 def get_document_snapshot(row_num: int):
     """Link + catatan revisi terkini untuk tiap jenis dokumen (BAST, Foto
-    Instalasi, Berita Acara Perijinan) satu LOP."""
+    Instalasi, Berita Acara Perijinan) satu LOP. Dibaca dalam SATU
+    batch_get (bukan 2 ws.acell() per jenis dokumen)."""
     ws = get_worksheet()
+    cell_refs = []
+    for meta in config.DOCUMENT_TYPES.values():
+        cell_refs.append(f"{meta['link_col']}{row_num}")
+        cell_refs.append(f"{meta['log_col']}{row_num}")
+    values = _batch_get_cells(ws, cell_refs)
+
     result = {}
     for key, meta in config.DOCUMENT_TYPES.items():
-        url = (ws.acell(f"{meta['link_col']}{row_num}").value or "").strip()
-        log = ws.acell(f"{meta['log_col']}{row_num}").value or ""
+        url = (values.get(f"{meta['link_col']}{row_num}", "") or "").strip()
+        log = values.get(f"{meta['log_col']}{row_num}", "") or ""
         result[key] = {
             "label": meta["label"],
             "required_status": meta["required_status"],
@@ -622,10 +647,12 @@ def validate_documents_for_status(row_num: int, z_value: str):
     if not required_keys:
         return True, ""
     ws = get_worksheet()
+    cell_refs = [f"{config.DOCUMENT_TYPES[key]['link_col']}{row_num}" for key in required_keys]
+    values = _batch_get_cells(ws, cell_refs)
     missing_labels = []
     for key in required_keys:
         meta = config.DOCUMENT_TYPES[key]
-        url = (ws.acell(f"{meta['link_col']}{row_num}").value or "").strip()
+        url = (values.get(f"{meta['link_col']}{row_num}", "") or "").strip()
         if not url:
             missing_labels.append(meta["label"])
     if missing_labels:
@@ -687,30 +714,53 @@ def get_row_snapshot(row_num: int):
     `note_preview` ("Riwayat keterangan lengkap") SELALU dari kolom AB
     (KETERANGAN gabungan semua status), bukan cuma status yang sedang aktif.
     Also returns current BL-BQ values (extra_fields) so the update panel can
-    show what's already saved without forcing the user to re-enter it."""
+    show what's already saved without forcing the user to re-enter it.
+
+    Semua kolom (termasuk dokumen) dibaca dalam SATU batch_get -- sebelumnya
+    fungsi ini + get_document_snapshot() gabungan melakukan ~13 ws.acell()
+    terpisah (13 round-trip HTTP ke Google Sheets) tiap kali form update
+    dibuka. Sekarang cukup 1 round-trip."""
     ws = get_worksheet()
-    z_val = ws.acell(f"{config.COL_STATUS_Z}{row_num}").value or ""
-    aa_val = ws.acell(f"{config.COL_STATUS_AA}{row_num}").value or ""
+
+    base_refs = [
+        f"{config.COL_STATUS_Z}{row_num}",
+        f"{config.COL_STATUS_AA}{row_num}",
+        f"{config.COL_KETERANGAN_AB}{row_num}",
+        f"{config.COL_WO_TERBIT}{row_num}",
+        f"{config.COL_TARGET_FI}{row_num}",
+    ]
+    extra_refs = [f"{col}{row_num}" for col in config.EXTRA_FIELD_COLUMNS.values()]
+    note_col_refs = [f"{m['note_col']}{row_num}" for m in config.STATUS_COLUMN_MAP.values()]
+    doc_refs = []
+    for meta in config.DOCUMENT_TYPES.values():
+        doc_refs.append(f"{meta['link_col']}{row_num}")
+        doc_refs.append(f"{meta['log_col']}{row_num}")
+
+    values = _batch_get_cells(ws, base_refs + extra_refs + note_col_refs + doc_refs)
+
+    def v(ref):
+        return values.get(ref, "") or ""
+
+    z_val = v(f"{config.COL_STATUS_Z}{row_num}")
+    aa_val = v(f"{config.COL_STATUS_AA}{row_num}")
 
     last_note = ""
     if z_val in config.STATUS_COLUMN_MAP:
         note_col = config.STATUS_COLUMN_MAP[z_val]["note_col"]
-        current_status_note = ws.acell(f"{note_col}{row_num}").value or ""
+        current_status_note = v(f"{note_col}{row_num}")
         last_note = current_status_note.split("\n")[0].strip() if current_status_note.strip() else ""
 
-    note_preview = ws.acell(f"{config.COL_KETERANGAN_AB}{row_num}").value or ""
+    note_preview = v(f"{config.COL_KETERANGAN_AB}{row_num}")
 
-    extra_fields = {}
-    for key, col in config.EXTRA_FIELD_COLUMNS.items():
-        extra_fields[key] = ws.acell(f"{col}{row_num}").value or ""
+    extra_fields = {key: v(f"{col}{row_num}") for key, col in config.EXTRA_FIELD_COLUMNS.items()}
 
     # ── Aging per-LOP (kolom D = WO terbit -> hari ini) + progress % ────
-    wo_terbit_raw = ws.acell(f"{config.COL_WO_TERBIT}{row_num}").value or ""
+    wo_terbit_raw = v(f"{config.COL_WO_TERBIT}{row_num}")
     wo_terbit_date = _parse_date(wo_terbit_raw)
     today = datetime.date.today()
     aging_days = (today - wo_terbit_date).days if wo_terbit_date else None
 
-    target_fi_raw = ws.acell(f"{config.COL_TARGET_FI}{row_num}").value or ""
+    target_fi_raw = v(f"{config.COL_TARGET_FI}{row_num}")
     target_fi_date = _parse_date(target_fi_raw)
 
     progress_percent, progress_stage_label, stage_idx = compute_progress(z_val, has_order=True)
@@ -726,6 +776,15 @@ def get_row_snapshot(row_num: int):
             deadline_date = stage_deadlines[target_idx]["deadline"]
             current_stage_deadline = deadline_date.isoformat()
             is_overdue = today > deadline_date
+
+    documents = {}
+    for key, meta in config.DOCUMENT_TYPES.items():
+        documents[key] = {
+            "label": meta["label"],
+            "required_status": meta["required_status"],
+            "url": v(f"{meta['link_col']}{row_num}").strip() or None,
+            "log": v(f"{meta['log_col']}{row_num}"),
+        }
 
     return {
         "row": row_num,
@@ -744,7 +803,7 @@ def get_row_snapshot(row_num: int):
         "target_fi": target_fi_date.strftime("%d/%b/%y") if target_fi_date else None,
         "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
         "target_fi_required": z_val in config.PRE_FINISH_INSTALL_STATUSES,
-        "documents": get_document_snapshot(row_num),
+        "documents": documents,
     }
 
 
@@ -823,6 +882,11 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
          (validasi wajib-isi untuk status pra-Finish-Instalasi dilakukan
          terpisah lewat validate_target_fi(), BUKAN di sini).
     Returns the (date_col, note_col) pair used.
+
+    Semua pembacaan nilai lama (note lama, tanggal lama) dan SEMUA penulisan
+    di atas digabung masing-masing jadi 1 batch_get + 1 batch_update --
+    sebelumnya tiap ws.update_acell()/ws.acell() adalah 1 round-trip HTTP
+    terpisah, bisa sampai belasan kali untuk 1x klik simpan.
     """
     if z_value not in config.STATUS_COLUMN_MAP:
         raise ValueError(f"Unknown status Z value: {z_value!r}")
@@ -834,30 +898,36 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     mapping = config.STATUS_COLUMN_MAP[z_value]
     date_col, note_col = mapping["date_col"], mapping["note_col"]
 
-    # 1. Status dropdowns
-    ws.update_acell(f"{config.COL_STATUS_Z}{row_num}", z_value)
-    if aa_value:
-        ws.update_acell(f"{config.COL_STATUS_AA}{row_num}", aa_value)
+    # 0. Baca dulu nilai lama yang dibutuhkan (note lama utk digabung,
+    #    tanggal lama utk cek DATE_COLS_WRITE_ONCE) -- 1 batch_get.
+    read_refs = [f"{note_col}{row_num}"]
+    check_existing_date = date_col in config.DATE_COLS_WRITE_ONCE
+    if check_existing_date:
+        read_refs.append(f"{date_col}{row_num}")
+    read_values = _batch_get_cells(ws, read_refs)
 
-    # 2. Prepend note (newest on top)
-    existing_note = ws.acell(f"{note_col}{row_num}").value or ""
+    # 1+2. Susun note baru (terbaru di atas)
+    existing_note = read_values.get(f"{note_col}{row_num}", "") or ""
     new_entry = f"{date_str} : {note_text.strip()}"
-    if existing_note.strip():
-        merged_note = new_entry + "\n" + existing_note
-    else:
-        merged_note = new_entry
-    ws.update_acell(f"{note_col}{row_num}", merged_note)
+    merged_note = new_entry + "\n" + existing_note if existing_note.strip() else new_entry
 
-    # 3. Overwrite the paired date cell — KECUALI kolom ini ada di
+    # 3. Kolom tanggal ditulis ulang -- KECUALI kolom ini ada di
     #    DATE_COLS_WRITE_ONCE (mis. AZ) dan sudah pernah terisi: kolom itu
     #    mencatat tanggal MULAI masuk status ini, jadi cukup ditulis sekali.
     write_date = True
-    if date_col in config.DATE_COLS_WRITE_ONCE:
-        existing_date = ws.acell(f"{date_col}{row_num}").value or ""
+    if check_existing_date:
+        existing_date = read_values.get(f"{date_col}{row_num}", "") or ""
         if existing_date.strip():
             write_date = False
+
+    updates = [
+        {"range": f"{config.COL_STATUS_Z}{row_num}", "values": [[z_value]]},
+        {"range": f"{note_col}{row_num}", "values": [[merged_note]]},
+    ]
+    if aa_value:
+        updates.append({"range": f"{config.COL_STATUS_AA}{row_num}", "values": [[aa_value]]})
     if write_date:
-        ws.update_acell(f"{date_col}{row_num}", date_str)
+        updates.append({"range": f"{date_col}{row_num}", "values": [[date_str]]})
 
     # 4. Field tambahan BL-BQ — OPSIONAL: cuma ditulis kalau ada isinya.
     #    Kosong = tidak diubah, nilai lama di sheet tetap dipertahankan.
@@ -873,7 +943,7 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                 raw_value = _clean_number(raw_value)  # simpan angka polos, tanpa "Rp"/titik ribuan
                 if not raw_value:
                     continue
-            ws.update_acell(f"{col}{row_num}", raw_value)
+            updates.append({"range": f"{col}{row_num}", "values": [[raw_value]]})
 
     # 5. Target Finish Instalasi (kolom AK) — sama seperti field tambahan:
     #    kosong = tidak diubah (nilai lama, kalau ada, tetap dipakai).
@@ -884,7 +954,12 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     if target_fi:
         parsed_target_fi = _parse_date(target_fi)
         if parsed_target_fi:
-            ws.update_acell(f"{config.COL_TARGET_FI}{row_num}", parsed_target_fi.strftime("%d/%b/%y"))
+            updates.append({
+                "range": f"{config.COL_TARGET_FI}{row_num}",
+                "values": [[parsed_target_fi.strftime("%d/%b/%y")]],
+            })
+
+    ws.batch_update(updates)
 
     return date_col, note_col
 
