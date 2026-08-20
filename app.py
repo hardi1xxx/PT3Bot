@@ -47,6 +47,9 @@ def api_row(row_num):
             "label": label,
             "z_options": config.Z_OPTIONS,
             "aa_options": config.AA_OPTIONS,
+            "status_aa_groups": config.STATUS_AA_GROUPS,
+            "progress_drop_statuses": config.PROGRESS_DROP_STATUSES,
+            "kategori_drop_options": config.KATEGORI_DROP_OPTIONS,
             "extra_fields_by_status": config.EXTRA_FIELDS_BY_STATUS,
             "extra_field_meta": config.EXTRA_FIELD_META,
             "pre_finish_install_statuses": config.PRE_FINISH_INSTALL_STATUSES,
@@ -77,6 +80,7 @@ def api_row_update(row_num):
     note_text = (payload.get("note_text") or "").strip()
     extra_fields = payload.get("extra_fields") or {}
     target_fi = (payload.get("target_fi") or "").strip()
+    kategori_drop = (payload.get("kategori_drop") or "").strip()
 
     if not z_value:
         return jsonify({"ok": False, "error": "Status (kolom Z) wajib dipilih."}), 400
@@ -96,6 +100,11 @@ def api_row_update(row_num):
     if not ok:
         return jsonify({"ok": False, "error": message}), 400
 
+    # Kategori Drop (kolom BH) — wajib dipilih untuk status Drop.
+    ok, message = sheets_service.validate_kategori_drop(z_value, kategori_drop)
+    if not ok:
+        return jsonify({"ok": False, "error": message}), 400
+
     # Dokumen wajib (BAST/Foto Instalasi/Berita Acara) — harus sudah
     # diupload (sesi ini atau sebelumnya) untuk status yang dituju.
     ok, message = sheets_service.validate_documents_for_status(row_num, z_value)
@@ -104,7 +113,8 @@ def api_row_update(row_num):
 
     try:
         date_col, note_col = sheets_service.update_status(
-            row_num, z_value, aa_value, note_text, extra_fields=extra_fields, target_fi=target_fi
+            row_num, z_value, aa_value, note_text, extra_fields=extra_fields,
+            target_fi=target_fi, kategori_drop=kategori_drop
         )
         return jsonify({"ok": True, "date_col": date_col, "note_col": note_col})
     except Exception as e:

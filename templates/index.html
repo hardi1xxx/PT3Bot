@@ -103,7 +103,7 @@
 <!-- Combined Port + LOP table -->
 <div class="section-title">
   Rekap Port &amp; LOP per Batch
-  <span class="hint">baris = batch (kolom C) · setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan</span>
+  <span class="hint">baris = batch (kolom C) · setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan · klik angka untuk lihat &amp; download daftar lokasinya</span>
   <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">&#8635; Refresh</button>
 </div>
 <div class="card" style="margin-bottom:22px;">
@@ -113,7 +113,7 @@
 <!-- Rekap Regional & Branch (kolom T & S) per status -->
 <div class="section-title">
   Rekap Regional &amp; Branch per Status
-  <span class="hint">baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z)</span>
+  <span class="hint">baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya</span>
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
@@ -492,7 +492,48 @@ function renderCellFilterChip() {
   if (activeCellFilter.regional) parts.push(`Regional: ${esc(activeCellFilter.regional)}`);
   if (activeCellFilter.branch) parts.push(`Branch: ${esc(activeCellFilter.branch)}`);
   if (activeCellFilter.column) parts.push(`Status: ${esc(activeCellFilter.column.replace(/^\d+\.\s*/, ''))}`);
-  el.innerHTML = `<span class="badge status">${parts.join(' · ')} <a href="#" onclick="clearCellFilter(); return false;" style="margin-left:6px; color:inherit; text-decoration:underline;">Hapus filter</a></span>`;
+  el.innerHTML = `<span class="badge status">${parts.join(' · ')}
+    <a href="#" onclick="downloadLocListCsv(); return false;" style="margin-left:8px; color:inherit; text-decoration:underline;">Download CSV</a>
+    <a href="#" onclick="clearCellFilter(); return false;" style="margin-left:8px; color:inherit; text-decoration:underline;">Hapus filter</a></span>`;
+}
+
+// Download daftar yang sedang tampil di "Lokasi Sedang Berjalan" (hasil
+// klik angka di tabel "Rekap Port & LOP per Batch" atau "Rekap Regional
+// & Branch per Status") sebagai file CSV.
+function csvEscape(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function downloadLocListCsv() {
+  const rows = getLocListRows(getFilteredRows());
+  const header = ['IHLD', 'Lokasi', 'Batch', 'Regional', 'Branch', 'Status', 'Port'];
+  const lines = [header.map(csvEscape).join(',')];
+  rows.forEach(r => {
+    lines.push([
+      r.ihld || '', r.lokasi || '', r.batch || '', r.regional || '', r.branch || '',
+      r.status_raw || '', r.port || 0,
+    ].map(csvEscape).join(','));
+  });
+  const csvContent = '\uFEFF' + lines.join('\r\n'); // BOM biar Excel baca UTF-8 dengan benar
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const filterParts = [];
+  if (activeCellFilter) {
+    if (activeCellFilter.batch) filterParts.push(activeCellFilter.batch);
+    if (activeCellFilter.regional) filterParts.push(activeCellFilter.regional);
+    if (activeCellFilter.branch) filterParts.push(activeCellFilter.branch);
+    if (activeCellFilter.column) filterParts.push(activeCellFilter.column.replace(/^\d+\.\s*/, ''));
+  }
+  const suffix = filterParts.length ? '-' + filterParts.join('-').replace(/[^a-z0-9]+/gi, '_') : '';
+  a.href = url;
+  a.download = `lokasi${suffix}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // Daftar untuk "Lokasi Sedang Berjalan & Update Status": kalau ada filter
@@ -1113,6 +1154,53 @@ let currentDocumentTypesByStatus = {};
 let currentProgressStages = [];
 let currentDocumentKeysHidden = [];
 let currentDocumentUploadRequired = true;
+let currentAaOptionsAll = [];       // semua Sub Status (AA) apa adanya -- fallback kalau Status tidak ada di grup
+let currentStatusAaGroups = {};     // Status Z -> daftar Sub Status (AA) terurut (config.STATUS_AA_GROUPS)
+let currentProgressDropStatuses = []; // Status Z yang dianggap Drop (config.PROGRESS_DROP_STATUSES)
+let currentKategoriDropOptions = [];  // pilihan Kategori Drop (kolom BH)
+
+// Sub Status (AA) difilter sesuai Status (Z) yang dipilih (config.STATUS_AA_GROUPS)
+// -- Status yang tidak ada grupnya (mis. "0.1 SURVEI") -> tampil semua opsi.
+function renderPanelAaOptions(statusZ, selectedAa) {
+  const sel = document.getElementById('status_aa');
+  if (!sel) return;
+  const group = currentStatusAaGroups[statusZ];
+  const options = group || currentAaOptionsAll;
+  const placeholder = group ? '-- pilih sub status --' : '-- tidak diubah --';
+  sel.innerHTML = `<option value="">${placeholder}</option>` +
+    options.map(o => `<option value="${o}" ${o === selectedAa ? 'selected' : ''}>${o}</option>`).join('');
+}
+
+// Target Finish Instalasi (AK): disembunyikan total begitu Status dipilih
+// DROP / Finish Instalasi / Golive / dst -- cuma relevan untuk status
+// SEBELUM Finish Instalasi (currentPreFinishInstallStatuses).
+function toggleTargetFiField(statusZ) {
+  const field = document.getElementById('targetFiField');
+  if (!field) return;
+  const relevant = currentPreFinishInstallStatuses.includes(statusZ);
+  field.style.display = relevant ? '' : 'none';
+}
+
+// Kategori Drop (BH): cuma muncul & wajib begitu Status dipilih Drop.
+function toggleKategoriDropField(statusZ) {
+  const field = document.getElementById('kategoriDropField');
+  const sel = document.getElementById('kategori_drop');
+  if (!field || !sel) return;
+  const isDrop = currentProgressDropStatuses.includes(statusZ);
+  field.style.display = isDrop ? '' : 'none';
+  if (!isDrop) sel.value = '';
+}
+
+// Dipanggil tiap Status (Z) berubah (termasuk render pertama kali panel
+// dibuka) -- satu tempat buat semua efek samping perubahan Status.
+function onPanelStatusZChange(rowNum, statusZ, preserveAa, initialAa) {
+  renderPanelAaOptions(statusZ, preserveAa ? (initialAa || '') : '');
+  toggleTargetFiField(statusZ);
+  toggleKategoriDropField(statusZ);
+  refreshTargetFiHint(statusZ);
+  renderExtraFields(statusZ);
+  renderDocumentsSection(rowNum, statusZ);
+}
 
 async function openRow(rowNum) {
   selectedRow = rowNum;
@@ -1126,7 +1214,7 @@ async function openRow(rowNum) {
     const json = await res.json();
     if (!json.ok) { panel.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
 
-    const { snapshot, label, z_options, aa_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses, document_types_by_status, progress_stages, document_keys_hidden, document_upload_required } = json;
+    const { snapshot, label, z_options, aa_options, status_aa_groups, progress_drop_statuses, kategori_drop_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses, document_types_by_status, progress_stages, document_keys_hidden, document_upload_required } = json;
     currentExtraValues = snapshot.extra_fields || {};
     currentExtraFieldsByStatus = extra_fields_by_status || {};
     currentExtraFieldMeta = extra_field_meta || {};
@@ -1137,6 +1225,10 @@ async function openRow(rowNum) {
     currentProgressStages = progress_stages || [];
     currentDocumentKeysHidden = document_keys_hidden || [];
     currentDocumentUploadRequired = document_upload_required !== false;
+    currentAaOptionsAll = aa_options || [];
+    currentStatusAaGroups = status_aa_groups || {};
+    currentProgressDropStatuses = progress_drop_statuses || [];
+    currentKategoriDropOptions = kategori_drop_options || [];
 
     panel.innerHTML = `
       <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${esc(label.ihld)} · ${esc(label.lokasi)}</div>
@@ -1155,21 +1247,25 @@ async function openRow(rowNum) {
       ` : ''}
       <div class="field" style="margin-top:14px;">
         <label for="status_z">Status (kolom Z)</label>
-        <select id="status_z" onchange="renderExtraFields(this.value); refreshTargetFiHint(this.value); renderDocumentsSection(${rowNum}, this.value);">
+        <select id="status_z" onchange="onPanelStatusZChange(${rowNum}, this.value, false);">
           <option value="">-- pilih status --</option>
           ${z_options.map(o => `<option value="${o}" ${o === snapshot.status_z ? 'selected' : ''}>${o}</option>`).join('')}
         </select>
       </div>
       <div class="field">
         <label for="status_aa">Sub Status (kolom AA)</label>
-        <select id="status_aa">
-          <option value="">-- tidak diubah --</option>
-          ${aa_options.map(o => `<option value="${o}" ${o === snapshot.status_aa ? 'selected' : ''}>${o}</option>`).join('')}
-        </select>
+        <select id="status_aa"></select>
       </div>
-      <div class="field">
+      <div class="field" id="targetFiField">
         <label for="target_fi">Target Finish Instalasi (kolom AK) <span id="targetFiHint"></span></label>
         <input type="date" id="target_fi" min="${new Date().toISOString().slice(0,10)}" value="${snapshot.target_fi_iso || ''}">
+      </div>
+      <div class="field" id="kategoriDropField" style="display:none;">
+        <label for="kategori_drop">Kategori Drop (kolom BH) <span style="color:#dc2626;">*wajib dipilih</span></label>
+        <select id="kategori_drop">
+          <option value="">-- pilih kategori drop --</option>
+          ${currentKategoriDropOptions.map(o => `<option value="${o}" ${o === snapshot.kategori_drop ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>
       </div>
       <div class="field">
         <label>Dokumen LOP</label>
@@ -1184,9 +1280,7 @@ async function openRow(rowNum) {
       <button onclick="saveUpdate(${rowNum})">Simpan Update</button>
       &nbsp; <a href="#" onclick="document.getElementById('q').focus(); return false;">&larr; Cari lagi</a>
     `;
-    renderExtraFields(snapshot.status_z);
-    refreshTargetFiHint(snapshot.status_z);
-    renderDocumentsSection(rowNum, snapshot.status_z);
+    onPanelStatusZChange(rowNum, snapshot.status_z, true, snapshot.status_aa);
   } catch (e) {
     panel.innerHTML = `<div class="flash error">Gagal memuat baris: ${e}</div>`;
   }
@@ -1340,6 +1434,8 @@ async function saveUpdate(rowNum) {
   const status_aa = document.getElementById('status_aa').value;
   const note_text = document.getElementById('note_text').value;
   const target_fi = document.getElementById('target_fi').value;
+  const kategoriDropEl = document.getElementById('kategori_drop');
+  const kategori_drop = kategoriDropEl ? kategoriDropEl.value : '';
   const msg = document.getElementById('updateMsg');
 
   if (!status_z) { msg.innerHTML = '<div class="flash error">Status (kolom Z) wajib dipilih.</div>'; return; }
@@ -1350,6 +1446,10 @@ async function saveUpdate(rowNum) {
   }
   if (currentPreFinishInstallStatuses.includes(status_z) && !target_fi && !currentTargetFiHasExisting) {
     msg.innerHTML = '<div class="flash error">Target Finish Instalasi (kolom AK) wajib diisi untuk status sebelum Finish Instalasi.</div>';
+    return;
+  }
+  if (currentProgressDropStatuses.includes(status_z) && !kategori_drop) {
+    msg.innerHTML = '<div class="flash error">Kategori Drop (kolom BH) wajib dipilih untuk status Drop.</div>';
     return;
   }
   const requiredDocKeys = currentDocumentUploadRequired ? (currentDocumentTypesByStatus[status_z] || []) : [];
@@ -1371,7 +1471,7 @@ async function saveUpdate(rowNum) {
     const res = await fetch(`/api/row/${rowNum}/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status_z, status_aa, note_text, extra_fields, target_fi }),
+      body: JSON.stringify({ status_z, status_aa, note_text, extra_fields, target_fi, kategori_drop }),
     });
     const json = await res.json();
     if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
