@@ -10,6 +10,18 @@
   @media (max-width: 920px) { .split-half { grid-template-columns: 1fr; } }
   .split-half > .card { margin-bottom: 0; }
 
+  /* Chart Distribusi Status + Trend Golive (kiri, ditumpuk) berdampingan
+     dengan Kalender Target FI (kanan) -- tinggi kolom kiri & kanan dibuat
+     sama (grid default: align-items stretch), lalu 2 chart di kiri
+     membagi rata sisa tinggi itu supaya proporsinya tidak njomplang. */
+  .split-half-fi { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
+  @media (max-width: 920px) { .split-half-fi { grid-template-columns: 1fr; } }
+  .split-half-fi > .card, .split-half-fi > .fi-left-col { margin-bottom: 0; }
+  .fi-left-col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  .fi-left-col > .card { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .mini-chart-title { font-weight: 800; font-size: 0.95rem; color: var(--text); margin-bottom: 10px; }
+  .mini-chart-wrap { position: relative; flex: 1 1 auto; min-height: 140px; }
+
   .fi-cal-card { display: flex; flex-direction: column; }
   .fi-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
   .fi-cal-title { font-weight: 800; font-size: 0.95rem; color: var(--text); }
@@ -20,7 +32,7 @@
   .fi-cal-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.7rem; color: var(--muted); margin-bottom: 10px; }
   .fi-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
   .fi-cal-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .fi-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .fi-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; flex: 1 1 auto; align-content: start; }
   .fi-cal-daylabel { text-align: center; font-size: 0.64rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 0 6px; }
   .fi-cal-cell { min-height: 52px; border-radius: 8px; background: var(--panel-alt); padding: 4px 5px; font-size: 0.72rem; display: flex; flex-direction: column; gap: 3px; }
   .fi-cal-cell.fi-outside { opacity: 0.35; }
@@ -107,12 +119,20 @@
   <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
 </div>
 
-<!-- Chart + Kalender Target FI (kolom AK) berdampingan -->
+<!-- Chart + Trend Golive (kiri) & Kalender Target FI (kolom AK, kanan) -->
 <div class="section-title">Distribusi Status Pekerjaan &amp; Kalender Target FI</div>
-<div class="split-half">
-  <div class="card chart-card">
-    <canvas id="statusChart" height="90"></canvas>
-    <div class="chart-legend" id="chartLegend"></div>
+<div class="split-half-fi">
+  <div class="fi-left-col">
+    <div class="card chart-card">
+      <div class="mini-chart-title">Distribusi Status Pekerjaan</div>
+      <div class="mini-chart-wrap"><canvas id="statusChart"></canvas></div>
+      <div class="chart-legend" id="chartLegend"></div>
+    </div>
+
+    <div class="card trend-golive-card">
+      <div class="mini-chart-title">Trend Golive <span class="hint" style="font-weight:400;">(kolom BD, per bulan)</span></div>
+      <div class="mini-chart-wrap"><canvas id="goliveTrendChart"></canvas></div>
+    </div>
   </div>
 
   <div class="card fi-cal-card">
@@ -629,6 +649,7 @@ function refreshAll() {
     if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
     const chartLopTable = computePivotTables(filtered, dashboardCache.batches, dashboardCache.statuses, 'status').lopTable;
     renderChart(chartLopTable, dashboardCache.statuses);
+    renderGoliveTrendChart(filtered);
   } catch (e) {
     document.querySelector('.chart-card').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
   }
@@ -684,6 +705,8 @@ function renderChart(lopTable, statuses) {
       datasets: [{ label: 'Jumlah Order', data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 46 }],
     },
     options: {
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
         y: { beginAtZero: true, ticks: { precision: 0 } },
@@ -696,6 +719,109 @@ function renderChart(lopTable, statuses) {
   legend.innerHTML = statuses.map((s, i) => `
     <span><span class="dot" style="background:${colors[i]}"></span>${esc(labels[i])}: <strong>${fmtNum(values[i])}</strong></span>
   `).join('');
+}
+
+// ── Bar chart: trend Golive per bulan (kolom BD / golive_date_iso) ────
+// Dilihat berdasarkan bulan saja (semua tanggal golive di bulan yang
+// sama digabung jadi satu batang). Klik batang -> daftar lokasi di bulan
+// itu, terurut berdasarkan branch.
+let goliveTrendChart = null;
+let goliveTrendMonthIndex = {};   // "YYYY-MM" -> rows[]
+let goliveTrendMonthKeys = [];    // urutan bulan sesuai chart, sinkron dgn index klik
+
+const GOLIVE_TREND_MONTH_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
+function renderGoliveTrendChart(filteredRows) {
+  goliveTrendMonthIndex = {};
+  filteredRows.forEach(r => {
+    if (!r.golive_date_iso) return;
+    const monthKey = r.golive_date_iso.slice(0, 7); // "YYYY-MM"
+    (goliveTrendMonthIndex[monthKey] = goliveTrendMonthIndex[monthKey] || []).push(r);
+  });
+
+  goliveTrendMonthKeys = Object.keys(goliveTrendMonthIndex).sort(); // kronologis
+  const labels = goliveTrendMonthKeys.map(k => {
+    const [y, m] = k.split('-');
+    return `${GOLIVE_TREND_MONTH_SHORT[parseInt(m, 10) - 1]}/${y.slice(2)}`;
+  });
+  const values = goliveTrendMonthKeys.map(k => goliveTrendMonthIndex[k].length);
+
+  const canvas = document.getElementById('goliveTrendChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (goliveTrendChart) goliveTrendChart.destroy();
+
+  if (goliveTrendMonthKeys.length === 0) {
+    goliveTrendChart = null;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
+  goliveTrendChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Jumlah Golive', data: values, backgroundColor: '#16a34a', borderRadius: 6, maxBarThickness: 40 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { grid: { display: false } },
+      },
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        openGoliveTrendMonth(goliveTrendMonthKeys[elements[0].index]);
+      },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
+    },
+  });
+}
+
+function goliveTrendMonthLabel(monthKey) {
+  const [y, m] = monthKey.split('-');
+  return `${FI_CAL_MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
+}
+
+function openGoliveTrendMonth(monthKey) {
+  const items = (goliveTrendMonthIndex[monthKey] || []).slice()
+    .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Golive — ${esc(goliveTrendMonthLabel(monthKey))} <span class="badge">${fmtNum(items.length)}</span></div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="loc-list" style="margin-top:10px;" id="goliveTrendModalList">
+      ${items.length ? items.map(r => `
+        <div class="result-item" data-row="${r.row}">
+          <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
+          <div class="meta">
+            <span class="badge">${esc(r.branch) || '(Tanpa Branch)'}</span>
+            <span class="badge">${esc(r.batch) || '-'}</span>
+            ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
+            <span class="badge">Golive: ${esc(r.golive_date_display) || '-'}</span>
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state">Tidak ada lokasi Golive di bulan ini.</div>'}
+    </div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  const list = document.getElementById('goliveTrendModalList');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) {
+        closeBhModal();
+        editFromDetail(parseInt(item.dataset.row, 10));
+      }
+    });
+  }
+  document.getElementById('bhModalOverlay').classList.add('open');
 }
 
 // ── Kalender Target FI (kolom AK) & Golive (kolom BD) ─────────────
