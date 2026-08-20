@@ -220,7 +220,10 @@ def update_form(row_num):
         snapshot=snapshot,
         z_options=config.Z_OPTIONS,
         aa_options=config.AA_OPTIONS,
+        status_aa_groups=config.STATUS_AA_GROUPS,
         pre_finish_install_statuses=config.PRE_FINISH_INSTALL_STATUSES,
+        progress_drop_statuses=config.PROGRESS_DROP_STATUSES,
+        kategori_drop_options=config.KATEGORI_DROP_OPTIONS,
         document_types=config.DOCUMENT_TYPES,
         document_modes=sheets_service.get_document_ui_modes(snapshot["status_z"]),
         document_upload_required=config.DOCUMENT_UPLOAD_REQUIRED,
@@ -234,6 +237,7 @@ def do_update(row_num):
     aa_value = request.form.get("status_aa", "").strip()
     note_text = request.form.get("note_text", "").strip()
     target_fi = request.form.get("target_fi", "").strip()
+    kategori_drop = request.form.get("kategori_drop", "").strip()
 
     if not z_value:
         flash("Status (kolom Z) wajib dipilih.", "error")
@@ -243,6 +247,11 @@ def do_update(row_num):
         return redirect(url_for("update_form", row_num=row_num))
 
     ok, message = sheets_service.validate_target_fi(row_num, z_value, target_fi)
+    if not ok:
+        flash(message, "error")
+        return redirect(url_for("update_form", row_num=row_num))
+
+    ok, message = sheets_service.validate_kategori_drop(z_value, kategori_drop)
     if not ok:
         flash(message, "error")
         return redirect(url_for("update_form", row_num=row_num))
@@ -274,7 +283,7 @@ def do_update(row_num):
 
     try:
         date_col, note_col = sheets_service.update_status(
-            row_num, z_value, aa_value, note_text, target_fi=target_fi
+            row_num, z_value, aa_value, note_text, target_fi=target_fi, kategori_drop=kategori_drop
         )
         flash(f"Berhasil diupdate ke kolom {note_col} (tanggal di {date_col}).", "success")
     except Exception as e:

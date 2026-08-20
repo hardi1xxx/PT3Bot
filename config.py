@@ -118,6 +118,12 @@ Z_OPTIONS = [
 ]
 
 # ── AA (SUB Status Fisik) dropdown options ────────────────────────────
+# Diupdate supaya persis mengikuti tabel pengelompokan per kategori (lihat
+# STATUS_AA_GROUPS di bawah): "3 Material Delivery" dipecah jadi
+# "3.1 Pickup Material" + "3.2. Material Delivery"; "4.7. Terminasi"
+# ditambahkan (baru); "Selesai Fisik" dinomori ulang dari 4.7 -> 4.8
+# (sekarang satu blok nomor "4.8." dengan "Valins" -- dua item beda, bukan
+# duplikat, dibiarkan apa adanya sesuai permintaan).
 AA_OPTIONS = [
     "1.1 Persiapan",
     "1.2. Survey",
@@ -130,14 +136,16 @@ AA_OPTIONS = [
     "2.1. Negosiasi",
     "2.2. Pembayaran Permit TA",
     "2.3. Pembayaran Permit Mitra",
-    "3 Material Delivery",
+    "3.1 Pickup Material",
+    "3.2. Material Delivery",
     "4.1. Galian",
     "4.2. Tanam Tiang",
     "4.3. Tarik Kabel",
     "4.4. instalasi ODP",
     "4.5. instalasi ODC",
     "4.6. Perapihan",
-    "4.7. Selesai Fisik",
+    "4.7. Terminasi",
+    "4.8. Selesai Fisik",
     "4.8. Valins",
     "4.9. Dok GOLIVE",
     "5 GOLIVE",
@@ -150,6 +158,57 @@ AA_OPTIONS = [
     "0. DROP",
     "0.1. Plan Drop",
     "5.4 BAST 2025",
+]
+
+# Sub Status (AA) dikelompokkan per Status (Z), URUT sesuai tahapan kerja
+# di lapangan. Dipakai di form update.html untuk:
+#   1. Filter dropdown Sub Status supaya tidak perlu cari di antara 32
+#      opsi -- cuma yang relevan dengan Status Z yang lagi dipilih.
+#   2. Hitung progress % lebih halus (lihat compute_progress di
+#      sheets_service.py): posisi sub status DALAM list ini menentukan
+#      seberapa jauh progress di dalam tahap itu, bukan cuma lompat penuh
+#      begitu Z pindah tahap seperti sebelumnya.
+# Z value yang TIDAK ada key-nya di sini (mis. "0.1 SURVEI") -> dropdown
+# AA tidak difilter, progress tetap pakai logic lama (lompat per-tahap).
+STATUS_AA_GROUPS = {
+    "00. DROP": ["0. DROP", "0.1. Plan Drop"],
+    "01. DROP MOM": ["0. DROP", "0.1. Plan Drop"],
+    "01. PERIJINAN": [
+        "1.1 Persiapan", "1.2. Survey", "1.3. Review ED", "1.4. Pengajuan PR-PO",
+        "1.5. Juskeb Swakelola", "1.6. Juskeb Permit", "1.8. Kenaikan CC",
+        "7.1 Kendala", "7.2 HOLD",
+    ],
+    "02. PERSIAPAN": [
+        "1.7. Revisi Juskeb", "2.1. Negosiasi", "2.2. Pembayaran Permit TA",
+        "2.3. Pembayaran Permit Mitra", "6. Redesign",
+    ],
+    "03. MATDEV": ["3.1 Pickup Material", "3.2. Material Delivery"],
+    "04. INSTALASI": [
+        "4.1. Galian", "4.2. Tanam Tiang", "4.3. Tarik Kabel",
+        "4.4. instalasi ODP", "4.5. instalasi ODC", "4.6. Perapihan", "4.7. Terminasi",
+    ],
+    "05. FINISH INSTALASI": ["4.8. Selesai Fisik", "4.8. Valins", "4.9. Dok GOLIVE"],
+    # Semua Z yang masuk stage "golive" di PROGRESS_STAGES (lihat z_values
+    # di bawah) pakai urutan sub status yang sama.
+    "06. GOLIVE": ["5 GOLIVE", "5.1 Uji Terima", "5.2 Rekon", "5.3 BAST", "5.4 BAST 2025"],
+    "07. UT": ["5 GOLIVE", "5.1 Uji Terima", "5.2 Rekon", "5.3 BAST", "5.4 BAST 2025"],
+    "08. PEMBERKASAN": ["5 GOLIVE", "5.1 Uji Terima", "5.2 Rekon", "5.3 BAST", "5.4 BAST 2025"],
+    "09. REKON": ["5 GOLIVE", "5.1 Uji Terima", "5.2 Rekon", "5.3 BAST", "5.4 BAST 2025"],
+    "10. BAST": ["5 GOLIVE", "5.1 Uji Terima", "5.2 Rekon", "5.3 BAST", "5.4 BAST 2025"],
+    "10.1 BAST 2025": ["5 GOLIVE", "5.1 Uji Terima", "5.2 Rekon", "5.3 BAST", "5.4 BAST 2025"],
+}
+
+# Kategori Drop (kolom BH) -- muncul di form update HANYA saat Status Z
+# dipilih "00. DROP" atau "01. DROP MOM" (lihat PROGRESS_DROP_STATUSES).
+# Beda dari kolom BH yang dipakai dashboard (rekap "Kategori Drop" di
+# index.html, cuma dibaca) -- ini yang MENULIS ke kolom BH itu juga.
+KATEGORI_DROP_OPTIONS = [
+    "Drop by Tsel",
+    "Duplikat Order",
+    "Kendala Feeder",
+    "Kendala izin lingkungan",
+    "Sudah tercover project lain",
+    "Sudah tercover Provider lain",
 ]
 
 # ── Z value -> (date_col, note_col) routing ───────────────────────────

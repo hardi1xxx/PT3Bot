@@ -55,17 +55,25 @@
     <label for="status_aa">Sub Status (kolom AA)</label>
     <select name="status_aa" id="status_aa">
       <option value="">-- tidak diubah --</option>
-      {% for opt in aa_options %}
-        <option value="{{ opt }}" {% if opt == snapshot.status_aa %}selected{% endif %}>{{ opt }}</option>
-      {% endfor %}
     </select>
   </div>
-  <div class="field">
+
+  <div class="field" id="targetFiField">
     <label for="target_fi">
       Target Finish Instalasi (kolom AK)
-      {% if snapshot.status_z in pre_finish_install_statuses %}<span style="color:#dc2626;">*wajib diisi (boleh biarkan tanggal lama)</span>{% else %}<span style="color:var(--muted); font-weight:400;">(opsional, sudah tidak wajib di tahap ini)</span>{% endif %}
+      <span id="targetFiHint" style="color:#dc2626;">*wajib diisi (boleh biarkan tanggal lama)</span>
     </label>
     <input type="date" name="target_fi" id="target_fi" min="{{ today_iso }}" value="{{ snapshot.target_fi_iso or '' }}">
+  </div>
+
+  <div class="field" id="kategoriDropField" style="display:none;">
+    <label for="kategori_drop">Kategori Drop (kolom BH) <span style="color:#dc2626;">*wajib dipilih</span></label>
+    <select name="kategori_drop" id="kategori_drop">
+      <option value="">-- pilih kategori drop --</option>
+      {% for opt in kategori_drop_options %}
+        <option value="{{ opt }}" {% if opt == snapshot.kategori_drop %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
   </div>
 
   <div class="field">
@@ -100,4 +108,60 @@
   <button type="submit">Simpan Update</button>
   &nbsp; <a href="/">&larr; Kembali ke dashboard</a>
 </form>
+
+<script>
+// Data dari backend (config.py) -- single source of truth, jangan hardcode di sini.
+const AA_OPTIONS_ALL = {{ aa_options | tojson }};
+const STATUS_AA_GROUPS = {{ status_aa_groups | tojson }};
+const PRE_FINISH_INSTALL_STATUSES = {{ pre_finish_install_statuses | tojson }};
+const PROGRESS_DROP_STATUSES = {{ progress_drop_statuses | tojson }};
+const CURRENT_STATUS_AA = {{ (snapshot.status_aa or '') | tojson }};
+
+const statusZSelect = document.getElementById('status_z');
+const statusAaSelect = document.getElementById('status_aa');
+const targetFiField = document.getElementById('targetFiField');
+const targetFiInput = document.getElementById('target_fi');
+const targetFiHint = document.getElementById('targetFiHint');
+const kategoriDropField = document.getElementById('kategoriDropField');
+const kategoriDropSelect = document.getElementById('kategori_drop');
+
+// Sub Status (AA): difilter sesuai Status (Z) yang lagi dipilih, urut
+// sesuai tahapan kerja (config.STATUS_AA_GROUPS). Z yang tidak ada
+// kelompoknya (mis. "0.1 SURVEI") -> tampil semua opsi apa adanya.
+function renderAaOptions(zValue, selectedAa) {
+  const options = STATUS_AA_GROUPS[zValue] || AA_OPTIONS_ALL;
+  const placeholder = STATUS_AA_GROUPS[zValue] ? '-- pilih sub status --' : '-- tidak diubah --';
+  statusAaSelect.innerHTML = `<option value="">${placeholder}</option>` +
+    options.map(opt => `<option value="${opt}" ${opt === selectedAa ? 'selected' : ''}>${opt}</option>`).join('');
+}
+
+// Target Finish Instalasi (AK): disembunyikan total begitu Status dipilih
+// DROP / Finish Instalasi / Golive / dst -- cuma relevan untuk status
+// SEBELUM Finish Instalasi (config.PRE_FINISH_INSTALL_STATUSES).
+function toggleTargetFi(zValue) {
+  const relevant = PRE_FINISH_INSTALL_STATUSES.includes(zValue);
+  targetFiField.style.display = relevant ? '' : 'none';
+  targetFiInput.required = false; // wajib-isi divalidasi di server (boleh nilai lama), bukan lewat HTML required
+  if (!relevant) targetFiHint.textContent = '';
+  else targetFiHint.textContent = '*wajib diisi (boleh biarkan tanggal lama)';
+}
+
+// Kategori Drop (BH): cuma muncul & wajib begitu Status dipilih Drop.
+function toggleKategoriDrop(zValue) {
+  const isDrop = PROGRESS_DROP_STATUSES.includes(zValue);
+  kategoriDropField.style.display = isDrop ? '' : 'none';
+  kategoriDropSelect.required = isDrop;
+  if (!isDrop) kategoriDropSelect.value = '';
+}
+
+function onStatusZChange(preserveAa) {
+  const zValue = statusZSelect.value;
+  renderAaOptions(zValue, preserveAa ? CURRENT_STATUS_AA : '');
+  toggleTargetFi(zValue);
+  toggleKategoriDrop(zValue);
+}
+
+statusZSelect.addEventListener('change', () => onStatusZChange(false));
+onStatusZChange(true); // render awal: pertahankan sub status yang sedang tersimpan
+</script>
 {% endblock %}

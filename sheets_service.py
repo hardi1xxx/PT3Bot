@@ -475,7 +475,7 @@ def _find_progress_stage_index(status_z: str):
     return None
 
 
-def compute_progress(status_z: str, has_order: bool = True):
+def compute_progress(status_z: str, status_aa: str = None, has_order: bool = True):
     """
     Return (percent, stage_label, stage_index) for one LOP.
     - percent: 0-100
@@ -485,17 +485,29 @@ def compute_progress(status_z: str, has_order: bool = True):
     - stage_index: index di config.PROGRESS_STAGES yang dipakai buat cari
       deadline tahap ini (lihat compute_stage_deadlines), atau None.
 
-    Aturan (lihat komentar PROGRESS_STAGES di config.py): bobot suatu tahap
-    dihitung begitu status SUDAH PINDAH ke tahap berikutnya -- kecuali
-    Golive (tahap terakhir), yang bobotnya langsung masuk begitu Golive
-    dipilih.
+    Aturan tahap (bobot per Status Z, lihat komentar PROGRESS_STAGES di
+    config.py): tahap 1..idx-1 dianggap TUNTAS (bobot penuh), tahap ke-idx
+    (tahap yang SEDANG berjalan) bobotnya PECAHAN sesuai posisi Sub Status
+    (AA) di config.STATUS_AA_GROUPS[status_z] -- posisi ke-N dari M sub
+    status = (N/M) dari bobot tahap ini. Kalau status_z tidak ada di
+    STATUS_AA_GROUPS, atau status_aa kosong/tidak dikenal, dianggap baru
+    masuk tahap (0/M, sama seperti perilaku lama sebelum ada sub progress).
+    Golive diperlakukan sama (bukan lagi selalu full begitu dipilih) --
+    baru penuh kalau sub status-nya sudah yang PALING AKHIR di grup itu
+    (mis. "5.3 BAST"), supaya tidak ada lompatan pas pindah ke tahap
+    berikutnya (biasanya tidak ada tahap sesudah Golive, jadi ini juga
+    membuat 100% baru tercapai di sub status paling akhir).
+
+    Drop (status_z di PROGRESS_DROP_STATUSES) sekarang eksplisit 0% (bukan
+    None) -- ditampilkan terpisah di UI (badge "Drop"), tapi angkanya
+    tetap ada kalau ada kode lain yang butuh nilai numerik.
     """
     stages = config.PROGRESS_STAGES
     if not has_order:
         return 0, None, None
 
     if status_z in config.PROGRESS_DROP_STATUSES:
-        return None, "Drop", None
+        return 0, "Drop", None
 
     idx = _find_progress_stage_index(status_z)
     nde_weight = stages[0]["weight"]
@@ -505,10 +517,18 @@ def compute_progress(status_z: str, has_order: bool = True):
         return nde_weight, stages[0]["label"], 0
 
     completed = sum(s["weight"] for s in stages[1:idx])  # tahap 1..idx-1, tuntas
-    if idx == len(stages) - 1:  # Golive: bobotnya sendiri ikut dihitung
-        completed += stages[idx]["weight"]
 
-    return nde_weight + completed, stages[idx]["label"], idx
+    # Pecahan bobot tahap SEDANG berjalan (idx), berdasar posisi sub status.
+    current_stage_weight = stages[idx]["weight"]
+    aa_group = config.STATUS_AA_GROUPS.get(status_z)
+    if aa_group and status_aa in aa_group:
+        position = aa_group.index(status_aa) + 1  # 1-based: sub status ke-N
+        fraction = position / len(aa_group)
+    else:
+        fraction = 0  # baru masuk tahap ini, belum pilih sub status yang dikenal
+    completed += current_stage_weight * fraction
+
+    return round(nde_weight + completed), stages[idx]["label"], idx
 
 
 def compute_stage_deadlines(wo_terbit_date: datetime.date, target_fi_date: datetime.date = None):
@@ -583,6 +603,22 @@ def validate_target_fi(row_num: int, z_value: str, raw: str):
     if existing_date:
         return True, ""
     return False, "Tanggal Target Finish Instalasi (kolom AK) wajib diisi untuk status sebelum Finish Instalasi."
+
+
+def validate_kategori_drop(z_value: str, kategori_drop: str):
+    """Kolom BH (Kategori Drop) -- WAJIB diisi salah satu dari
+    config.KATEGORI_DROP_OPTIONS begitu status Z dipilih Drop
+    (config.PROGRESS_DROP_STATUSES: '00. DROP' / '01. DROP MOM').
+    Untuk status Z lain, field ini tidak relevan -- selalu lolos.
+    Returns (ok: bool, message: str)."""
+    if z_value not in config.PROGRESS_DROP_STATUSES:
+        return True, ""
+    kategori_drop = (kategori_drop or "").strip()
+    if not kategori_drop:
+        return False, "Kategori Drop (kolom BH) wajib dipilih untuk status Drop."
+    if kategori_drop not in config.KATEGORI_DROP_OPTIONS:
+        return False, "Kategori Drop tidak dikenal."
+    return True, ""
 
 
 def get_document_ui_modes(status_z: str):
@@ -728,6 +764,7 @@ def get_row_snapshot(row_num: int):
         f"{config.COL_KETERANGAN_AB}{row_num}",
         f"{config.COL_WO_TERBIT}{row_num}",
         f"{config.COL_TARGET_FI}{row_num}",
+        f"{config.COL_BH}{row_num}",
     ]
     extra_refs = [f"{col}{row_num}" for col in config.EXTRA_FIELD_COLUMNS.values()]
     note_col_refs = [f"{m['note_col']}{row_num}" for m in config.STATUS_COLUMN_MAP.values()]
@@ -763,7 +800,7 @@ def get_row_snapshot(row_num: int):
     target_fi_raw = v(f"{config.COL_TARGET_FI}{row_num}")
     target_fi_date = _parse_date(target_fi_raw)
 
-    progress_percent, progress_stage_label, stage_idx = compute_progress(z_val, has_order=True)
+    progress_percent, progress_stage_label, stage_idx = compute_progress(z_val, aa_val, has_order=True)
 
     current_stage_deadline = None
     final_deadline = None
@@ -803,6 +840,7 @@ def get_row_snapshot(row_num: int):
         "target_fi": target_fi_date.strftime("%d/%b/%y") if target_fi_date else None,
         "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
         "target_fi_required": z_val in config.PRE_FINISH_INSTALL_STATUSES,
+        "kategori_drop": v(f"{config.COL_BH}{row_num}") or None,
         "documents": documents,
     }
 
@@ -870,7 +908,8 @@ def validate_extra_field(key: str, raw: str):
 
 
 def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
-                   extra_fields: dict = None, target_fi: str = None, when: datetime.date = None):
+                   extra_fields: dict = None, target_fi: str = None,
+                   kategori_drop: str = None, when: datetime.date = None):
     """
     Apply one update to a row:
       1. Write Z and AA dropdown values.
@@ -881,6 +920,9 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
          -- kosong/None berarti "jangan diubah", nilai lama tetap dipertahankan
          (validasi wajib-isi untuk status pra-Finish-Instalasi dilakukan
          terpisah lewat validate_target_fi(), BUKAN di sini).
+      6. Kalau z_value ada di config.PROGRESS_DROP_STATUSES dan
+         `kategori_drop` diisi, tulis ke kolom BH (validasi wajib-isi
+         terpisah lewat validate_kategori_drop(), BUKAN di sini).
     Returns the (date_col, note_col) pair used.
 
     Semua pembacaan nilai lama (note lama, tanggal lama) dan SEMUA penulisan
@@ -958,6 +1000,13 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                 "range": f"{config.COL_TARGET_FI}{row_num}",
                 "values": [[parsed_target_fi.strftime("%d/%b/%y")]],
             })
+
+    # 6. Kategori Drop (kolom BH) — cuma relevan & ditulis kalau status Z
+    #    Drop dan ada nilainya (kosong = tidak diubah, sama seperti field
+    #    tambahan lain di atas).
+    kategori_drop = (kategori_drop or "").strip()
+    if z_value in config.PROGRESS_DROP_STATUSES and kategori_drop:
+        updates.append({"range": f"{config.COL_BH}{row_num}", "values": [[kategori_drop]]})
 
     ws.batch_update(updates)
 
