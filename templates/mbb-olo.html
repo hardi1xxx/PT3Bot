@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MBB & OLO Monitoring</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --bg:#0B1220;
+    --bg-soft:#111A2E;
+    --panel:#0F1729;
+    --line:#1E2A44;
+    --line-soft:#182238;
+    --text:#E7ECF7;
+    --text-dim:#8B98B8;
+    --text-faint:#5C6890;
+    --accent:#2F7DE1;
+    --accent-soft:#173257;
+    --mbb:#2F7DE1;
+    --olo:#E19A2F;
+    --good:#22B573;
+    --warn:#E1A22F;
+    --bad:#E14F4F;
+    --mono: 'IBM Plex Mono','SFMono-Regular',Consolas,monospace;
+    --sans: 'Inter','Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  .app{display:flex; height:100vh; overflow:hidden;}
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:250px; min-width:250px;
+    background:var(--bg-soft);
+    border-right:1px solid var(--line);
+    display:flex; flex-direction:column;
+    padding:20px 14px;
+    overflow-y:auto;
+  }
+  .brand{
+    display:flex; align-items:center; gap:10px;
+    padding:4px 6px 20px 6px;
+    border-bottom:1px solid var(--line);
+    margin-bottom:16px;
+  }
+  .brand-mark{
+    width:34px; height:34px; border-radius:8px;
+    background:linear-gradient(135deg,var(--mbb),var(--olo));
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-weight:700; font-size:12px; color:#fff;
+    flex-shrink:0;
+  }
+  .brand-text .t1{font-weight:700; font-size:15px; letter-spacing:.2px;}
+  .brand-text .t2{font-size:11px; color:var(--text-faint); font-family:var(--mono);}
+
+  .nav-group{margin-bottom:22px;}
+  .nav-group-label{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:1.5px;
+    color:var(--text-faint); text-transform:uppercase;
+    padding:0 10px; margin-bottom:8px; display:flex; align-items:center; gap:6px;
+  }
+  .nav-group-label .dot{width:6px;height:6px;border-radius:50%;}
+  .nav-item{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:9px 10px; border-radius:8px; margin-bottom:2px;
+    cursor:pointer; font-size:13.5px; color:var(--text-dim);
+    border:1px solid transparent;
+    transition:background .12s ease, color .12s ease;
+  }
+  .nav-item:hover{background:var(--panel); color:var(--text);}
+  .nav-item.active{
+    background:var(--accent-soft); color:var(--text);
+    border-color:var(--line);
+  }
+  .nav-item .n-label{display:flex; align-items:center; gap:8px;}
+  .nav-item .n-icon{font-family:var(--mono); font-size:11px; opacity:.7; width:14px; text-align:center;}
+  .nav-item .n-count{
+    font-family:var(--mono); font-size:10.5px; color:var(--text-faint);
+    background:rgba(255,255,255,.04); padding:1px 6px; border-radius:10px;
+  }
+  .nav-item.active .n-count{color:var(--text-dim);}
+  .nav-item.sub{padding-left:22px; font-size:13px;}
+
+  .sidebar-foot{
+    margin-top:auto; padding:14px 10px 4px 10px; border-top:1px solid var(--line);
+    font-size:11px; color:var(--text-faint); font-family:var(--mono); line-height:1.6;
+  }
+  .sidebar-foot a{color:var(--accent); text-decoration:none;}
+
+  /* ---------- Main ---------- */
+  .main{flex:1; display:flex; flex-direction:column; min-width:0;}
+  .topbar{
+    padding:16px 24px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    background:var(--bg); flex-wrap:wrap;
+  }
+  .topbar-left .view-title{font-size:18px; font-weight:700; display:flex; align-items:center; gap:10px;}
+  .topbar-left .badge{
+    font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:5px;
+    border:1px solid var(--line); color:var(--text-dim);
+  }
+  .topbar-left .view-sub{font-size:12px; color:var(--text-faint); margin-top:3px;}
+  .topbar-right{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .search-box{
+    display:flex; align-items:center; gap:6px;
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:8px 12px; min-width:220px;
+  }
+  .search-box input{
+    background:transparent; border:none; outline:none; color:var(--text);
+    font-size:13px; width:100%; font-family:var(--sans);
+  }
+  .search-box input::placeholder{color:var(--text-faint);}
+  .btn{
+    background:var(--panel); border:1px solid var(--line); color:var(--text-dim);
+    padding:8px 12px; border-radius:8px; font-size:12.5px; cursor:pointer;
+    font-family:var(--sans); display:flex; align-items:center; gap:6px;
+    transition:border-color .12s ease, color .12s ease;
+  }
+  .btn:hover{border-color:var(--accent); color:var(--text);}
+
+  .statusline{
+    padding:8px 24px; font-family:var(--mono); font-size:11px; color:var(--text-faint);
+    border-bottom:1px solid var(--line-soft); display:flex; gap:18px; flex-wrap:wrap;
+  }
+  .statusline b{color:var(--text-dim); font-weight:600;}
+  .statusline .dotv{color:var(--good);}
+
+  .table-wrap{flex:1; overflow:auto; position:relative;}
+  table{border-collapse:separate; border-spacing:0; font-size:12.5px; min-width:100%;}
+  thead th{
+    position:sticky; top:0; z-index:3;
+    background:#131C33; color:var(--text-dim);
+    text-align:left; padding:10px 14px; font-weight:600;
+    border-bottom:1px solid var(--line); white-space:nowrap;
+    font-size:11px; letter-spacing:.3px; text-transform:uppercase;
+  }
+  thead th:first-child{position:sticky; left:0; z-index:4; box-shadow:2px 0 0 var(--line);}
+  tbody td{
+    padding:9px 14px; border-bottom:1px solid var(--line-soft);
+    white-space:nowrap; color:var(--text); max-width:320px;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+  tbody td:first-child{
+    position:sticky; left:0; background:var(--bg); z-index:2;
+    font-family:var(--mono); color:var(--text); box-shadow:2px 0 0 var(--line);
+    font-weight:600;
+  }
+  tbody tr:hover td{background:#0F1830;}
+  tbody tr:hover td:first-child{background:#131F3B;}
+  td.num{font-family:var(--mono); text-align:right;}
+  .cell-empty{color:var(--text-faint);}
+
+  .pill{
+    display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px;
+    font-family:var(--mono);
+  }
+  .pill-good{background:rgba(34,181,115,.12); color:var(--good);}
+  .pill-warn{background:rgba(225,162,47,.12); color:var(--warn);}
+  .pill-bad{background:rgba(225,79,79,.12); color:var(--bad);}
+  .pill-neutral{background:rgba(139,152,184,.12); color:var(--text-dim);}
+
+  .empty-state, .load-state, .err-state{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    height:100%; gap:10px; color:var(--text-faint); text-align:center; padding:40px;
+  }
+  .load-state .spinner{
+    width:26px;height:26px;border-radius:50%;
+    border:2.5px solid var(--line); border-top-color:var(--accent);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .err-state{color:var(--bad);}
+  .err-state code{
+    background:var(--panel); border:1px solid var(--line); padding:8px 12px;
+    border-radius:6px; font-size:11px; color:var(--text-dim); max-width:520px;
+  }
+
+  ::-webkit-scrollbar{height:10px; width:10px;}
+  ::-webkit-scrollbar-track{background:var(--bg);}
+  ::-webkit-scrollbar-thumb{background:#1F2C4A; border-radius:6px;}
+  ::-webkit-scrollbar-thumb:hover{background:#2A3A5F;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">M/O</div>
+      <div class="brand-text">
+        <div class="t1">MBB &amp; OLO</div>
+        <div class="t2">MONITORING</div>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="dot" style="background:var(--mbb)"></span> MBB</div>
+      <div class="nav-item" data-view="mbb-all">
+        <span class="n-label"><span class="n-icon">▣</span>MBB (Semua Data)</span>
+        <span class="n-count" id="cnt-mbb-all">–</span>
+      </div>
+      <div class="nav-item sub" data-view="mbb-newinfra">
+        <span class="n-label"><span class="n-icon">＋</span>New Infra</span>
+        <span class="n-count" id="cnt-mbb-newinfra">–</span>
+      </div>
+      <div class="nav-item sub" data-view="mbb-rescoping">
+        <span class="n-label"><span class="n-icon">↻</span>Rescoping</span>
+        <span class="n-count" id="cnt-mbb-rescoping">–</span>
+      </div>
+      <div class="nav-item sub" data-view="mbb-fiberisasi">
+        <span class="n-label"><span class="n-icon">⌇</span>Fiberisasi</span>
+        <span class="n-count" id="cnt-mbb-fiberisasi">–</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label"><span class="dot" style="background:var(--olo)"></span> OLO</div>
+      <div class="nav-item" data-view="olo-all">
+        <span class="n-label"><span class="n-icon">▣</span>OLO (Semua Data)</span>
+        <span class="n-count" id="cnt-olo-all">–</span>
+      </div>
+      <div class="nav-item sub" data-view="olo-progress">
+        <span class="n-label"><span class="n-icon">↗</span>OLO Progress</span>
+        <span class="n-count" id="cnt-olo-progress">–</span>
+      </div>
+    </div>
+
+    <div class="sidebar-foot">
+      Sumber data: Google Sheets<br>
+      <a href="https://docs.google.com/spreadsheets/d/1h1NBs7k4rCibwFvNVu9t0rIlq-TuF7sh6YZvxhu9VqQ" target="_blank" rel="noopener">Buka spreadsheet ↗</a>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="view-title" id="view-title">MBB <span class="badge">Semua Data</span></div>
+        <div class="view-sub" id="view-sub">Sheet: All Node B</div>
+      </div>
+      <div class="topbar-right">
+        <div class="search-box">
+          <span style="color:var(--text-faint); font-size:13px;">⌕</span>
+          <input type="text" id="search" placeholder="Cari di semua kolom...">
+        </div>
+        <button class="btn" id="refresh-btn">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="statusline" id="statusline">
+      <span><span class="dotv">●</span> <b>Siap</b></span>
+    </div>
+
+    <div class="table-wrap" id="table-wrap">
+      <div class="load-state">
+        <div class="spinner"></div>
+        <div>Memuat data dari Google Sheets...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ===================== CONFIG ===================== */
+const SHEET_ID = "1h1NBs7k4rCibwFvNVu9t0rIlq-TuF7sh6YZvxhu9VqQ";
+const MBB_GID = "487400008";      // tab: All Node B
+const OLO_SHEET_NAME = "OLO";     // tab: OLO
+
+function csvUrlByGid(id, gid){
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
+}
+function csvUrlBySheetName(id, name){
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`;
+}
+
+/* Excel-style column letter -> zero-based index */
+function colToIdx(col){
+  let idx = 0;
+  for (let i = 0; i < col.length; i++){
+    idx = idx * 26 + (col.charCodeAt(i) - 64);
+  }
+  return idx - 1;
+}
+function expandRange(a, b){
+  const s = colToIdx(a), e = colToIdx(b);
+  const out = [];
+  for (let i = s; i <= e; i++) out.push(i);
+  return out;
+}
+function buildColumns(ranges, labels){
+  const idxs = ranges.flatMap(([a,b]) => expandRange(a,b));
+  return idxs.map((idx, i) => ({ idx, label: labels[i] }));
+}
+
+/* ---- MBB columns: A-V, X-AA, AD-AU, BB-BC, BP, BY, CM, CZ ---- */
+const MBB_RANGES = [["A","V"],["X","AA"],["AD","AU"],["BB","BC"],["BP","BP"],["BY","BY"],["CM","CM"],["CZ","CZ"]];
+const MBB_LABELS = [
+  "TAHUN","Plan Deploy","Tipe Order","Sub Sistem","SITE ID","WITEL","STO","SITE NAME","Lat","Long",
+  "Jarak PO","Catuan PO","Nilai PO","DASAR KERJA","REG TSEL","Tower Provider","Status Tsel","Status Recti","Target RFI","BULAN PLAN",
+  "Status Pekerjaan","Note Progress",
+  "Waspang","Mitra","Skema Kemitraan","Target FI/L0",
+  "Panjang Kabel","Jenis Kabel","Kapasitas Kabel","Tiang","Nilai BoQ (Survey)","Kategori Comcase","Nilai Comcase","CC/BoQ","Nilai Survey + CC","MoM PO",
+  "Tanggal NIM","NIM","Surat Permohonan ONT","Tgl Submit","NDE Pemenuhan","Tgl Approve","Merk","Tipe ONT",
+  "SP SMILE","Nilai BAST",
+  "ID iHLD",
+  "NAMA WASPANG TA",
+  "STATUS DRM",
+  "Status Pekerjaan H-1"
+];
+const MBB_COLUMNS = buildColumns(MBB_RANGES, MBB_LABELS);
+
+/* ---- OLO columns: F-AX ---- */
+const OLO_RANGES = [["F","AX"]];
+const OLO_LABELS = [
+  "SUB SISTEM","Type Order","REGION","BRANCH","STO","STATUS IHLD","ID IHLD","NAMA iHLD","NO AO","NAMA PROYEK",
+  "LOKASI","STATUS PEKERJAAN","NILAI PO","RESUME","PLAN GOLIVE","REALISASI GOLIVE","NAMA ALPRO","ID SW","KETERANGAN DROP","NDE ORDER",
+  "END DATE / TODAY","SLA (AGING ORDER)","GROUPING SLA","MITRA","WASPANG","NIK WASPANG","NILAI IHLD","NILAI BAST","TANGGAL SUBMITED EPROP","REGION (JABO JABAR)",
+  "Column 1","PLAN RFS","REALISASI RFS","KOLOM HO","PM","NILAI SURVEY ( ONSITE )","Nilai Comcase","Kategori Comcase","Status Approcal Comcase","NDE UT PERMOHONAN",
+  "NDE UT PENUNJUKKAN","TIM UT NDE","STATUS UT","BA DROP","NO SP"
+];
+const OLO_COLUMNS = buildColumns(OLO_RANGES, OLO_LABELS);
+
+/* ===================== STATE ===================== */
+let mbbRows = null;   // array of arrays (raw), after header
+let oloRows = null;
+// Tampilan awal diambil dari URL (?view=mbb-newinfra, dst) -- supaya link
+// dari sidebar utama PT3BOT bisa langsung ke sub-menu yang dituju, bukan
+// selalu ke "mbb-all". Fallback ke "mbb-all" kalau param tidak ada/tidak
+// dikenal (dicek ulang di bawah setelah VIEWS didefinisikan).
+const _initialViewParam = new URLSearchParams(window.location.search).get('view');
+let currentView = _initialViewParam || "mbb-all";
+let searchTerm = "";
+
+const VIEWS = {
+  "mbb-all":        { title:"MBB", badge:"Semua Data", sub:"Sheet: All Node B", source:"mbb", filter:null },
+  "mbb-newinfra":    { title:"MBB", badge:"New Infra", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cNew Infra\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","new infra") },
+  "mbb-rescoping":   { title:"MBB", badge:"Rescoping", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201crescop\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","rescop") },
+  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cfiber\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","fiber") },
+  "olo-all":         { title:"OLO", badge:"Semua Data", sub:"Sheet: OLO", source:"olo", filter:null },
+  "olo-progress":    { title:"OLO", badge:"Progress", sub:"Sheet: OLO — filter status belum Done/Drop", source:"olo", filter:(r)=>{
+                          const v = getCol(r,"olo","STATUS PEKERJAAN").toLowerCase();
+                          if(!v) return false;
+                          return !(v.includes("done") || v.includes("drop") || v.includes("go live") || v.includes("golive") || v.includes("close"));
+                        }}
+};
+
+// Kalau ?view=... dari URL tidak dikenal (typo, view lama yang dihapus,
+// dst), balik ke default "mbb-all" alih-alih ketiban ke view yang salah.
+if (!VIEWS[currentView]) currentView = "mbb-all";
+
+function getCol(row, source, label){
+  const cols = source === "mbb" ? MBB_COLUMNS : OLO_COLUMNS;
+  const c = cols.find(c => c.label === label);
+  if(!c) return "";
+  return (row[c.idx] || "").toString().trim();
+}
+function matchCol(row, label, needle){
+  const v = getCol(row, "mbb", label).toLowerCase();
+  return v.includes(needle);
+}
+
+/* ===================== FETCH & PARSE ===================== */
+async function fetchCsv(url){
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("HTTP " + res.status);
+  const text = await res.text();
+  const parsed = Papa.parse(text, { skipEmptyLines: false });
+  return parsed.data;
+}
+
+function findHeaderRowIndex(rows, checkColIdx, checkValue){
+  for(let i=0;i<Math.min(rows.length,15);i++){
+    const cell = (rows[i][checkColIdx] || "").toString().trim().toLowerCase();
+    if(cell === checkValue.toLowerCase()) return i;
+  }
+  return -1;
+}
+
+function cleanDataRows(rows, headerIdx, keyColIdx){
+  return rows.slice(headerIdx+1).filter(r => (r[keyColIdx]||"").toString().trim() !== "");
+}
+
+async function loadAll(){
+  setStatus("loading", "Memuat data dari Google Sheets...");
+  showLoading();
+  try{
+    const [mbbRaw, oloRaw] = await Promise.all([
+      fetchCsv(csvUrlByGid(SHEET_ID, MBB_GID)),
+      fetchCsv(csvUrlBySheetName(SHEET_ID, OLO_SHEET_NAME))
+    ]);
+
+    const mbbHeaderIdx = findHeaderRowIndex(mbbRaw, colToIdx("A"), "TAHUN");
+    const oloHeaderIdx = findHeaderRowIndex(oloRaw, colToIdx("F"), "SUB SISTEM");
+
+    if(mbbHeaderIdx === -1 || oloHeaderIdx === -1){
+      throw new Error("Header sheet tidak ditemukan (struktur kolom mungkin berubah).");
+    }
+
+    mbbRows = cleanDataRows(mbbRaw, mbbHeaderIdx, colToIdx("E")); // key: SITE ID
+    oloRows = cleanDataRows(oloRaw, oloHeaderIdx, colToIdx("O")); // key: NAMA PROYEK
+
+    updateCounts();
+    setStatus("ok", `Data dimuat — ${mbbRows.length} baris MBB, ${oloRows.length} baris OLO`);
+    render();
+  }catch(err){
+    console.error(err);
+    setStatus("err", "Gagal memuat data");
+    showError(err);
+  }
+}
+
+function updateCounts(){
+  document.getElementById("cnt-mbb-all").textContent = mbbRows.length;
+  document.getElementById("cnt-mbb-newinfra").textContent = mbbRows.filter(VIEWS["mbb-newinfra"].filter).length;
+  document.getElementById("cnt-mbb-rescoping").textContent = mbbRows.filter(VIEWS["mbb-rescoping"].filter).length;
+  document.getElementById("cnt-mbb-fiberisasi").textContent = mbbRows.filter(VIEWS["mbb-fiberisasi"].filter).length;
+  document.getElementById("cnt-olo-all").textContent = oloRows.length;
+  document.getElementById("cnt-olo-progress").textContent = oloRows.filter(VIEWS["olo-progress"].filter).length;
+}
+
+/* ===================== RENDER ===================== */
+function setStatus(kind, msg){
+  const el = document.getElementById("statusline");
+  const dotColor = kind === "ok" ? "var(--good)" : kind === "err" ? "var(--bad)" : "var(--warn)";
+  el.innerHTML = `<span><span class="dotv" style="color:${dotColor}">●</span> <b>${msg}</b></span>
+    <span>Terakhir sinkron: ${new Date().toLocaleTimeString('id-ID')}</span>`;
+}
+
+function showLoading(){
+  document.getElementById("table-wrap").innerHTML = `
+    <div class="load-state">
+      <div class="spinner"></div>
+      <div>Memuat data dari Google Sheets...</div>
+    </div>`;
+}
+
+function showError(err){
+  document.getElementById("table-wrap").innerHTML = `
+    <div class="err-state">
+      <div style="font-size:24px;">⚠</div>
+      <div><b>Gagal mengambil data dari Google Sheets.</b></div>
+      <div style="max-width:480px; color:var(--text-faint); font-size:13px;">
+        Pastikan spreadsheet dibagikan dengan akses "Anyone with the link — Viewer".
+        Jika sudah publik, coba klik Refresh.
+      </div>
+      <code>${(err && err.message) ? err.message : err}</code>
+      <button class="btn" onclick="loadAll()" style="margin-top:6px;">↻ Coba lagi</button>
+    </div>`;
+}
+
+function statusPill(val){
+  if(!val) return `<span class="cell-empty">–</span>`;
+  const v = val.toLowerCase();
+  let cls = "pill-neutral";
+  if(v.includes("drop")) cls = "pill-bad";
+  else if(v.includes("done") || v.includes("on air") || v.includes("oa confirmation") || v.includes("go live")) cls = "pill-good";
+  else if(v.includes("ready") || v.includes("progress") || v.includes("l0") || v.includes("l1") || v.includes("l2") || v.includes("l3")) cls = "pill-warn";
+  return `<span class="pill ${cls}">${escapeHtml(val)}</span>`;
+}
+
+function escapeHtml(s){
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function render(){
+  const view = VIEWS[currentView];
+  document.getElementById("view-title").innerHTML = `${view.title} <span class="badge">${view.badge}</span>`;
+  document.getElementById("view-sub").textContent = view.sub;
+
+  document.querySelectorAll(".nav-item").forEach(el=>{
+    el.classList.toggle("active", el.dataset.view === currentView);
+  });
+
+  const cols = view.source === "mbb" ? MBB_COLUMNS : OLO_COLUMNS;
+  const statusLabel = view.source === "mbb" ? "Status Pekerjaan" : "STATUS PEKERJAAN";
+  let rows = view.source === "mbb" ? mbbRows : oloRows;
+
+  if(view.filter) rows = rows.filter(view.filter);
+
+  if(searchTerm.trim() !== ""){
+    const needle = searchTerm.trim().toLowerCase();
+    rows = rows.filter(r => cols.some(c => (r[c.idx]||"").toString().toLowerCase().includes(needle)));
+  }
+
+  const wrap = document.getElementById("table-wrap");
+
+  if(rows.length === 0){
+    wrap.innerHTML = `<div class="empty-state">
+      <div style="font-size:24px;">▢</div>
+      <div><b>Tidak ada data untuk tampilan ini.</b></div>
+      <div style="font-size:12.5px;">Coba ubah kata kunci pencarian atau cek kembali data sumber.</div>
+    </div>`;
+    return;
+  }
+
+  const thead = `<thead><tr>${cols.map(c=>`<th>${escapeHtml(c.label)}</th>`).join("")}</tr></thead>`;
+
+  const bodyRows = rows.map(r=>{
+    const tds = cols.map(c=>{
+      const raw = (r[c.idx] || "").toString().trim();
+      if(c.label === statusLabel){
+        return `<td>${statusPill(raw)}</td>`;
+      }
+      if(!raw) return `<td><span class="cell-empty">–</span></td>`;
+      const isNum = /^-?[\d.,]+%?$/.test(raw) && raw.length < 20;
+      const title = raw.length > 60 ? ` title="${escapeHtml(raw)}"` : "";
+      return `<td class="${isNum?'num':''}"${title}>${escapeHtml(raw)}</td>`;
+    }).join("");
+    return `<tr>${tds}</tr>`;
+  }).join("");
+
+  wrap.innerHTML = `<table>${thead}<tbody>${bodyRows}</tbody></table>`;
+
+  setStatus("ok", `Menampilkan ${rows.length} baris — ${view.title} / ${view.badge}`);
+}
+
+/* ===================== EVENTS ===================== */
+document.querySelectorAll(".nav-item").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    currentView = el.dataset.view;
+    const url = new URL(window.location);
+    url.searchParams.set('view', currentView);
+    history.replaceState(null, '', url);
+    render();
+  });
+});
+document.getElementById("search").addEventListener("input", (e)=>{
+  searchTerm = e.target.value;
+  render();
+});
+document.getElementById("refresh-btn").addEventListener("click", loadAll);
+
+loadAll();
+</script>
+</body>
+</html>

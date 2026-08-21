@@ -208,6 +208,17 @@ def aging_page():
     return render_template("aging.html")
 
 
+@app.route("/mbb-olo")
+def mbb_olo_page():
+    """Monitoring MBB (All Node B) & OLO -- halaman berdiri sendiri (bukan
+    extend base.html, tampilan/sidebar sendiri), ambil data langsung dari
+    Google Sheets di browser (client-side CSV fetch), tidak lewat
+    sheets_service.py sama sekali karena sumber datanya spreadsheet lain
+    (bukan 'Detail PT3'). Tampilan awal ditentukan lewat ?view=... dari
+    link menu di base.html (mis. /mbb-olo?view=mbb-newinfra)."""
+    return render_template("mbb-olo.html")
+
+
 @app.route("/api/aging-data")
 def api_aging_data():
     try:
