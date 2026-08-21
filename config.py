@@ -484,3 +484,47 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
 PORT = int(os.environ.get("PORT", 5000))
+
+# ── Spreadsheet MBB (All Node B) & OLO ──────────────────────────────────
+# Spreadsheet TERPISAH dari "Detail PT3" -- tetap private, dibaca lewat
+# service account yang sama (GOOGLE_SERVICE_ACCOUNT_JSON di atas). Service
+# account itu harus di-Share ke spreadsheet ini (akses Viewer cukup) --
+# lihat client_email di endpoint /debug/sheet-check.
+MBB_OLO_SPREADSHEET_ID = os.environ.get(
+    "MBB_OLO_SPREADSHEET_ID", "1h1NBs7k4rCibwFvNVu9t0rIlq-TuF7sh6YZvxhu9VqQ"
+)
+MBB_SHEET_GID = os.environ.get("MBB_SHEET_GID", "487400008")  # tab: All Node B
+OLO_SHEET_NAME = os.environ.get("OLO_SHEET_NAME", "OLO")       # tab: OLO
+
+# Kolom MBB: A-V, X-AA, AD-AU, BB-BC, BP, BY, CM, CZ (label harus SEJAJAR
+# urutan dengan MBB_RANGES kalau di-expand satu-satu).
+MBB_RANGES = [("A", "V"), ("X", "AA"), ("AD", "AU"), ("BB", "BC"), ("BP", "BP"), ("BY", "BY"), ("CM", "CM"), ("CZ", "CZ")]
+MBB_LABELS = [
+    "TAHUN", "Plan Deploy", "Tipe Order", "Sub Sistem", "SITE ID", "WITEL", "STO", "SITE NAME", "Lat", "Long",
+    "Jarak PO", "Catuan PO", "Nilai PO", "DASAR KERJA", "REG TSEL", "Tower Provider", "Status Tsel", "Status Recti", "Target RFI", "BULAN PLAN",
+    "Status Pekerjaan", "Note Progress",
+    "Waspang", "Mitra", "Skema Kemitraan", "Target FI/L0",
+    "Panjang Kabel", "Jenis Kabel", "Kapasitas Kabel", "Tiang", "Nilai BoQ (Survey)", "Kategori Comcase", "Nilai Comcase", "CC/BoQ", "Nilai Survey + CC", "MoM PO",
+    "Tanggal NIM", "NIM", "Surat Permohonan ONT", "Tgl Submit", "NDE Pemenuhan", "Tgl Approve", "Merk", "Tipe ONT",
+    "SP SMILE", "Nilai BAST",
+    "ID iHLD",
+    "NAMA WASPANG TA",
+    "STATUS DRM",
+    "Status Pekerjaan H-1",
+]
+MBB_HEADER_CHECK_COL = "A"
+MBB_HEADER_CHECK_VALUE = "TAHUN"
+MBB_KEY_COL = "E"  # SITE ID -- baris tanpa ini dibuang (bukan data asli)
+
+# Kolom OLO: F-AX
+OLO_RANGES = [("F", "AX")]
+OLO_LABELS = [
+    "SUB SISTEM", "Type Order", "REGION", "BRANCH", "STO", "STATUS IHLD", "ID IHLD", "NAMA iHLD", "NO AO", "NAMA PROYEK",
+    "LOKASI", "STATUS PEKERJAAN", "NILAI PO", "RESUME", "PLAN GOLIVE", "REALISASI GOLIVE", "NAMA ALPRO", "ID SW", "KETERANGAN DROP", "NDE ORDER",
+    "END DATE / TODAY", "SLA (AGING ORDER)", "GROUPING SLA", "MITRA", "WASPANG", "NIK WASPANG", "NILAI IHLD", "NILAI BAST", "TANGGAL SUBMITED EPROP", "REGION (JABO JABAR)",
+    "Column 1", "PLAN RFS", "REALISASI RFS", "KOLOM HO", "PM", "NILAI SURVEY ( ONSITE )", "Nilai Comcase", "Kategori Comcase", "Status Approcal Comcase", "NDE UT PERMOHONAN",
+    "NDE UT PENUNJUKKAN", "TIM UT NDE", "STATUS UT", "BA DROP", "NO SP",
+]
+OLO_HEADER_CHECK_COL = "F"
+OLO_HEADER_CHECK_VALUE = "SUB SISTEM"
+OLO_KEY_COL = "O"  # NAMA PROYEK -- baris tanpa ini dibuang

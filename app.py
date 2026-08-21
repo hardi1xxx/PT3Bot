@@ -210,13 +210,31 @@ def aging_page():
 
 @app.route("/mbb-olo")
 def mbb_olo_page():
-    """Monitoring MBB (All Node B) & OLO -- halaman berdiri sendiri (bukan
-    extend base.html, tampilan/sidebar sendiri), ambil data langsung dari
-    Google Sheets di browser (client-side CSV fetch), tidak lewat
-    sheets_service.py sama sekali karena sumber datanya spreadsheet lain
-    (bukan 'Detail PT3'). Tampilan awal ditentukan lewat ?view=... dari
-    link menu di base.html (mis. /mbb-olo?view=mbb-newinfra)."""
+    """Monitoring MBB (All Node B) & OLO -- extend base.html (sidebar &
+    topbar sama seperti halaman lain). Spreadsheet-nya TERPISAH dari
+    'Detail PT3' dan tetap PRIVATE -- dibaca lewat service account yang
+    sama (lihat get_mbb_rows/get_olo_rows di sheets_service.py), bukan
+    lagi CSV export publik dari browser. Tampilan ditentukan lewat
+    ?view=... dari link menu MBB/OLO di sidebar (mis. /mbb-olo?view=mbb-newinfra)."""
     return render_template("mbb-olo.html")
+
+
+@app.route("/api/mbb-data")
+def api_mbb_data():
+    try:
+        rows = sheets_service.get_mbb_rows()
+        return jsonify({"ok": True, "rows": rows})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/olo-data")
+def api_olo_data():
+    try:
+        rows = sheets_service.get_olo_rows()
+        return jsonify({"ok": True, "rows": rows})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/aging-data")

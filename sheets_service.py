@@ -96,6 +96,113 @@ def get_worksheet():
     return _worksheet
 
 
+_mbb_worksheet = None
+_olo_worksheet = None
+
+
+def get_mbb_worksheet():
+    """Tab 'All Node B' (gid config.MBB_SHEET_GID) di spreadsheet MBB/OLO --
+    spreadsheet TERPISAH dari 'Detail PT3', dibaca pakai gid (bukan nama
+    tab) karena itu yang tersedia, jadi harus cari manual lewat ws.id
+    (bukan sh.worksheet(nama) seperti sheet lain)."""
+    global _mbb_worksheet
+    if _mbb_worksheet is None:
+        client = get_client()
+        sh = client.open_by_key(config.MBB_OLO_SPREADSHEET_ID)
+        for ws in sh.worksheets():
+            if str(ws.id) == str(config.MBB_SHEET_GID):
+                _mbb_worksheet = ws
+                break
+        if _mbb_worksheet is None:
+            raise ValueError(
+                f"Tab dengan gid={config.MBB_SHEET_GID} tidak ditemukan di spreadsheet MBB/OLO "
+                f"(cek config.MBB_SHEET_GID, atau pastikan service account punya akses)."
+            )
+    return _mbb_worksheet
+
+
+def get_olo_worksheet():
+    global _olo_worksheet
+    if _olo_worksheet is None:
+        client = get_client()
+        sh = client.open_by_key(config.MBB_OLO_SPREADSHEET_ID)
+        _olo_worksheet = sh.worksheet(config.OLO_SHEET_NAME)
+    return _olo_worksheet
+
+
+def _col_letters_to_index0(col: str) -> int:
+    """'A' -> 0, 'B' -> 1, ... 'Z' -> 25, 'AA' -> 26, dst (0-based --
+    dipakai buat index ke list Python biasa, BEDA dari _col_to_index di
+    atas yang 1-based buat notasi range gspread)."""
+    idx = 0
+    for ch in col:
+        idx = idx * 26 + (ord(ch.upper()) - ord('A') + 1)
+    return idx - 1
+
+
+def _expand_col_range(a: str, b: str):
+    return list(range(_col_letters_to_index0(a), _col_letters_to_index0(b) + 1))
+
+
+def _build_mbb_olo_rows(all_values, ranges, labels, header_check_col, header_check_value, key_col):
+    """Versi Python dari logic yang tadinya di JS (mbb-olo.html):
+    buildColumns/findHeaderRowIndex/cleanDataRows. Dipakai backend supaya
+    spreadsheet MBB/OLO bisa tetap PRIVATE -- dibaca lewat service account
+    yang sama dengan sheet PT3, bukan lagi lewat CSV export publik dari
+    browser. Return list of dict {label: value}, urutan sesuai `labels`."""
+    idxs = []
+    for a, b in ranges:
+        idxs.extend(_expand_col_range(a, b))
+    if len(idxs) != len(labels):
+        raise ValueError(
+            f"Jumlah kolom hasil range ({len(idxs)}) tidak sama dengan jumlah label ({len(labels)}) "
+            f"-- cek RANGES vs LABELS di config.py."
+        )
+
+    check_idx = _col_letters_to_index0(header_check_col)
+    header_row = None
+    for i, row in enumerate(all_values[:15]):
+        cell = (row[check_idx] if check_idx < len(row) else "").strip().lower()
+        if cell == header_check_value.lower():
+            header_row = i
+            break
+    if header_row is None:
+        raise ValueError(
+            f"Header '{header_check_value}' tidak ditemukan di 15 baris pertama kolom {header_check_col} "
+            f"-- struktur sheet mungkin berubah, atau gid/nama tab salah."
+        )
+
+    key_idx = _col_letters_to_index0(key_col)
+    rows = []
+    for row in all_values[header_row + 1:]:
+        key_val = (row[key_idx] if key_idx < len(row) else "").strip()
+        if not key_val:
+            continue
+        record = {}
+        for label, idx in zip(labels, idxs):
+            record[label] = row[idx].strip() if idx < len(row) else ""
+        rows.append(record)
+    return rows
+
+
+def get_mbb_rows():
+    ws = get_mbb_worksheet()
+    all_values = _cached_get_all_values(ws)
+    return _build_mbb_olo_rows(
+        all_values, config.MBB_RANGES, config.MBB_LABELS,
+        config.MBB_HEADER_CHECK_COL, config.MBB_HEADER_CHECK_VALUE, config.MBB_KEY_COL,
+    )
+
+
+def get_olo_rows():
+    ws = get_olo_worksheet()
+    all_values = _cached_get_all_values(ws)
+    return _build_mbb_olo_rows(
+        all_values, config.OLO_RANGES, config.OLO_LABELS,
+        config.OLO_HEADER_CHECK_COL, config.OLO_HEADER_CHECK_VALUE, config.OLO_KEY_COL,
+    )
+
+
 _semesta_worksheet = None
 
 
