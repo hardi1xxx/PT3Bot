@@ -493,8 +493,8 @@ PORT = int(os.environ.get("PORT", 5000))
 MBB_OLO_SPREADSHEET_ID = os.environ.get(
     "MBB_OLO_SPREADSHEET_ID", "1h1NBs7k4rCibwFvNVu9t0rIlq-TuF7sh6YZvxhu9VqQ"
 )
-MBB_SHEET_GID = os.environ.get("MBB_SHEET_GID", "487400008")  # tab: All Node B
-OLO_SHEET_NAME = os.environ.get("OLO_SHEET_NAME", "OLO")       # tab: OLO
+MBB_SHEET_GID = os.environ.get("MBB_SHEET_GID", "212134262")   # tab: All Node B
+OLO_SHEET_GID = os.environ.get("OLO_SHEET_GID", "487400008")    # tab: OLO
 
 # Kolom MBB: A-V, X-AA, AD-AU, BB-BC, BP, BY, CM, CZ (label harus SEJAJAR
 # urutan dengan MBB_RANGES kalau di-expand satu-satu).

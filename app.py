@@ -400,5 +400,50 @@ def debug_sheet_check():
     return jsonify(report)
 
 
+@app.route("/debug/mbb-olo-check")
+def debug_mbb_olo_check():
+    """Diagnostic khusus spreadsheet MBB/OLO (terpisah dari 'Detail PT3').
+    Nunjukkin: daftar semua tab + gid-nya (buat cocokin config.MBB_SHEET_GID
+    itu beneran tab 'All Node B' apa bukan), dan preview 20 baris pertama
+    kolom A (MBB) / kolom F (OLO) apa adanya -- biar ketahuan header
+    'TAHUN'/'SUB SISTEM' itu di baris ke berapa sebenarnya, tanpa nebak-nebak."""
+    report = {}
+    try:
+        client = sheets_service.get_client()
+    except Exception as e:
+        report["client_error"] = f"{type(e).__name__}: {e}"
+        return jsonify(report), 500
+
+    try:
+        sh = client.open_by_key(config.MBB_OLO_SPREADSHEET_ID)
+        report["spreadsheet_opened"] = True
+        report["spreadsheet_title"] = sh.title
+        report["all_tabs"] = [{"title": ws.title, "gid": str(ws.id)} for ws in sh.worksheets()]
+    except Exception as e:
+        report["spreadsheet_opened"] = False
+        report["spreadsheet_error"] = f"{type(e).__name__}: {e}"
+        report["traceback"] = traceback.format_exc()
+        return jsonify(report), 500
+
+    report["configured_mbb_gid"] = str(config.MBB_SHEET_GID)
+    report["configured_olo_gid"] = str(config.OLO_SHEET_GID)
+
+    try:
+        mbb_ws = sheets_service.get_mbb_worksheet()
+        report["mbb_tab_title_matched"] = mbb_ws.title
+        report["mbb_col_A_first_20_rows"] = mbb_ws.col_values(1)[:20]
+    except Exception as e:
+        report["mbb_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        olo_ws = sheets_service.get_olo_worksheet()
+        report["olo_tab_title_matched"] = olo_ws.title
+        report["olo_col_F_first_20_rows"] = olo_ws.col_values(6)[:20]
+    except Exception as e:
+        report["olo_error"] = f"{type(e).__name__}: {e}"
+
+    return jsonify(report)
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=config.PORT, debug=False)

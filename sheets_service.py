@@ -122,11 +122,23 @@ def get_mbb_worksheet():
 
 
 def get_olo_worksheet():
+    """Tab OLO (gid config.OLO_SHEET_GID) di spreadsheet MBB/OLO -- dibaca
+    pakai gid juga (bukan nama tab), sama seperti get_mbb_worksheet(), biar
+    tidak bergantung ke nama tab persis (yang ternyata di UI Sheets bisa
+    kelihatan pakai nama filter view, bukan nama tab aslinya)."""
     global _olo_worksheet
     if _olo_worksheet is None:
         client = get_client()
         sh = client.open_by_key(config.MBB_OLO_SPREADSHEET_ID)
-        _olo_worksheet = sh.worksheet(config.OLO_SHEET_NAME)
+        for ws in sh.worksheets():
+            if str(ws.id) == str(config.OLO_SHEET_GID):
+                _olo_worksheet = ws
+                break
+        if _olo_worksheet is None:
+            raise ValueError(
+                f"Tab dengan gid={config.OLO_SHEET_GID} tidak ditemukan di spreadsheet MBB/OLO "
+                f"(cek config.OLO_SHEET_GID, atau pastikan service account punya akses)."
+            )
     return _olo_worksheet
 
 
