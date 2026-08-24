@@ -142,7 +142,7 @@ function toggleTargetFi(zValue) {
   const relevant = PRE_FINISH_INSTALL_STATUSES.includes(zValue);
   targetFiField.style.display = relevant ? '' : 'none';
   targetFiInput.required = false; // wajib-isi divalidasi di server (boleh nilai lama), bukan lewat HTML required
-  if (!relevant) targetFiHint.textContent = '';
+  if (!relevant) { targetFiHint.textContent = ''; targetFiInput.value = ''; } // kosongkan biar tidak ada tanggal lama nyangkut kekirim (Drop/Finish Instalasi/Golive dst mengabaikan/menghapus field ini)
   else targetFiHint.textContent = '*wajib diisi (boleh biarkan tanggal lama)';
 }
 

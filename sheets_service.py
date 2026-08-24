@@ -197,9 +197,17 @@ def _build_mbb_olo_rows(all_values, ranges, labels, header_check_col, header_che
     return rows
 
 
+# MBB/OLO itu data monitoring dari sheet EKSTERNAL (bukan yang diupdate
+# lewat aplikasi ini) dan jumlah barisnya ribuan -- 20 detik (TTL sheet
+# PT3, yang butuh nyaris real-time karena update-nya lewat app ini)
+# kependekan & bikin sheet segede itu ke-fetch ulang dari Google tiap kali
+# cache basi, padahal datanya jarang berubah. Dilonggarin ke 5 menit.
+_MBB_OLO_CACHE_TTL_SECONDS = 300
+
+
 def get_mbb_rows():
     ws = get_mbb_worksheet()
-    all_values = _cached_get_all_values(ws)
+    all_values = _cached_get_all_values(ws, ttl_seconds=_MBB_OLO_CACHE_TTL_SECONDS)
     return _build_mbb_olo_rows(
         all_values, config.MBB_RANGES, config.MBB_LABELS,
         config.MBB_HEADER_CHECK_COL, config.MBB_HEADER_CHECK_VALUE, config.MBB_KEY_COL,
@@ -208,7 +216,7 @@ def get_mbb_rows():
 
 def get_olo_rows():
     ws = get_olo_worksheet()
-    all_values = _cached_get_all_values(ws)
+    all_values = _cached_get_all_values(ws, ttl_seconds=_MBB_OLO_CACHE_TTL_SECONDS)
     return _build_mbb_olo_rows(
         all_values, config.OLO_RANGES, config.OLO_LABELS,
         config.OLO_HEADER_CHECK_COL, config.OLO_HEADER_CHECK_VALUE, config.OLO_KEY_COL,
@@ -248,12 +256,13 @@ def _get_sheet_fetch_lock(key):
         return lock
 
 
-def _cached_get_all_values(ws):
+def _cached_get_all_values(ws, ttl_seconds=None):
     key = ws.title
+    ttl = ttl_seconds if ttl_seconds is not None else _VALUES_CACHE_TTL_SECONDS
 
     def _fresh_entry():
         entry = _values_cache.get(key)
-        if entry and (time.time() - entry[0]) < _VALUES_CACHE_TTL_SECONDS:
+        if entry and (time.time() - entry[0]) < ttl:
             return entry[1]
         return None
 
@@ -1035,10 +1044,17 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
       2. Resolve the (date_col, note_col) pair from Z.
       3. Prepend "DD/MM/YY : note_text" above whatever is already in note_col.
       4. Overwrite date_col with today's date (or `when` if given).
-      5. Kalau `target_fi` diisi, tulis ke kolom AK (Target Finish Instalasi)
-         -- kosong/None berarti "jangan diubah", nilai lama tetap dipertahankan
-         (validasi wajib-isi untuk status pra-Finish-Instalasi dilakukan
-         terpisah lewat validate_target_fi(), BUKAN di sini).
+      5. Target Finish Instalasi (kolom AK):
+         - z_value Drop (config.PROGRESS_DROP_STATUSES) -> kolom AK
+           DIKOSONGKAN (komit FI dihapus, karena LOP-nya batal).
+         - z_value SUDAH Finish Instalasi/Golive ke atas (bukan lagi di
+           config.PRE_FINISH_INSTALL_STATUSES) -> `target_fi` DIABAIKAN
+           total, apapun isinya (form di frontend memang menyembunyikan
+           field ini untuk status-status itu, tapi diabaikan juga di sini
+           sebagai jaring pengaman kalau ada nilai lama nyangkut terkirim).
+         - selain 2 kasus di atas: `target_fi` diisi -> tulis ke AK; kosong
+           -> tidak diubah, nilai lama tetap dipertahankan (validasi
+           wajib-isi dilakukan terpisah lewat validate_target_fi()).
       6. Kalau z_value ada di config.PROGRESS_DROP_STATUSES dan
          `kategori_drop` diisi, tulis ke kolom BH (validasi wajib-isi
          terpisah lewat validate_kategori_drop(), BUKAN di sini).
@@ -1106,19 +1122,26 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                     continue
             updates.append({"range": f"{col}{row_num}", "values": [[raw_value]]})
 
-    # 5. Target Finish Instalasi (kolom AK) — sama seperti field tambahan:
-    #    kosong = tidak diubah (nilai lama, kalau ada, tetap dipakai).
+    # 5. Target Finish Instalasi (kolom AK).
     #    Ditulis dalam format DD/Mon/YY (mis. 05/Aug/26) -- bulan berupa
     #    huruf supaya tidak pernah tertukar dengan DD/MM/YY atau MM/DD/YY,
     #    termasuk kalau sheet dibuka di Excel dengan locale tanggal beda.
-    target_fi = (target_fi or "").strip()
-    if target_fi:
-        parsed_target_fi = _parse_date(target_fi)
-        if parsed_target_fi:
-            updates.append({
-                "range": f"{config.COL_TARGET_FI}{row_num}",
-                "values": [[parsed_target_fi.strftime("%d/%b/%y")]],
-            })
+    if z_value in config.PROGRESS_DROP_STATUSES:
+        # Drop -> komit FI dihapus (LOP batal, tidak relevan lagi).
+        updates.append({"range": f"{config.COL_TARGET_FI}{row_num}", "values": [[""]]})
+    elif z_value not in config.PRE_FINISH_INSTALL_STATUSES:
+        # Sudah Finish Instalasi/Golive ke atas -> target_fi diabaikan
+        # total (tidak ditulis, tidak dihapus -- dibiarkan apa adanya).
+        pass
+    else:
+        target_fi = (target_fi or "").strip()
+        if target_fi:
+            parsed_target_fi = _parse_date(target_fi)
+            if parsed_target_fi:
+                updates.append({
+                    "range": f"{config.COL_TARGET_FI}{row_num}",
+                    "values": [[parsed_target_fi.strftime("%d/%b/%y")]],
+                })
 
     # 6. Kategori Drop (kolom BH) — cuma relevan & ditulis kalau status Z
     #    Drop dan ada nilainya (kosong = tidak diubah, sama seperti field

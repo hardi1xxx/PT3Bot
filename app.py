@@ -221,6 +221,10 @@ def mbb_olo_page():
 
 @app.route("/api/mbb-data")
 def api_mbb_data():
+    # Refresh manual (tombol "Update Data" di halaman) -- lewati cache
+    # 5 menit dan paksa baca ulang dari Google.
+    if request.args.get("force") == "1":
+        sheets_service.invalidate_sheet_cache(sheets_service.get_mbb_worksheet().title)
     try:
         rows = sheets_service.get_mbb_rows()
         return jsonify({"ok": True, "rows": rows})
@@ -230,6 +234,8 @@ def api_mbb_data():
 
 @app.route("/api/olo-data")
 def api_olo_data():
+    if request.args.get("force") == "1":
+        sheets_service.invalidate_sheet_cache(sheets_service.get_olo_worksheet().title)
     try:
         rows = sheets_service.get_olo_rows()
         return jsonify({"ok": True, "rows": rows})

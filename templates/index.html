@@ -20,6 +20,9 @@
   .fi-left-col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
   .fi-left-col > .card { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
   .mini-chart-title { font-weight: 800; font-size: 0.95rem; color: var(--text); margin-bottom: 10px; }
+  .golive-trend-gran { display: flex; gap: 4px; }
+  .golive-trend-gran button { padding: 3px 10px; font-size: 0.75rem; border-radius: 6px; }
+  .golive-trend-gran button.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
   .mini-chart-wrap { position: relative; flex: 1 1 auto; min-height: 140px; }
 
   .fi-cal-card { display: flex; flex-direction: column; }
@@ -130,7 +133,15 @@
     </div>
 
     <div class="card trend-golive-card">
-      <div class="mini-chart-title">Trend Golive <span class="hint" style="font-weight:400;">(kolom BD, per bulan)</span></div>
+      <div class="mini-chart-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+        <span>Trend Golive <span class="hint" style="font-weight:400;">(kolom BD)</span></span>
+        <div class="golive-trend-gran" id="goliveTrendGranButtons">
+          <button type="button" data-gran="year" class="btn-ghost btn-sm">Tahun</button>
+          <button type="button" data-gran="month" class="btn-ghost btn-sm">Bulan</button>
+          <button type="button" data-gran="week" class="btn-ghost btn-sm">Minggu</button>
+          <button type="button" data-gran="day" class="btn-ghost btn-sm">Hari</button>
+        </div>
+      </div>
       <div class="mini-chart-wrap"><canvas id="goliveTrendChart"></canvas></div>
     </div>
   </div>
@@ -765,34 +776,96 @@ function renderChart(lopTable, statuses) {
 // ── Bar chart: trend Golive per bulan (kolom BD / golive_date_iso) ────
 // Dilihat berdasarkan bulan saja (semua tanggal golive di bulan yang
 // sama digabung jadi satu batang). Klik batang -> daftar lokasi di bulan
-// itu, terurut berdasarkan branch.
+// itu, terurut berdasarkan branch. Bisa dilihat per Tahun/Bulan/Minggu/Hari
+// (goliveTrendGranularity) -- klik batang nampilin TABEL (Branch/LOP/Nama
+// ODP/Tanggal Golive) yang bisa didownload sebagai CSV.
 let goliveTrendChart = null;
-let goliveTrendMonthIndex = {};   // "YYYY-MM" -> rows[]
-let goliveTrendMonthKeys = [];    // urutan bulan sesuai chart, sinkron dgn index klik
+let goliveTrendBucketIndex = {};   // key granularitas -> rows[]
+let goliveTrendBucketKeys = [];    // urutan bucket sesuai chart, sinkron dgn index klik
+let goliveTrendGranularity = 'month'; // 'year' | 'month' | 'week' | 'day'
 
 const GOLIVE_TREND_MONTH_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 
+// ISO week number (1-53) dari sebuah Date.
+function isoWeekOf(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return { year: d.getUTCFullYear(), week: weekNo };
+}
+
+// "YYYY-MM-DD" -> key bucket sesuai granularitas yang lagi dipilih.
+function goliveTrendBucketKey(isoDate, gran) {
+  const [y, m, d] = isoDate.split('-');
+  if (gran === 'year') return y;
+  if (gran === 'month') return `${y}-${m}`;
+  if (gran === 'day') return `${y}-${m}-${d}`;
+  if (gran === 'week') {
+    const dt = new Date(parseInt(y,10), parseInt(m,10)-1, parseInt(d,10));
+    const { year, week } = isoWeekOf(dt);
+    return `${year}-W${String(week).padStart(2,'0')}`;
+  }
+  return isoDate;
+}
+
+function goliveTrendBucketLabel(key, gran) {
+  if (gran === 'year') return key;
+  if (gran === 'month') {
+    const [y, m] = key.split('-');
+    return `${GOLIVE_TREND_MONTH_SHORT[parseInt(m, 10) - 1]}/${y.slice(2)}`;
+  }
+  if (gran === 'week') {
+    const [y, w] = key.split('-W');
+    return `M${w}/${y.slice(2)}`;
+  }
+  if (gran === 'day') {
+    const [y, m, d] = key.split('-');
+    return `${d}/${m}/${y.slice(2)}`;
+  }
+  return key;
+}
+
+function goliveTrendBucketFullLabel(key, gran) {
+  if (gran === 'year') return `Tahun ${key}`;
+  if (gran === 'month') {
+    const [y, m] = key.split('-');
+    return `${FI_CAL_MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
+  }
+  if (gran === 'week') {
+    const [y, w] = key.split('-W');
+    return `Minggu ke-${parseInt(w,10)} ${y}`;
+  }
+  if (gran === 'day') {
+    const [y, m, d] = key.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  return key;
+}
+
 function renderGoliveTrendChart(filteredRows) {
-  goliveTrendMonthIndex = {};
+  goliveTrendBucketIndex = {};
   filteredRows.forEach(r => {
     if (!r.golive_date_iso) return;
-    const monthKey = r.golive_date_iso.slice(0, 7); // "YYYY-MM"
-    (goliveTrendMonthIndex[monthKey] = goliveTrendMonthIndex[monthKey] || []).push(r);
+    const key = goliveTrendBucketKey(r.golive_date_iso, goliveTrendGranularity);
+    (goliveTrendBucketIndex[key] = goliveTrendBucketIndex[key] || []).push(r);
   });
 
-  goliveTrendMonthKeys = Object.keys(goliveTrendMonthIndex).sort(); // kronologis
-  const labels = goliveTrendMonthKeys.map(k => {
-    const [y, m] = k.split('-');
-    return `${GOLIVE_TREND_MONTH_SHORT[parseInt(m, 10) - 1]}/${y.slice(2)}`;
+  goliveTrendBucketKeys = Object.keys(goliveTrendBucketIndex).sort(); // kronologis (string sort aman krn zero-padded)
+  const labels = goliveTrendBucketKeys.map(k => goliveTrendBucketLabel(k, goliveTrendGranularity));
+  const values = goliveTrendBucketKeys.map(k => goliveTrendBucketIndex[k].length);
+
+  document.querySelectorAll('#goliveTrendGranButtons button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.gran === goliveTrendGranularity);
   });
-  const values = goliveTrendMonthKeys.map(k => goliveTrendMonthIndex[k].length);
 
   const canvas = document.getElementById('goliveTrendChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   if (goliveTrendChart) goliveTrendChart.destroy();
 
-  if (goliveTrendMonthKeys.length === 0) {
+  if (goliveTrendBucketKeys.length === 0) {
     goliveTrendChart = null;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     return;
@@ -814,7 +887,7 @@ function renderGoliveTrendChart(filteredRows) {
       },
       onClick: (evt, elements) => {
         if (!elements.length) return;
-        openGoliveTrendMonth(goliveTrendMonthKeys[elements[0].index]);
+        openGoliveTrendBucket(goliveTrendBucketKeys[elements[0].index]);
       },
       onHover: (evt, elements) => {
         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
@@ -823,38 +896,72 @@ function renderGoliveTrendChart(filteredRows) {
   });
 }
 
-function goliveTrendMonthLabel(monthKey) {
-  const [y, m] = monthKey.split('-');
-  return `${FI_CAL_MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
+document.getElementById('goliveTrendGranButtons').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-gran]');
+  if (!btn) return;
+  goliveTrendGranularity = btn.dataset.gran;
+  renderGoliveTrendChart(getFilteredRows());
+});
+
+function goliveTrendCsvEscape(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
 }
 
-function openGoliveTrendMonth(monthKey) {
-  const items = (goliveTrendMonthIndex[monthKey] || []).slice()
+function downloadGoliveTrendCsv(bucketKey) {
+  const items = (goliveTrendBucketIndex[bucketKey] || []).slice()
+    .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
+  const header = ['Branch', 'LOP (IHLD)', 'Nama ODP', 'Tanggal Golive'];
+  const lines = [header.map(goliveTrendCsvEscape).join(',')];
+  items.forEach(r => {
+    lines.push([r.branch || '', r.ihld || '', r.odp_l || '', r.golive_date_display || '']
+      .map(goliveTrendCsvEscape).join(','));
+  });
+  const csvContent = '\uFEFF' + lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `golive-${bucketKey}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function openGoliveTrendBucket(bucketKey) {
+  const items = (goliveTrendBucketIndex[bucketKey] || []).slice()
     .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
   const modalBox = document.getElementById('bhModalBox');
   modalBox.innerHTML = `
     <div class="modal-header">
-      <div class="modal-title">Golive — ${esc(goliveTrendMonthLabel(monthKey))} <span class="badge">${fmtNum(items.length)}</span></div>
+      <div class="modal-title">Golive — ${esc(goliveTrendBucketFullLabel(bucketKey, goliveTrendGranularity))} <span class="badge">${fmtNum(items.length)}</span></div>
       <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
     </div>
-    <div class="loc-list" style="margin-top:10px;" id="goliveTrendModalList">
-      ${items.length ? items.map(r => `
-        <div class="result-item" data-row="${r.row}">
-          <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
-          <div class="meta">
-            <span class="badge">${esc(r.branch) || '(Tanpa Branch)'}</span>
-            <span class="badge">${esc(r.batch) || '-'}</span>
-            ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
-            <span class="badge">Golive: ${esc(r.golive_date_display) || '-'}</span>
-          </div>
-        </div>
-      `).join('') : '<div class="empty-state">Tidak ada lokasi Golive di bulan ini.</div>'}
+    <div style="margin:8px 0 10px;">
+      <button type="button" class="btn-ghost btn-sm" onclick="downloadGoliveTrendCsv('${bucketKey}')">&#8615; Download CSV</button>
+    </div>
+    <div class="pivot-table-wrap" style="max-height:420px; overflow:auto;">
+      <table class="pivot">
+        <thead><tr><th>Branch</th><th>LOP (IHLD)</th><th>Nama ODP</th><th>Tanggal Golive</th></tr></thead>
+        <tbody id="goliveTrendModalBody">
+          ${items.length ? items.map(r => `
+            <tr class="result-item" data-row="${r.row}" style="cursor:pointer;">
+              <td>${esc(r.branch) || '(Tanpa Branch)'}</td>
+              <td>${esc(r.ihld) || '-'}</td>
+              <td>${esc(r.odp_l) || '-'}</td>
+              <td>${esc(r.golive_date_display) || '-'}</td>
+            </tr>
+          `).join('') : `<tr><td colspan="4"><div class="empty-state">Tidak ada lokasi Golive di periode ini.</div></td></tr>`}
+        </tbody>
+      </table>
     </div>
   `;
   document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
-  const list = document.getElementById('goliveTrendModalList');
-  if (list) {
-    list.addEventListener('click', (e) => {
+  const body = document.getElementById('goliveTrendModalBody');
+  if (body) {
+    body.addEventListener('click', (e) => {
       const item = e.target.closest('.result-item');
       if (item) {
         closeBhModal();
@@ -1179,6 +1286,13 @@ function toggleTargetFiField(statusZ) {
   if (!field) return;
   const relevant = currentPreFinishInstallStatuses.includes(statusZ);
   field.style.display = relevant ? '' : 'none';
+  if (!relevant) {
+    // Kosongkan biar tidak ada tanggal lama nyangkut kekirim -- Drop/Finish
+    // Instalasi/Golive dst menghapus atau mengabaikan field ini (backend
+    // juga sudah jaga-jaga hal yang sama, ini cuma biar UI-nya jujur).
+    const input = document.getElementById('target_fi');
+    if (input) input.value = '';
+  }
 }
 
 // Kategori Drop (BH): cuma muncul & wajib begitu Status dipilih Drop.

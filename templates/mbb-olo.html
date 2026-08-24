@@ -15,6 +15,32 @@
   .pill-neutral{background:#f1f5f9; color:#475569;}
   .cell-empty{color:var(--muted, #94a3b8);}
   #table-wrap table td.num{font-family:monospace; text-align:right;}
+
+  /* Dashboard MBB (Tree / Notes / Target) -- grid 3 kolom, bukan literal
+     garis-cabang seperti sumber Power BI-nya, tapi datanya align: total,
+     breakdown status, dan target bulan berjalan, semua bisa diklik. */
+  .mbb-dash{display:grid; grid-template-columns: 1.1fr 1fr 0.7fr; gap:14px; margin-bottom:16px; align-items:start;}
+  @media (max-width: 980px){ .mbb-dash{grid-template-columns: 1fr;} }
+  .mbb-tree-top{display:flex; gap:8px; margin-bottom:10px;}
+  .mbb-tree-top .box{flex:1; border-radius:10px; padding:10px 8px; text-align:center; cursor:pointer; border:2px solid transparent;}
+  .mbb-tree-top .box.selected{border-color:var(--brand-blue,#29467a);}
+  .mbb-tree-top .box .n{font-size:1.35rem; font-weight:800; line-height:1.1;}
+  .mbb-tree-top .box .l{font-size:0.68rem; font-weight:700; text-transform:uppercase; opacity:0.85;}
+  .mbb-tree-top .box.total{background:#475569; color:#fff;}
+  .mbb-tree-top .box.active{background:#0f4c81; color:#fff;}
+  .mbb-tree-top .box.drop{background:#c2410c; color:#fff;}
+  .mbb-tree-sub{display:grid; grid-template-columns: repeat(3, 1fr); gap:6px;}
+  .mbb-tree-sub .box{background:#eef2f7; border-radius:8px; padding:7px 6px; text-align:center; cursor:pointer; border:2px solid transparent;}
+  .mbb-tree-sub .box.selected{border-color:var(--brand-blue,#29467a); background:#dbeafe;}
+  .mbb-tree-sub .box .n{font-size:1.05rem; font-weight:800; color:var(--text);}
+  .mbb-tree-sub .box .l{font-size:0.63rem; color:var(--muted); font-weight:600;}
+  .mbb-notes-list{max-height:230px; overflow-y:auto; font-size:0.82rem;}
+  .mbb-notes-list .item{padding:7px 0; border-bottom:1px dashed #e2e8f0;}
+  .mbb-notes-list .item:last-child{border-bottom:none;}
+  .mbb-notes-list .item .site{font-weight:700; color:var(--text);}
+  .mbb-target-box{background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:14px; text-align:center;}
+  .mbb-target-box .n{font-size:2rem; font-weight:800; color:#c2410c;}
+  .mbb-target-box .l{font-size:0.75rem; font-weight:700; color:#9a3412; margin-top:2px;}
 </style>
 
 <div class="section-title">
@@ -22,12 +48,20 @@
   <span class="hint" id="view-sub"></span>
 </div>
 
+<div id="mbb-dashboard-wrap"></div>
+
+<div class="card" style="margin-bottom:14px;" id="mbb-curve-wrap">
+  <div class="section-title" style="margin:0 0 8px;">Kurva PLAN vs REALISASI L0 Ready</div>
+  <div class="hint" style="margin-bottom:8px;">PLAN dari kolom Target RFI, REALISASI dari kolom Tanggal LI &mdash; kumulatif per bulan.</div>
+  <div style="position:relative; height:220px;"><canvas id="mbb-curve-chart"></canvas></div>
+</div>
+
 <div class="card" style="margin-bottom:14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
   <div style="flex:1; min-width:240px;">
     <label for="q">Cari di semua kolom</label>
     <input type="text" id="q" placeholder="Ketik untuk mencari...">
   </div>
-  <button type="button" class="refresh-btn" onclick="loadAll()">&#8635; Refresh</button>
+  <button type="button" class="refresh-btn" onclick="loadAll(true)">&#8635; Update Data</button>
 </div>
 
 <div class="hint" id="statusline" style="margin-bottom:10px;">Memuat data dari Google Sheets...</div>
@@ -100,27 +134,206 @@ function matchCol(row, label, needle){
   return getCol(row, label).toLowerCase().includes(needle);
 }
 
+/* ===================== BUCKET STATUS PEKERJAAN (untuk dashboard MBB) ===
+   Urutan berpengaruh -- dicek dari atas, yang match PERTAMA yang dipakai.
+   Kata kunci ini best-effort (belum divalidasi ke nilai asli kolom
+   "Status Pekerjaan"); kalau ada status yang salah kelompok, tinggal
+   sesuaikan kata kuncinya di sini. */
+const MBB_L1OA_MATCH = (s)=> s.includes("l1") || s.includes("on air") || s.includes("oa confirm");
+const MBB_DROP_MATCH = (s)=> s.includes("drop");
+const MBB_SUB_BUCKETS = [
+  { key:"lo-ready",   label:"LO Ready",     match:(s)=> s.includes("lo ready") || s.includes("l0 ready") },
+  { key:"lo-issue",   label:"LO Issue BTS", match:(s)=> s.includes("issue bts") || s.includes("lo issue") },
+  { key:"progress-fo",label:"Progress FO",  match:(s)=> s.includes("progress fo") || s.includes("fo progress") },
+  { key:"matdev",     label:"Matdev",       match:(s)=> s.includes("matdev") || s.includes("material") },
+  { key:"perijinan",  label:"Perijinan",    match:(s)=> s.includes("perijinan") || s.includes("izin") },
+  { key:"drm",        label:"DRM",          match:(s)=> s.includes("drm") },
+  { key:"done-survey",label:"Done Survey",  match:(s)=> s.includes("done survey") },
+  { key:"survey",     label:"Survey",       match:(s)=> s.includes("survey") },
+  { key:"hold",       label:"HOLD",         match:(s)=> s.includes("hold") },
+];
+
+const INDO_MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+
+let mbbSelectedBucket = null; // key bucket dashboard yang lagi diklik (null = semua)
+let mbbCurveChart = null;
+
+function classifyMbbRow(row){
+  const s = getCol(row, "Status Pekerjaan").toLowerCase();
+  if (MBB_DROP_MATCH(s)) return { top:"drop", sub:null };
+  if (MBB_L1OA_MATCH(s)) return { top:"l1oa", sub:null };
+  for (const b of MBB_SUB_BUCKETS){
+    if (b.match(s)) return { top:"active", sub:b.key };
+  }
+  return { top:"active", sub:null }; // status lain yang tidak kena bucket manapun
+}
+
+/* Filter TAMBAHAN dari klik dashboard (di atas filter view + pencarian) */
+function mbbDashboardFilter(row){
+  if (!mbbSelectedBucket) return true;
+  const c = classifyMbbRow(row);
+  if (mbbSelectedBucket === "total") return true;
+  if (mbbSelectedBucket === "l1oa") return c.top === "l1oa";
+  if (mbbSelectedBucket === "drop") return c.top === "drop";
+  if (mbbSelectedBucket === "active") return c.top === "active";
+  return c.top === "active" && c.sub === mbbSelectedBucket;
+}
+
+function renderMbbDashboard(rowsForView){
+  const wrap = document.getElementById("mbb-dashboard-wrap");
+  if (!wrap) return;
+
+  let total = 0, l1oa = 0, drop = 0, active = 0;
+  const subCounts = {}; MBB_SUB_BUCKETS.forEach(b => subCounts[b.key] = 0);
+  rowsForView.forEach(r=>{
+    total++;
+    const c = classifyMbbRow(r);
+    if (c.top === "l1oa") l1oa++;
+    else if (c.top === "drop") drop++;
+    else { active++; if (c.sub) subCounts[c.sub]++; }
+  });
+
+  const monthName = INDO_MONTHS[new Date().getMonth()];
+  const targetCount = rowsForView.filter(r => matchCol(r, "Tower Provider", "(" + monthName.toLowerCase() + ")")).length;
+
+  const notesRows = rowsForView.filter(mbbDashboardFilter).filter(r => getCol(r,"Note Progress") !== "");
+  const notesHtml = notesRows.length ? notesRows.slice(0,15).map(r => `
+    <div class="item"><span class="site">${escapeHtml(getCol(r,"SITE ID"))}</span> — ${escapeHtml(getCol(r,"Note Progress"))}</div>
+  `).join("") : `<div class="empty-state" style="padding:16px 0;">Klik salah satu kategori di kiri untuk lihat catatan (Note Progress)-nya di sini.</div>`;
+
+  wrap.innerHTML = `
+    <div class="mbb-dash">
+      <div class="card">
+        <div class="section-title" style="margin:0 0 10px;">Tree Diagram Progress</div>
+        <div class="mbb-tree-top">
+          <div class="box total ${mbbSelectedBucket===null||mbbSelectedBucket==='total'?'selected':''}" onclick="mbbSelectBucket(null)"><div class="n">${fmtN(total)}</div><div class="l">SITE ID</div></div>
+          <div class="box active ${mbbSelectedBucket==='active'?'selected':''}" onclick="mbbSelectBucket('active')"><div class="n">${fmtN(active)}</div><div class="l">Aktif</div></div>
+          <div class="box drop ${mbbSelectedBucket==='drop'?'selected':''}" onclick="mbbSelectBucket('drop')"><div class="n">${fmtN(drop)}</div><div class="l">Drop</div></div>
+        </div>
+        <div class="mbb-tree-top" style="margin-bottom:6px;">
+          <div class="box active ${mbbSelectedBucket==='l1oa'?'selected':''}" onclick="mbbSelectBucket('l1oa')" style="background:#0f4c81;"><div class="n">${fmtN(l1oa)}</div><div class="l">L1 - ON AIR</div></div>
+        </div>
+        <div class="mbb-tree-sub">
+          ${MBB_SUB_BUCKETS.map(b => `
+            <div class="box ${mbbSelectedBucket===b.key?'selected':''}" onclick="mbbSelectBucket('${b.key}')">
+              <div class="n">${fmtN(subCounts[b.key])}</div><div class="l">${escapeHtml(b.label)}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title" style="margin:0 0 10px;">
+          Notes <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
+        </div>
+        <div class="mbb-notes-list">${notesHtml}</div>
+      </div>
+
+      <div class="mbb-target-box">
+        <div style="font-size:1.4rem;">&#127919;</div>
+        <div class="n">${fmtN(targetCount)}</div>
+        <div class="l">Target ${escapeHtml(monthName)} — Tsel</div>
+        <div class="hint" style="margin-top:6px;">Kolom Tower Provider mengandung "(${escapeHtml(monthName)})"</div>
+      </div>
+    </div>
+  `;
+}
+
+function mbbSelectBucket(key){
+  mbbSelectedBucket = (mbbSelectedBucket === key) ? null : key; // klik dua kali = batal pilih
+  render();
+}
+
+function fmtN(n){
+  return n.toLocaleString('id-ID');
+}
+
+/* ===================== KURVA PLAN vs REALISASI ========================
+   PLAN dari "Target RFI", REALISASI dari "Tanggal LI" -- kumulatif per
+   bulan sepanjang tahun berjalan. */
+function parseLooseDate(raw){
+  if (!raw) return null;
+  const s = raw.toString().trim();
+  if (!s) return null;
+  // dd/mm/yyyy atau dd-mm-yyyy
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (m){
+    let [, d, mo, y] = m;
+    if (y.length === 2) y = "20" + y;
+    const dt = new Date(parseInt(y), parseInt(mo)-1, parseInt(d));
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  // yyyy-mm-dd
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m){
+    const [, y, mo, d] = m;
+    const dt = new Date(parseInt(y), parseInt(mo)-1, parseInt(d));
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  const dt = new Date(s);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function renderMbbCurve(rowsForView){
+  const canvas = document.getElementById("mbb-curve-chart");
+  if (!canvas) return;
+
+  const year = new Date().getFullYear();
+  const planByMonth = new Array(12).fill(0);
+  const realByMonth = new Array(12).fill(0);
+
+  rowsForView.forEach(r=>{
+    const pd = parseLooseDate(getCol(r, "Target RFI"));
+    if (pd && pd.getFullYear() === year) planByMonth[pd.getMonth()]++;
+    const rd = parseLooseDate(getCol(r, "Tanggal LI"));
+    if (rd && rd.getFullYear() === year) realByMonth[rd.getMonth()]++;
+  });
+
+  // kumulatif
+  let cp = 0, cr = 0;
+  const planCum = planByMonth.map(v => (cp += v));
+  const realCum = realByMonth.map((v,i) => i <= new Date().getMonth() ? (cr += v) : null);
+
+  if (mbbCurveChart) mbbCurveChart.destroy();
+  mbbCurveChart = new Chart(canvas.getContext("2d"), {
+    type: "line",
+    data: {
+      labels: INDO_MONTHS.map(m => m.slice(0,3)),
+      datasets: [
+        { label: "PLAN (Target RFI)", data: planCum, borderColor:"#f59e0b", backgroundColor:"transparent", tension:0.25 },
+        { label: "REALISASI (Tanggal LI)", data: realCum, borderColor:"#0891b2", backgroundColor:"transparent", tension:0.25, spanGaps:false },
+      ],
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:"bottom" } },
+      scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } },
+    },
+  });
+}
+
 /* ===================== FETCH ===================== */
 // Data diambil dari backend (/api/mbb-data, /api/olo-data) -- spreadsheet-nya
 // PRIVATE, dibaca lewat service account (sheets_service.py), bukan lagi
 // CSV export publik langsung dari browser.
-async function fetchRows(url){
-  const res = await fetch(url);
+async function fetchRows(url, force){
+  const res = await fetch(force ? (url + '?force=1') : url);
   const json = await res.json();
   if (!json.ok) throw new Error(json.error || ('HTTP ' + res.status));
   return json.rows;
 }
 
-async function loadAll(){
-  setStatus("Memuat data...");
+async function loadAll(force){
+  setStatus(force ? "Mengambil data terbaru dari Google Sheets..." : "Memuat data...");
   showLoading();
   try{
     const [mbb, olo] = await Promise.all([
-      fetchRows('/api/mbb-data'),
-      fetchRows('/api/olo-data'),
+      fetchRows('/api/mbb-data', force),
+      fetchRows('/api/olo-data', force),
     ]);
     mbbRows = mbb;
     oloRows = olo;
+    showAllRows = false;
     setStatus(`Data dimuat — ${mbbRows.length} baris MBB, ${oloRows.length} baris OLO`);
     render();
   }catch(err){
@@ -166,6 +379,9 @@ function escapeHtml(s){
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
+const ROWS_PER_PAGE_DEFAULT = 200; // render awal dibatasi -- ribuan <tr> sekaligus yang bikin halaman "berat"
+let showAllRows = false;
+
 function render(){
   const view = VIEWS[currentView];
   document.getElementById("view-title").innerHTML = `${view.title} <span class="badge">${view.badge}</span>`;
@@ -176,6 +392,22 @@ function render(){
   let rows = view.source === "mbb" ? mbbRows : oloRows;
 
   if(view.filter) rows = rows.filter(view.filter);
+
+  // Dashboard (Tree/Notes/Target) & kurva PLAN-REALISASI cuma relevan buat
+  // data MBB, dan dihitung dari hasil filter VIEW saja (belum kena kata
+  // kunci pencarian di bawah) -- baru diikuti filter klik dashboard.
+  const dashWrap = document.getElementById("mbb-dashboard-wrap");
+  const curveWrap = document.getElementById("mbb-curve-wrap");
+  if (view.source === "mbb"){
+    curveWrap.style.display = "";
+    renderMbbDashboard(rows);
+    renderMbbCurve(rows);
+    rows = rows.filter(mbbDashboardFilter);
+  } else {
+    dashWrap.innerHTML = "";
+    curveWrap.style.display = "none";
+    mbbSelectedBucket = null;
+  }
 
   if(searchTerm.trim() !== ""){
     const needle = searchTerm.trim().toLowerCase();
@@ -189,9 +421,13 @@ function render(){
     return;
   }
 
+  const totalRows = rows.length;
+  const truncated = !showAllRows && totalRows > ROWS_PER_PAGE_DEFAULT;
+  const visibleRows = truncated ? rows.slice(0, ROWS_PER_PAGE_DEFAULT) : rows;
+
   const thead = `<thead><tr>${cols.map(label=>`<th>${escapeHtml(label)}</th>`).join("")}</tr></thead>`;
 
-  const bodyRows = rows.map(r=>{
+  const bodyRows = visibleRows.map(r=>{
     const tds = cols.map(label=>{
       const raw = (r[label] || "").toString().trim();
       if(label === statusLabel){
@@ -205,14 +441,21 @@ function render(){
     return `<tr>${tds}</tr>`;
   }).join("");
 
-  wrap.innerHTML = `<table class="pivot">${thead}<tbody>${bodyRows}</tbody></table>`;
+  const truncNotice = truncated ? `
+    <div class="hint" style="padding:10px; text-align:center;">
+      Menampilkan ${ROWS_PER_PAGE_DEFAULT} dari ${totalRows} baris — sempitkan dengan pencarian, atau
+      <a href="#" onclick="showAllRows=true; render(); return false;">tampilkan semua (bisa berat)</a>.
+    </div>` : '';
 
-  setStatus(`Menampilkan ${rows.length} baris — ${view.title} / ${view.badge}`);
+  wrap.innerHTML = `<table class="pivot">${thead}<tbody>${bodyRows}</tbody></table>${truncNotice}`;
+
+  setStatus(`Menampilkan ${visibleRows.length} dari ${totalRows} baris — ${view.title} / ${view.badge}`);
 }
 
 /* ===================== EVENTS ===================== */
 document.getElementById("q").addEventListener("input", (e)=>{
   searchTerm = e.target.value;
+  showAllRows = false; // pencarian baru -> balik ke default dibatasi lagi
   render();
 });
 

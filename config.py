@@ -174,13 +174,12 @@ STATUS_AA_GROUPS = {
     "00. DROP": ["0. DROP", "0.1. Plan Drop"],
     "01. DROP MOM": ["0. DROP", "0.1. Plan Drop"],
     "01. PERIJINAN": [
-        "1.1 Persiapan", "1.2. Survey", "1.3. Review ED", "1.4. Pengajuan PR-PO",
-        "1.5. Juskeb Swakelola", "1.6. Juskeb Permit", "1.8. Kenaikan CC",
-        "7.1 Kendala", "7.2 HOLD",
+        "1.2. Survey", "2.1. Negosiasi", "7.1 Kendala", "7.2 HOLD",
     ],
     "02. PERSIAPAN": [
-        "1.7. Revisi Juskeb", "2.1. Negosiasi", "2.2. Pembayaran Permit TA",
-        "2.3. Pembayaran Permit Mitra", "6. Redesign",
+        "1.1 Persiapan", "1.3. Review ED", "1.4. Pengajuan PR-PO", "1.5. Juskeb Swakelola",
+        "1.6. Juskeb Permit", "1.7. Revisi Juskeb", "1.8. Kenaikan CC",
+        "2.2. Pembayaran Permit TA", "2.3. Pembayaran Permit Mitra", "6. Redesign",
     ],
     "03. MATDEV": ["3.1 Pickup Material", "3.2. Material Delivery"],
     "04. INSTALASI": [
@@ -496,14 +495,15 @@ MBB_OLO_SPREADSHEET_ID = os.environ.get(
 MBB_SHEET_GID = os.environ.get("MBB_SHEET_GID", "212134262")   # tab: All Node B
 OLO_SHEET_GID = os.environ.get("OLO_SHEET_GID", "487400008")    # tab: OLO
 
-# Kolom MBB: A-V, X-AA, AD-AU, BB-BC, BP, BY, CM, CZ (label harus SEJAJAR
-# urutan dengan MBB_RANGES kalau di-expand satu-satu).
-MBB_RANGES = [("A", "V"), ("X", "AA"), ("AD", "AU"), ("BB", "BC"), ("BP", "BP"), ("BY", "BY"), ("CM", "CM"), ("CZ", "CZ")]
+# Kolom MBB: A-V, X-AA, AB (Tanggal LI), AD-AU, BB-BC, BP, BY, CM, CZ
+# (label harus SEJAJAR urutan dengan MBB_RANGES kalau di-expand satu-satu).
+MBB_RANGES = [("A", "V"), ("X", "AA"), ("AB", "AB"), ("AD", "AU"), ("BB", "BC"), ("BP", "BP"), ("BY", "BY"), ("CM", "CM"), ("CZ", "CZ")]
 MBB_LABELS = [
     "TAHUN", "Plan Deploy", "Tipe Order", "Sub Sistem", "SITE ID", "WITEL", "STO", "SITE NAME", "Lat", "Long",
     "Jarak PO", "Catuan PO", "Nilai PO", "DASAR KERJA", "REG TSEL", "Tower Provider", "Status Tsel", "Status Recti", "Target RFI", "BULAN PLAN",
     "Status Pekerjaan", "Note Progress",
     "Waspang", "Mitra", "Skema Kemitraan", "Target FI/L0",
+    "Tanggal LI",
     "Panjang Kabel", "Jenis Kabel", "Kapasitas Kabel", "Tiang", "Nilai BoQ (Survey)", "Kategori Comcase", "Nilai Comcase", "CC/BoQ", "Nilai Survey + CC", "MoM PO",
     "Tanggal NIM", "NIM", "Surat Permohonan ONT", "Tgl Submit", "NDE Pemenuhan", "Tgl Approve", "Merk", "Tipe ONT",
     "SP SMILE", "Nilai BAST",
