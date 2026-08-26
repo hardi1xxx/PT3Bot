@@ -514,6 +514,7 @@ def get_dashboard_data():
         "target_fi": _col_to_index(config.COL_TARGET_FI) - 1,
         "regional": _col_to_index(getattr(config, "COL_REGIONAL", "T")) - 1,
         "golive_date": _col_to_index(getattr(config, "COL_GOLIVE_DATE", "BD")) - 1,
+        "order_prioritas": _col_to_index(config.COL_ORDER_PRIORITAS) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW - 1:]
@@ -582,6 +583,7 @@ def get_dashboard_data():
             "cal_date_display": cal_date.strftime("%d/%m/%Y") if cal_date else None,
             "cal_date_source": cal_date_source,  # "golive" atau "target_fi"
             "regional": cell("regional") or "(TANPA REGIONAL)",
+            "order_prioritas": cell("order_prioritas"),  # kolom BX, opsional -- badge di list "Lokasi Sedang Berjalan"
         })
 
     return {
