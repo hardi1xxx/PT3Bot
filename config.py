@@ -414,8 +414,10 @@ PT2_STATUS_COLORS = {
 }
 
 # ── Dokumen per-LOP (upload ke Google Drive) ────────────────────────────
-# Folder Drive tujuan (di-share Editor ke service account -- lihat
-# /debug/sheet-check untuk email-nya). Diambil dari env var Railway.
+# Folder Drive tujuan -- sekarang folder ini ada di Drive akun PRIBADI
+# (diakses lewat OAuth 2.0, lihat GOOGLE_OAUTH_* di bagian "Env / secrets"
+# di bawah), BUKAN lagi di-share ke service account seperti sebelumnya.
+# Diambil dari env var Railway.
 DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "")
 
 # Tiap jenis dokumen wajib diupload begitu status Z mencapai
@@ -483,6 +485,14 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
 PORT = int(os.environ.get("PORT", 5000))
+
+# OAuth 2.0 Drive pribadi -- dipakai drive_service.py (lihat
+# drive_service._get_oauth_credentials()). Nilainya didapat SEKALI lewat
+# get_drive_refresh_token.py (dijalankan lokal), lalu disimpan permanen
+# sebagai env var Railway di bawah ini.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+GOOGLE_OAUTH_REFRESH_TOKEN = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "")
 
 # ── Spreadsheet MBB (All Node B) & OLO ──────────────────────────────────
 # Spreadsheet TERPISAH dari "Detail PT3" -- tetap private, dibaca lewat
