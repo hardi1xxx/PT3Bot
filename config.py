@@ -423,6 +423,16 @@ PT2_STATUS_COLORS = {
 # /debug/sheet-check untuk email-nya). Diambil dari env var Railway.
 DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID", "")
 
+# Kredensial OAuth akun Drive PRIBADI (dipakai drive_service.py untuk semua
+# upload -- dokumen wajib maupun KML). Sebelumnya env var ini sudah di-set
+# di Railway tapi TIDAK PERNAH dibaca di config.py, jadi drive_service.py
+# selalu menganggapnya kosong (getattr(config, name) -> None) walaupun
+# env var-nya sendiri sudah benar. Ditambahkan di sini supaya benar-benar
+# ke-load dari environment.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+GOOGLE_OAUTH_REFRESH_TOKEN = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "")
+
 # Tiap jenis dokumen wajib diupload begitu status Z mencapai
 # required_status (boleh sudah ada dari update sebelumnya -- tidak perlu
 # upload ulang tiap update, lihat sheets_service.validate_documents_for_status).
