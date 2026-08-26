@@ -475,6 +475,21 @@ DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE = ["bast"]
 # sudah ketemu & fix.
 DOCUMENT_UPLOAD_REQUIRED = False
 
+# ── KML per-LOP (opsional, TIDAK wajib & TIDAK memblokir simpan status) ─
+# Folder Drive KHUSUS KML -- SENGAJA TERPISAH dari DRIVE_FOLDER_ID (BAST/
+# Foto Instalasi/Berita Acara) supaya rapi per-kategori. Diambil dari env
+# var Railway. Berbeda dari dokumen wajib: KML tidak disimpan sebagai
+# link_col/log_col di sheet -- Drive folder itu sendiri jadi sumber
+# datanya (folder dibaca langsung tiap kali panel dibuka), jadi tidak ada
+# tulis-ke-sheet sama sekali -> upload & baca jadi cepat & sederhana, dan
+# LOP boleh punya lebih dari 1 file KML (bukan slot revisi tunggal).
+KML_FOLDER_ID = os.environ.get("KML_FOLDER_ID", "")
+
+# Status Z di mana slot upload KML ditampilkan di panel update (cuma soal
+# tampilan tombol upload -- list file yang SUDAH ada tetap kelihatan di
+# status manapun). Tidak ada validasi wajib apapun terkait KML.
+KML_VISIBLE_STATUSES = ["01. PERIJINAN", "02. PERSIAPAN", "03. MATDEV", "04. INSTALASI"]
+
 # Reverse index: status Z -> daftar doc_key yang wajib di status itu
 # (BAST dikecualikan -- lihat DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE di atas).
 DOCUMENT_TYPES_BY_STATUS = {}

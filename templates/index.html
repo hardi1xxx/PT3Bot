@@ -204,6 +204,17 @@
   <div class="modal-box" id="bhModalBox"></div>
 </div>
 
+<!-- KML preview modal: iframe pakai viewer bawaan Google Drive -->
+<div class="modal-overlay" id="kmlModalOverlay">
+  <div class="modal-box" id="kmlModalBox" style="max-width:900px; width:92vw; padding:0; overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--panel-alt);">
+      <strong id="kmlModalTitle" style="font-size:0.85rem;">Preview KML</strong>
+      <button type="button" class="btn-ghost btn-sm" onclick="closeKmlModal()">Tutup &times;</button>
+    </div>
+    <iframe id="kmlModalIframe" src="" style="width:100%; height:70vh; border:0; display:block;"></iframe>
+  </div>
+</div>
+
 <script>
 const STATUS_COLORS = {
   '01. PERIJINAN': '#e30613',
@@ -1205,6 +1216,20 @@ document.getElementById('bhModalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'bhModalOverlay') closeBhModal();
 });
 
+// ── KML preview modal ───────────────────────────────────────────────
+function openKmlModal(name, previewUrl) {
+  document.getElementById('kmlModalTitle').textContent = name || 'Preview KML';
+  document.getElementById('kmlModalIframe').src = previewUrl;
+  document.getElementById('kmlModalOverlay').classList.add('open');
+}
+function closeKmlModal() {
+  document.getElementById('kmlModalOverlay').classList.remove('open');
+  document.getElementById('kmlModalIframe').src = ''; // stop loading begitu ditutup
+}
+document.getElementById('kmlModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'kmlModalOverlay') closeKmlModal();
+});
+
 // ── Lokasi sedang berjalan ─────────────────────────────────────────
 function renderLocList(locations, filterText) {
   const el = document.getElementById('locList');
@@ -1263,6 +1288,9 @@ let currentProgressStages = [];
 let currentDocumentKeysHidden = [];
 let currentDocumentUploadRequired = true;
 let currentAaOptionsAll = [];       // semua Sub Status (AA) apa adanya -- fallback kalau Status tidak ada di grup
+let currentKmlVisibleStatuses = [];
+let currentKmlFiles = null;   // null = belum selesai dimuat (lazy, lihat loadKmlFiles)
+let currentKmlRowNum = null;  // dipakai buat cek respons yang telat nyampe bukan buat baris yang lagi dibuka
 let currentStatusAaGroups = {};     // Status Z -> daftar Sub Status (AA) terurut (config.STATUS_AA_GROUPS)
 let currentProgressDropStatuses = []; // Status Z yang dianggap Drop (config.PROGRESS_DROP_STATUSES)
 let currentKategoriDropOptions = [];  // pilihan Kategori Drop (kolom BH)
@@ -1315,6 +1343,7 @@ function onPanelStatusZChange(rowNum, statusZ, preserveAa, initialAa) {
   refreshTargetFiHint(statusZ);
   renderExtraFields(statusZ);
   renderDocumentsSection(rowNum, statusZ);
+  renderKmlSection(rowNum, statusZ);
 }
 
 async function openRow(rowNum) {
@@ -1344,6 +1373,7 @@ async function openRow(rowNum) {
     currentStatusAaGroups = status_aa_groups || {};
     currentProgressDropStatuses = progress_drop_statuses || [];
     currentKategoriDropOptions = kategori_drop_options || [];
+    currentKmlVisibleStatuses = json.kml_visible_statuses || [];
 
     panel.innerHTML = `
       <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${esc(label.ihld)} · ${esc(label.lokasi)}</div>
@@ -1386,6 +1416,10 @@ async function openRow(rowNum) {
         <label>Dokumen LOP</label>
         <div id="documentsContainer"></div>
       </div>
+      <div class="field">
+        <label>KML Lokasi <span style="color:var(--muted); font-weight:400;">(opsional)</span></label>
+        <div id="kmlContainer"></div>
+      </div>
       <div id="extraFieldsContainer"></div>
       <div class="field">
         <label for="note_text">Keterangan update</label>
@@ -1396,6 +1430,13 @@ async function openRow(rowNum) {
       &nbsp; <a href="#" onclick="document.getElementById('q').focus(); return false;">&larr; Cari lagi</a>
     `;
     onPanelStatusZChange(rowNum, snapshot.status_z, true, snapshot.status_aa);
+
+    // KML SENGAJA di-load terpisah/lazy setelah panel utama tampil (bukan
+    // ikut Promise.all di atas) -- supaya buka panel tidak ikut nunggu
+    // request ke Drive (opsional & kadang lebih lambat dari Sheets).
+    currentKmlFiles = null;
+    currentKmlRowNum = rowNum;
+    loadKmlFiles(rowNum);
   } catch (e) {
     panel.innerHTML = `<div class="flash error">Gagal memuat baris: ${e}</div>`;
   }
@@ -1500,6 +1541,93 @@ async function uploadDocument(rowNum, docKey) {
     msg.innerHTML = `<div class="flash error">Gagal upload: ${e}</div>`;
   }
 }
+
+// ── KML per-LOP (opsional, terpisah dari Dokumen LOP di atas) ─────────
+// fmtKmlDate: Drive createdTime formatnya ISO ("2026-08-26T10:00:00.000Z")
+// -- cukup ambil bagian tanggalnya saja, dibalik ke DD/MM/YYYY.
+function fmtKmlDate(iso) {
+  if (!iso) return '-';
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function renderKmlSection(rowNum, statusZ) {
+  const container = document.getElementById('kmlContainer');
+  if (!container) return;
+
+  const showUpload = currentKmlVisibleStatuses.includes(statusZ);
+
+  const uploadBlock = showUpload ? `
+    <div style="margin-bottom:10px;">
+      <input type="file" id="kmlfile" accept=".kml,.kmz" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+      <button type="button" class="btn-ghost btn-sm" onclick="uploadKmlFile(${rowNum})">Upload KML</button>
+      <div id="kmlUploadMsg"></div>
+    </div>
+  ` : '';
+
+  let listBlock;
+  if (currentKmlFiles === null) {
+    listBlock = '<div class="skeleton">Memuat daftar KML...</div>';
+  } else if (!currentKmlFiles.length) {
+    listBlock = '<div class="sub" style="color:var(--muted); font-size:0.8rem;">Belum ada KML yang diupload.</div>';
+  } else {
+    listBlock = currentKmlFiles.map(f => `
+      <div class="card" style="background:var(--panel-alt); padding:8px 10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div style="font-size:0.8rem;">
+          <div>${esc(f.name)}</div>
+          <div style="color:var(--muted); font-size:0.7rem;">Diupload ${fmtKmlDate(f.created)}</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button type="button" class="btn-ghost btn-sm" onclick="openKmlModal('${esc(f.name).replace(/'/g, "\\'")}', '${f.preview_url}')">Preview</button>
+          <a href="${f.url}" target="_blank" rel="noopener" class="btn-ghost btn-sm" style="text-decoration:none;">Buka &#8599;</a>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  container.innerHTML = uploadBlock + listBlock;
+}
+
+// Dipanggil terpisah/lazy dari openRow() (lihat komentar di sana) --
+// bukan bagian dari fetch utama /api/row/<row_num>, supaya panel utama
+// tidak ikut nunggu request ke Drive.
+async function loadKmlFiles(rowNum) {
+  try {
+    const res = await fetch(`/api/row/${rowNum}/kml`);
+    const json = await res.json();
+    if (rowNum !== currentKmlRowNum) return; // user sudah pindah baris lain sebelum respons ini nyampe
+    currentKmlFiles = json.ok ? (json.files || []) : [];
+    renderKmlSection(rowNum, document.getElementById('status_z')?.value || '');
+  } catch (e) {
+    if (rowNum !== currentKmlRowNum) return;
+    currentKmlFiles = [];
+    renderKmlSection(rowNum, document.getElementById('status_z')?.value || '');
+  }
+}
+
+async function uploadKmlFile(rowNum) {
+  const fileInput = document.getElementById('kmlfile');
+  const msg = document.getElementById('kmlUploadMsg');
+  const file = fileInput.files[0];
+  if (!file) { msg.innerHTML = '<div class="flash error">Pilih file KML dulu.</div>'; return; }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  msg.innerHTML = '<div class="skeleton">Mengupload...</div>';
+  try {
+    const res = await fetch(`/api/row/${rowNum}/kml`, { method: 'POST', body: formData });
+    const json = await res.json();
+    if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+    msg.innerHTML = '<div class="flash success">Tersimpan.</div>';
+    fileInput.value = '';
+    loadKmlFiles(rowNum); // refresh list tanpa perlu buka ulang seluruh panel
+  } catch (e) {
+    msg.innerHTML = `<div class="flash error">Gagal upload: ${e}</div>`;
+  }
+}
+
+
 
 // Target Finish Instalasi (kolom AK) wajib diisi selama status yang DIPILIH
 // masih sebelum Finish Instalasi -- kecuali kolom AK sudah ada isi lama

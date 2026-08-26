@@ -107,21 +107,23 @@ def _extract_file_id(url: str):
     return m.group(1) if m else None
 
 
-def _get_or_create_lop_folder(row_num: int, label: str) -> str:
-    """Subfolder di dalam DRIVE_FOLDER_ID khusus 1 LOP -- dibuat sekali,
-    dipakai ulang untuk semua jenis dokumen LOP itu (BAST, Foto Instalasi,
-    Berita Acara Perijinan semua masuk 1 folder yang sama biar rapi)."""
-    if not config.DRIVE_FOLDER_ID:
+def _get_or_create_lop_folder(row_num: int, label: str, parent_folder_id: str = None) -> str:
+    """Subfolder di dalam parent_folder_id (default: config.DRIVE_FOLDER_ID)
+    khusus 1 LOP -- dibuat sekali, dipakai ulang untuk semua jenis dokumen
+    LOP itu. parent_folder_id dibuat bisa diisi supaya folder KML
+    (config.KML_FOLDER_ID) bisa punya struktur subfolder per-LOP yang sama
+    tapi TERPISAH dari folder dokumen BAST/Foto/Berita Acara."""
+    parent_folder_id = parent_folder_id or config.DRIVE_FOLDER_ID
+    if not parent_folder_id:
         raise RuntimeError(
-            "DRIVE_FOLDER_ID belum di-set di environment variable. "
-            "Tambahkan Folder ID Google Drive (di Drive pribadi Anda) di "
-            "Railway sebelum upload dokumen."
+            "Folder ID Drive tujuan belum di-set di environment variable. "
+            "Tambahkan Folder ID Google Drive di Railway sebelum upload dokumen."
         )
     drive = get_drive_client()
     folder_name = f"Baris {row_num} - {label}".strip()
     safe_name = folder_name.replace("'", "\\'")
     query = (
-        f"'{config.DRIVE_FOLDER_ID}' in parents and "
+        f"'{parent_folder_id}' in parents and "
         f"name = '{safe_name}' and "
         "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     )
@@ -137,13 +139,37 @@ def _get_or_create_lop_folder(row_num: int, label: str) -> str:
             body={
                 "name": folder_name,
                 "mimeType": "application/vnd.google-apps.folder",
-                "parents": [config.DRIVE_FOLDER_ID],
+                "parents": [parent_folder_id],
             },
             fields="id",
         ).execute()
     except HttpError as e:
         raise RuntimeError(_describe_http_error(e)) from e
     return created["id"]
+
+
+def _find_lop_folder(row_num: int, label: str, parent_folder_id: str):
+    """Sama seperti _get_or_create_lop_folder, TAPI tidak membuat folder
+    kalau belum ada -- return None saja. Dipakai untuk LISTING (mis. lihat
+    KML yang sudah diupload): LOP yang belum pernah upload apa-apa tidak
+    perlu bikin folder kosong di Drive, dan baris yang belum ada isinya
+    langsung selesai tanpa request 'create' tambahan (tetap cepat)."""
+    if not parent_folder_id:
+        return None
+    drive = get_drive_client()
+    folder_name = f"Baris {row_num} - {label}".strip()
+    safe_name = folder_name.replace("'", "\\'")
+    query = (
+        f"'{parent_folder_id}' in parents and "
+        f"name = '{safe_name}' and "
+        "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    )
+    try:
+        res = drive.files().list(q=query, fields="files(id, name)", pageSize=1).execute()
+    except HttpError as e:
+        raise RuntimeError(_describe_http_error(e)) from e
+    files = res.get("files", [])
+    return files[0]["id"] if files else None
 
 
 def upload_document(row_num: int, lop_label: str, doc_label: str, filename: str,
@@ -191,3 +217,77 @@ def delete_document(url: str):
     except HttpError as e:
         if e.resp.status != 404:
             raise RuntimeError(_describe_http_error(e)) from e
+
+
+# ── KML per-LOP (opsional, folder TERPISAH dari dokumen wajib) ─────────
+# Tidak seperti upload_document() di atas: KML TIDAK menimpa file lama --
+# 1 LOP boleh punya banyak file KML sekaligus (bukan 1 slot revisi), jadi
+# tidak perlu simpan link ke sheet, cukup baca langsung dari Drive tiap
+# panel dibuka.
+
+def upload_kml(row_num: int, lop_label: str, filename: str, file_stream, mimetype: str):
+    """Upload 1 file KML ke subfolder LOP di dalam KML_FOLDER_ID (folder
+    khusus KML, terpisah dari BAST/Foto Instalasi/Berita Acara Perijinan).
+    Returns dict {id, name, url}."""
+    if not config.KML_FOLDER_ID:
+        raise RuntimeError(
+            "KML_FOLDER_ID belum di-set di environment variable. "
+            "Tambahkan Folder ID Google Drive khusus KML di Railway sebelum upload."
+        )
+    drive = get_drive_client()
+    folder_id = _get_or_create_lop_folder(row_num, lop_label, parent_folder_id=config.KML_FOLDER_ID)
+    media = MediaIoBaseUpload(file_stream, mimetype=mimetype, resumable=False)
+    try:
+        created = drive.files().create(
+            body={"name": filename, "parents": [folder_id]},
+            media_body=media,
+            fields="id, name, webViewLink",
+        ).execute()
+    except HttpError as e:
+        raise RuntimeError(_describe_http_error(e)) from e
+    file_id = created["id"]
+
+    # Sama seperti dokumen lain: biar bisa langsung dibuka/preview tanpa
+    # share manual. Kalau kebijakan org melarang sharing publik, upload
+    # tetap berhasil, cuma view-nya terbatas ke akun yang punya akses folder.
+    try:
+        drive.permissions().create(fileId=file_id, body={"type": "anyone", "role": "reader"}).execute()
+    except HttpError:
+        pass
+
+    view_url = created.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
+    return {"id": file_id, "name": created.get("name", filename), "url": view_url}
+
+
+def list_kml_files(row_num: int, lop_label: str):
+    """List semua file KML yang sudah diupload untuk 1 LOP, terbaru duluan.
+    Kalau folder LOP ini belum pernah dibuat (belum ada upload sama
+    sekali) -> langsung return [] TANPA membuat folder & tanpa request
+    'list files' tambahan, supaya baris yang belum ada KML-nya tetap
+    cepat dibuka (cuma 1 request 'cari folder', bukan 2)."""
+    if not config.KML_FOLDER_ID:
+        return []
+    folder_id = _find_lop_folder(row_num, lop_label, config.KML_FOLDER_ID)
+    if not folder_id:
+        return []
+    drive = get_drive_client()
+    try:
+        res = drive.files().list(
+            q=f"'{folder_id}' in parents and trashed = false",
+            fields="files(id, name, webViewLink, createdTime)",
+            orderBy="createdTime desc",
+            pageSize=50,
+        ).execute()
+    except HttpError as e:
+        raise RuntimeError(_describe_http_error(e)) from e
+    files = res.get("files", [])
+    return [
+        {
+            "id": f["id"],
+            "name": f.get("name", ""),
+            "url": f.get("webViewLink") or f"https://drive.google.com/file/d/{f['id']}/view",
+            "preview_url": f"https://drive.google.com/file/d/{f['id']}/preview",
+            "created": f.get("createdTime"),
+        }
+        for f in files
+    ]

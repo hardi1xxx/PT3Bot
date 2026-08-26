@@ -57,6 +57,7 @@ def api_row(row_num):
             "progress_stages": config.PROGRESS_STAGES,
             "document_keys_hidden": config.DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE,
             "document_upload_required": config.DOCUMENT_UPLOAD_REQUIRED,
+            "kml_visible_statuses": config.KML_VISIBLE_STATUSES,
         })
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -143,6 +144,40 @@ def api_row_document_upload(row_num, doc_key):
             row_num, doc_key, filename, file.stream, mimetype, revision_note=note
         )
         return jsonify({"ok": True, "url": url})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/row/<int:row_num>/kml")
+def api_row_kml_list(row_num):
+    """List file KML yang sudah diupload untuk 1 LOP. SENGAJA route
+    TERPISAH dari /api/row/<row_num> (bukan digabung) -- frontend manggil
+    ini belakangan/lazy setelah panel utama sudah tampil, supaya buka
+    panel tidak ikut nunggu request ke Drive (opsional, kadang lambat)."""
+    try:
+        files = sheets_service.get_row_kml_files(row_num)
+        return jsonify({"ok": True, "files": files})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/row/<int:row_num>/kml", methods=["POST"])
+def api_row_kml_upload(row_num):
+    """Upload 1 file KML untuk 1 LOP. Opsional -- TIDAK ada validasi wajib
+    di /api/row/<row_num>/update terkait ini. Boleh upload lebih dari 1
+    file per LOP (tidak menimpa yang lama)."""
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "File belum dipilih."}), 400
+    if not file.filename.lower().endswith((".kml", ".kmz")):
+        return jsonify({"ok": False, "error": "File harus berformat .kml atau .kmz."}), 400
+
+    filename = secure_filename(file.filename) or "lokasi.kml"
+    mimetype = file.mimetype or "application/vnd.google-earth.kml+xml"
+
+    try:
+        result = sheets_service.upload_row_kml(row_num, filename, file.stream, mimetype)
+        return jsonify({"ok": True, "file": result})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 

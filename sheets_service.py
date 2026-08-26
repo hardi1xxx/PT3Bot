@@ -873,6 +873,27 @@ def upload_row_document(row_num: int, doc_key: str, filename: str, file_stream, 
     return new_url
 
 
+# ── KML per-LOP (opsional, tidak tersimpan di sheet -- baca langsung dari
+# Drive tiap dipanggil, lihat drive_service.list_kml_files/upload_kml) ──
+
+def get_row_kml_files(row_num: int):
+    """List file KML yang sudah diupload untuk 1 LOP. SENGAJA dipanggil
+    terpisah dari get_row_snapshot() (bukan bagian dari situ) supaya panel
+    update tetap cepat dibuka -- endpoint ini dipanggil belakangan/lazy
+    oleh frontend, bukan diikutkan di /api/row/<row_num>."""
+    label = get_row_label(row_num)
+    lop_label = f"{label.get('ihld') or ''} {label.get('lokasi') or ''}".strip() or f"row{row_num}"
+    return drive_service.list_kml_files(row_num, lop_label)
+
+
+def upload_row_kml(row_num: int, filename: str, file_stream, mimetype: str):
+    """Upload 1 file KML untuk 1 LOP (boleh lebih dari 1 file, tidak
+    menimpa yang lama -- lihat drive_service.upload_kml)."""
+    label = get_row_label(row_num)
+    lop_label = f"{label.get('ihld') or ''} {label.get('lokasi') or ''}".strip() or f"row{row_num}"
+    return drive_service.upload_kml(row_num, lop_label, filename, file_stream, mimetype)
+
+
 def get_row_snapshot(row_num: int):
     """Return current Z, AA and keterangan info for the update panel.
     `last_note` = topmost entry dari kolom keterangan STATUS SAAT INI (mis. BA
