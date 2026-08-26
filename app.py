@@ -4,6 +4,7 @@ import datetime
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from werkzeug.utils import secure_filename
+from googleapiclient.errors import HttpError
 
 import config
 import sheets_service
@@ -438,6 +439,67 @@ def debug_sheet_check():
         return jsonify(report), 500
 
     report["all_ok"] = True
+    return jsonify(report)
+
+
+@app.route("/debug/drive-check")
+def debug_drive_check():
+    """Diagnostic khusus Drive (OAuth pribadi). Nunjukkin: akun mana yang
+    sedang login lewat refresh_token, dan apakah DRIVE_FOLDER_ID /
+    KML_FOLDER_ID yang di-set di Railway BENAR-BENAR bisa diakses akun itu
+    -- tanpa perlu upload beneran & tanpa expose secret apapun. Aman
+    ditinggal (read-only)."""
+    import drive_service
+
+    report = {}
+    report["DRIVE_FOLDER_ID"] = config.DRIVE_FOLDER_ID or "(kosong)"
+    report["KML_FOLDER_ID"] = config.KML_FOLDER_ID or "(kosong)"
+
+    # Step 1: kredensial OAuth bisa dibangun & refresh_token masih valid?
+    try:
+        drive = drive_service.get_drive_client()
+        report["oauth_client_built"] = True
+    except Exception as e:
+        report["oauth_client_built"] = False
+        report["oauth_error"] = f"{type(e).__name__}: {e}"
+        report["traceback"] = traceback.format_exc()
+        return jsonify(report), 500
+
+    # Step 2: akun Drive mana yang sebenarnya sedang login?
+    try:
+        about = drive.about().get(fields="user(emailAddress,displayName)").execute()
+        report["logged_in_as"] = about.get("user", {})
+    except Exception as e:
+        report["about_error"] = f"{type(e).__name__}: {e}"
+
+    # Step 3: DRIVE_FOLDER_ID -- ID-nya valid & bisa diakses akun ini?
+    if config.DRIVE_FOLDER_ID:
+        try:
+            f = drive.files().get(
+                fileId=config.DRIVE_FOLDER_ID,
+                fields="id, name, mimeType, driveId, capabilities(canAddChildren)",
+                supportsAllDrives=True,
+            ).execute()
+            report["drive_folder_id_check"] = {"ok": True, **f}
+        except HttpError as e:
+            report["drive_folder_id_check"] = {"ok": False, "error": drive_service._describe_http_error(e)}
+    else:
+        report["drive_folder_id_check"] = {"ok": False, "error": "DRIVE_FOLDER_ID kosong di env var"}
+
+    # Step 4: sama, untuk KML_FOLDER_ID.
+    if config.KML_FOLDER_ID:
+        try:
+            f = drive.files().get(
+                fileId=config.KML_FOLDER_ID,
+                fields="id, name, mimeType, driveId, capabilities(canAddChildren)",
+                supportsAllDrives=True,
+            ).execute()
+            report["kml_folder_id_check"] = {"ok": True, **f}
+        except HttpError as e:
+            report["kml_folder_id_check"] = {"ok": False, "error": drive_service._describe_http_error(e)}
+    else:
+        report["kml_folder_id_check"] = {"ok": False, "error": "KML_FOLDER_ID kosong di env var"}
+
     return jsonify(report)
 
 
