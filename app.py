@@ -174,7 +174,19 @@ def api_row_kml_upload(row_num):
         return jsonify({"ok": False, "error": "File harus berformat .kml atau .kmz."}), 400
 
     filename = secure_filename(file.filename) or "lokasi.kml"
-    mimetype = file.mimetype or "application/vnd.google-earth.kml+xml"
+
+    # Mimetype yang dikirim browser SERING salah untuk .kml/.kmz (banyak
+    # OS/browser -- terutama Windows -- tidak kenal ekstensi ini di database
+    # MIME-nya, jadi kirim "application/xml" atau "application/octet-stream").
+    # Google Drive menentukan tampilan preview (peta interaktif vs. teks XML
+    # mentah) dari mimeType yang TERSIMPAN di Drive, bukan dari nama file --
+    # jadi mimetype salah = KML kebuka sebagai teks, bukan peta. Karena
+    # ekstensi sudah divalidasi di atas, paksa mimetype yang benar di sini,
+    # jangan percaya file.mimetype dari browser sama sekali.
+    if filename.lower().endswith(".kmz"):
+        mimetype = "application/vnd.google-earth.kmz"
+    else:
+        mimetype = "application/vnd.google-earth.kml+xml"
 
     try:
         result = sheets_service.upload_row_kml(row_num, filename, file.stream, mimetype)
