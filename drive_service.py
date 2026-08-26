@@ -15,6 +15,7 @@ Prasyarat sebelum fitur ini bisa jalan:
   2. Google Drive API sudah di-enable di project Google Cloud yang sama
      dengan yang dipakai Sheets API.
 """
+import json as _json
 import re
 import threading
 
@@ -28,6 +29,25 @@ _drive_lock = threading.Lock()
 _drive_client = None
 
 FILE_ID_RE = re.compile(r"/d/([a-zA-Z0-9_-]+)")
+
+
+def _describe_http_error(e: HttpError) -> str:
+    """HttpError bawaan googleapiclient sering ber-str() jadi cuma
+    'HttpError: ' kosong -- tidak nampilin status/alasan aslinya sama
+    sekali. Ini ekstrak status code + pesan asli dari Google (e.content,
+    JSON) supaya error yang sampai ke user (lewat try/except di app.py)
+    ada isinya, bukan string kosong."""
+    status = getattr(getattr(e, "resp", None), "status", None)
+    reason = None
+    try:
+        body = e.content.decode("utf-8") if isinstance(e.content, bytes) else str(e.content)
+        parsed = _json.loads(body)
+        reason = parsed.get("error", {}).get("message")
+    except Exception:
+        reason = None
+    if not reason:
+        reason = getattr(e, "reason", None) or "(tidak ada detail dari Google)"
+    return f"Google Drive API error {status}: {reason}"
 
 
 def get_drive_client():
@@ -64,18 +84,24 @@ def _get_or_create_lop_folder(row_num: int, label: str) -> str:
         f"name = '{safe_name}' and "
         "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     )
-    res = drive.files().list(q=query, fields="files(id, name)", pageSize=1).execute()
+    try:
+        res = drive.files().list(q=query, fields="files(id, name)", pageSize=1).execute()
+    except HttpError as e:
+        raise RuntimeError(_describe_http_error(e)) from e
     files = res.get("files", [])
     if files:
         return files[0]["id"]
-    created = drive.files().create(
-        body={
-            "name": folder_name,
-            "mimeType": "application/vnd.google-apps.folder",
-            "parents": [config.DRIVE_FOLDER_ID],
-        },
-        fields="id",
-    ).execute()
+    try:
+        created = drive.files().create(
+            body={
+                "name": folder_name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [config.DRIVE_FOLDER_ID],
+            },
+            fields="id",
+        ).execute()
+    except HttpError as e:
+        raise RuntimeError(_describe_http_error(e)) from e
     return created["id"]
 
 
@@ -86,11 +112,14 @@ def upload_document(row_num: int, lop_label: str, doc_label: str, filename: str,
     drive = get_drive_client()
     folder_id = _get_or_create_lop_folder(row_num, lop_label)
     media = MediaIoBaseUpload(file_stream, mimetype=mimetype, resumable=False)
-    created = drive.files().create(
-        body={"name": f"{doc_label} - {filename}", "parents": [folder_id]},
-        media_body=media,
-        fields="id, webViewLink",
-    ).execute()
+    try:
+        created = drive.files().create(
+            body={"name": f"{doc_label} - {filename}", "parents": [folder_id]},
+            media_body=media,
+            fields="id, webViewLink",
+        ).execute()
+    except HttpError as e:
+        raise RuntimeError(_describe_http_error(e)) from e
     file_id = created["id"]
 
     # Biar file bisa langsung dibuka dari dashboard tanpa perlu di-share
@@ -120,4 +149,4 @@ def delete_document(url: str):
         drive.files().delete(fileId=file_id).execute()
     except HttpError as e:
         if e.resp.status != 404:
-            raise
+            raise RuntimeError(_describe_http_error(e)) from e
