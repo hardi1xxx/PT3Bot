@@ -500,6 +500,26 @@ KML_FOLDER_ID = os.environ.get("KML_FOLDER_ID", "")
 # status manapun). Tidak ada validasi wajib apapun terkait KML.
 KML_VISIBLE_STATUSES = ["01. PERIJINAN", "02. PERSIAPAN", "03. MATDEV", "04. INSTALASI"]
 
+# ── BOQ per-LOP (opsional, TIDAK wajib & TIDAK memblokir simpan status) ─
+# Sama polanya seperti KML di atas: folder Drive TERPISAH, tidak ditulis
+# ke sheet sama sekali (dibaca langsung dari Drive tiap panel dibuka),
+# boleh lebih dari 1 file per LOP (bukan slot revisi tunggal). Bedanya
+# dari KML: tombol upload BOQ tampil di SEMUA status Z (tidak difilter
+# per-tahapan) -- makanya tidak ada BOQ_VISIBLE_STATUSES.
+BOQ_FOLDER_ID = os.environ.get("BOQ_FOLDER_ID", "")
+
+# Format file yang diizinkan untuk BOQ + mimetype yang benar per ekstensi
+# (browser SERING kirim mimetype yang salah/generik untuk .xlsx/.xls,
+# sama seperti kasus .kml sebelumnya -- jadi mimetype dipaksa dari
+# ekstensi filename, bukan dipercaya dari browser, supaya Drive simpan
+# mimeType yang benar).
+BOQ_ALLOWED_EXTENSIONS = (".pdf", ".xlsx", ".xls")
+BOQ_MIMETYPES = {
+    ".pdf": "application/pdf",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
+}
+
 # Reverse index: status Z -> daftar doc_key yang wajib di status itu
 # (BAST dikecualikan -- lihat DOCUMENT_KEYS_HIDDEN_ON_PT3_PAGE di atas).
 DOCUMENT_TYPES_BY_STATUS = {}

@@ -149,6 +149,32 @@ def api_row_document_upload(row_num, doc_key):
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/boq-content/<file_id>")
+def boq_content(file_id):
+    """Proxy isi mentah 1 file BOQ dari Drive ke browser -- sama pola
+    dengan /kml-content/<file_id> (same-origin, tidak kena CORS, file
+    tidak perlu publik). Mimetype respons ditentukan dari query param
+    ?name=<filename asli> (dikirim frontend dari daftar file), supaya PDF
+    dirender iframe browser sebagai PDF, sementara xlsx/xls cukup dikirim
+    apa adanya -- diparse di sisi browser pakai SheetJS (client-side,
+    gratis, jadi TIDAK perlu buka Google Sheets/Office Online yang berat)."""
+    import drive_service
+    name = (request.args.get("name") or "").lower()
+    if name.endswith(".pdf"):
+        mimetype = "application/pdf"
+    elif name.endswith(".xlsx"):
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif name.endswith(".xls"):
+        mimetype = "application/vnd.ms-excel"
+    else:
+        mimetype = "application/octet-stream"
+    try:
+        content = drive_service.get_file_content(file_id)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    return Response(content, mimetype=mimetype)
+
+
 @app.route("/kml-content/<file_id>")
 def kml_content(file_id):
     """Proxy isi mentah 1 file KML dari Drive ke browser. Dipakai oleh
@@ -206,6 +232,42 @@ def api_row_kml_upload(row_num):
 
     try:
         result = sheets_service.upload_row_kml(row_num, filename, file.stream, mimetype)
+        return jsonify({"ok": True, "file": result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/row/<int:row_num>/boq")
+def api_row_boq_list(row_num):
+    """List file BOQ yang sudah diupload untuk 1 LOP -- sama pola dengan
+    /api/row/<row_num>/kml (route terpisah, dipanggil lazy oleh frontend)."""
+    try:
+        files = sheets_service.get_row_boq_files(row_num)
+        return jsonify({"ok": True, "files": files})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/row/<int:row_num>/boq", methods=["POST"])
+def api_row_boq_upload(row_num):
+    """Upload 1 file BOQ (.pdf/.xlsx/.xls) untuk 1 LOP. Opsional, tidak
+    memblokir simpan status. Boleh lebih dari 1 file per LOP (tidak
+    menimpa yang lama)."""
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "File belum dipilih."}), 400
+
+    filename = secure_filename(file.filename) or "boq"
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in config.BOQ_ALLOWED_EXTENSIONS:
+        return jsonify({"ok": False, "error": "File harus berformat .pdf, .xlsx, atau .xls."}), 400
+
+    # Sama seperti KML: paksa mimetype dari ekstensi, jangan percaya
+    # file.mimetype dari browser (sering salah/generik untuk xlsx/xls).
+    mimetype = config.BOQ_MIMETYPES[ext]
+
+    try:
+        result = sheets_service.upload_row_boq(row_num, filename, file.stream, mimetype)
         return jsonify({"ok": True, "file": result})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500

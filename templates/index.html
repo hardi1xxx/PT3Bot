@@ -204,6 +204,22 @@
   <div class="modal-box" id="bhModalBox"></div>
 </div>
 
+<!-- SheetJS (parsing xlsx/xls di browser -- gratis, client-side, dipakai
+     preview BOQ supaya tidak perlu buka Google Sheets/Office Online). -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<!-- BOQ preview modal: PDF pakai iframe native browser, xlsx/xls pakai
+     SheetJS -> tabel HTML (lihat openBoqModal). -->
+<div class="modal-overlay" id="boqModalOverlay">
+  <div class="modal-box" id="boqModalBox" style="max-width:1100px; width:94vw; padding:0; overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--panel-alt);">
+      <strong id="boqModalTitle" style="font-size:0.85rem;">Preview BOQ</strong>
+      <button type="button" class="btn-ghost btn-sm" onclick="closeBoqModal()">Tutup &times;</button>
+    </div>
+    <div id="boqModalBody" style="width:100%; height:75vh; overflow:auto; background:var(--panel, #111);"></div>
+  </div>
+</div>
+
 <!-- Leaflet (peta gratis, OpenStreetMap -- tanpa API key/billing) + plugin
      KML, dipakai buat preview KML (ganti iframe Drive yang tidak bisa
      render KML sebagai peta, cuma bisa tampilkan teks XML mentah). -->
@@ -1357,6 +1373,8 @@ let currentAaOptionsAll = [];       // semua Sub Status (AA) apa adanya -- fallb
 let currentKmlVisibleStatuses = [];
 let currentKmlFiles = null;   // null = belum selesai dimuat (lazy, lihat loadKmlFiles)
 let currentKmlRowNum = null;  // dipakai buat cek respons yang telat nyampe bukan buat baris yang lagi dibuka
+let currentBoqFiles = null;   // sama pola dengan currentKmlFiles -- BOQ tampil di SEMUA status, jadi tidak perlu "visible statuses"
+let currentBoqRowNum = null;
 let currentStatusAaGroups = {};     // Status Z -> daftar Sub Status (AA) terurut (config.STATUS_AA_GROUPS)
 let currentProgressDropStatuses = []; // Status Z yang dianggap Drop (config.PROGRESS_DROP_STATUSES)
 let currentKategoriDropOptions = [];  // pilihan Kategori Drop (kolom BH)
@@ -1410,6 +1428,7 @@ function onPanelStatusZChange(rowNum, statusZ, preserveAa, initialAa) {
   renderExtraFields(statusZ);
   renderDocumentsSection(rowNum, statusZ);
   renderKmlSection(rowNum, statusZ);
+  renderBoqSection(rowNum);
 }
 
 async function openRow(rowNum) {
@@ -1486,6 +1505,10 @@ async function openRow(rowNum) {
         <label>KML Lokasi <span style="color:var(--muted); font-weight:400;">(opsional)</span></label>
         <div id="kmlContainer"></div>
       </div>
+      <div class="field">
+        <label>BOQ <span style="color:var(--muted); font-weight:400;">(opsional, .pdf/.xlsx/.xls)</span></label>
+        <div id="boqContainer"></div>
+      </div>
       <div id="extraFieldsContainer"></div>
       <div class="field">
         <label for="note_text">Keterangan update</label>
@@ -1503,6 +1526,11 @@ async function openRow(rowNum) {
     currentKmlFiles = null;
     currentKmlRowNum = rowNum;
     loadKmlFiles(rowNum);
+
+    // BOQ sama pola lazy-nya dengan KML di atas.
+    currentBoqFiles = null;
+    currentBoqRowNum = rowNum;
+    loadBoqFiles(rowNum);
   } catch (e) {
     panel.innerHTML = `<div class="flash error">Gagal memuat baris: ${e}</div>`;
   }
@@ -1692,6 +1720,152 @@ async function uploadKmlFile(rowNum) {
     msg.innerHTML = `<div class="flash error">Gagal upload: ${e}</div>`;
   }
 }
+
+// ── BOQ per-LOP (opsional, sama pola dengan KML di atas -- bedanya tombol
+// upload SELALU tampil, tidak difilter per status Z) ───────────────────
+function renderBoqSection(rowNum) {
+  const container = document.getElementById('boqContainer');
+  if (!container) return;
+
+  const uploadBlock = `
+    <div style="margin-bottom:10px;">
+      <input type="file" id="boqfile" accept=".pdf,.xlsx,.xls" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+      <button type="button" class="btn-ghost btn-sm" onclick="uploadBoqFile(${rowNum})">Upload BOQ</button>
+      <div id="boqUploadMsg"></div>
+    </div>
+  `;
+
+  let listBlock;
+  if (currentBoqFiles === null) {
+    listBlock = '<div class="skeleton">Memuat daftar BOQ...</div>';
+  } else if (!currentBoqFiles.length) {
+    listBlock = '<div class="sub" style="color:var(--muted); font-size:0.8rem;">Belum ada BOQ yang diupload.</div>';
+  } else {
+    listBlock = currentBoqFiles.map(f => `
+      <div class="card" style="background:var(--panel-alt); padding:8px 10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div style="font-size:0.8rem;">
+          <div>${esc(f.name)}</div>
+          <div style="color:var(--muted); font-size:0.7rem;">Diupload ${fmtKmlDate(f.created)}</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button type="button" class="btn-ghost btn-sm" onclick="openBoqModal('${esc(f.name).replace(/'/g, "\\'")}', '${f.id}')">Preview</button>
+          <a href="${f.url}" target="_blank" rel="noopener" class="btn-ghost btn-sm" style="text-decoration:none;">Buka &#8599;</a>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  container.innerHTML = uploadBlock + listBlock;
+}
+
+// Dipanggil terpisah/lazy dari openRow() -- sama alasannya dengan
+// loadKmlFiles (tidak ikut nunggu request ke Drive di panel utama).
+async function loadBoqFiles(rowNum) {
+  try {
+    const res = await fetch(`/api/row/${rowNum}/boq`);
+    const json = await res.json();
+    if (rowNum !== currentBoqRowNum) return; // user sudah pindah baris lain sebelum respons ini nyampe
+    currentBoqFiles = json.ok ? (json.files || []) : [];
+    renderBoqSection(rowNum);
+  } catch (e) {
+    if (rowNum !== currentBoqRowNum) return;
+    currentBoqFiles = [];
+    renderBoqSection(rowNum);
+  }
+}
+
+async function uploadBoqFile(rowNum) {
+  const fileInput = document.getElementById('boqfile');
+  const msg = document.getElementById('boqUploadMsg');
+  const file = fileInput.files[0];
+  if (!file) { msg.innerHTML = '<div class="flash error">Pilih file BOQ dulu.</div>'; return; }
+  if (!/\.(pdf|xlsx|xls)$/i.test(file.name)) {
+    msg.innerHTML = '<div class="flash error">File harus berformat .pdf, .xlsx, atau .xls.</div>';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  msg.innerHTML = '<div class="skeleton">Mengupload...</div>';
+  try {
+    const res = await fetch(`/api/row/${rowNum}/boq`, { method: 'POST', body: formData });
+    const json = await res.json();
+    if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+    msg.innerHTML = '<div class="flash success">Tersimpan.</div>';
+    fileInput.value = '';
+    loadBoqFiles(rowNum); // refresh list tanpa perlu buka ulang seluruh panel
+  } catch (e) {
+    msg.innerHTML = `<div class="flash error">Gagal upload: ${e}</div>`;
+  }
+}
+
+// ── BOQ preview modal ──────────────────────────────────────────────
+// PDF: dirender NATIF oleh browser lewat <iframe> (gratis, tidak perlu
+// library apapun -- semua browser modern punya PDF viewer bawaan).
+// xlsx/xls: diparse di BROWSER pakai SheetJS (CDN, gratis, client-side)
+// lalu ditampilkan sebagai tabel HTML -- SENGAJA tidak pakai Google
+// Sheets/Office Online (itu yang bikin berat & butuh file publik/login).
+function setBoqModalContent(html) {
+  document.getElementById('boqModalBody').innerHTML = html;
+}
+
+async function openBoqModal(name, fileId) {
+  document.getElementById('boqModalTitle').textContent = name || 'Preview BOQ';
+  document.getElementById('boqModalOverlay').classList.add('open');
+
+  const lower = (name || '').toLowerCase();
+  const contentUrl = `/boq-content/${fileId}?name=${encodeURIComponent(name)}`;
+
+  if (lower.endsWith('.pdf')) {
+    setBoqModalContent(`<iframe src="${contentUrl}" style="width:100%; height:100%; border:0; display:block;"></iframe>`);
+    return;
+  }
+
+  if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+    setBoqModalContent('<div style="padding:16px; color:#94a3b8; font-size:0.85rem;">Memuat spreadsheet...</div>');
+    try {
+      const res = await fetch(contentUrl);
+      if (!res.ok) throw new Error('Server gagal ambil file dari Drive (status ' + res.status + ')');
+      const buf = await res.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+
+      // Tab per-sheet kalau file-nya punya lebih dari 1 sheet.
+      const tabs = wb.SheetNames.map((sn, i) => `<button type="button" class="btn-ghost btn-sm boq-sheet-tab" data-sheet="${i}" style="margin:0 4px 8px 0;">${esc(sn)}</button>`).join('');
+
+      function renderSheet(idx) {
+        const ws = wb.Sheets[wb.SheetNames[idx]];
+        const html = XLSX.utils.sheet_to_html(ws, { id: 'boqSheetTable' });
+        document.getElementById('boqSheetContainer').innerHTML = html;
+      }
+
+      setBoqModalContent(`
+        <div style="padding:12px; height:100%; overflow:auto; box-sizing:border-box;">
+          ${wb.SheetNames.length > 1 ? `<div style="margin-bottom:6px;">${tabs}</div>` : ''}
+          <div id="boqSheetContainer" style="font-size:0.78rem;"></div>
+        </div>
+        <style>#boqSheetTable{border-collapse:collapse;} #boqSheetTable td,#boqSheetTable th{border:1px solid var(--panel-alt,#333); padding:3px 6px; white-space:nowrap;}</style>
+      `);
+      renderSheet(0);
+      document.querySelectorAll('.boq-sheet-tab').forEach(btn => {
+        btn.addEventListener('click', () => renderSheet(parseInt(btn.dataset.sheet, 10)));
+      });
+    } catch (e) {
+      setBoqModalContent(`<div style="padding:16px; color:#f87171; font-size:0.85rem;">Gagal menampilkan file: ${e.message}</div>`);
+    }
+    return;
+  }
+
+  setBoqModalContent('<div style="padding:16px; color:#94a3b8; font-size:0.85rem;">Format file tidak didukung untuk preview. Silakan pakai tombol "Buka".</div>');
+}
+
+function closeBoqModal() {
+  document.getElementById('boqModalOverlay').classList.remove('open');
+  setBoqModalContent('');
+}
+document.getElementById('boqModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'boqModalOverlay') closeBoqModal();
+});
 
 
 

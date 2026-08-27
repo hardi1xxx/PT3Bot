@@ -894,6 +894,26 @@ def upload_row_kml(row_num: int, filename: str, file_stream, mimetype: str):
     return drive_service.upload_kml(row_num, lop_label, filename, file_stream, mimetype)
 
 
+# ── BOQ per-LOP (opsional, sama pola dengan KML di atas -- terpisah dari
+# sheet, folder Drive sendiri, lihat drive_service.list_boq_files/upload_boq)
+
+def get_row_boq_files(row_num: int):
+    """List file BOQ yang sudah diupload untuk 1 LOP. SENGAJA terpisah dari
+    get_row_snapshot() -- sama alasannya dengan get_row_kml_files, biar
+    panel update tetap cepat dibuka (dipanggil lazy oleh frontend)."""
+    label = get_row_label(row_num)
+    lop_label = f"{label.get('ihld') or ''} {label.get('lokasi') or ''}".strip() or f"row{row_num}"
+    return drive_service.list_boq_files(row_num, lop_label)
+
+
+def upload_row_boq(row_num: int, filename: str, file_stream, mimetype: str):
+    """Upload 1 file BOQ (.pdf/.xlsx/.xls) untuk 1 LOP (boleh lebih dari 1
+    file, tidak menimpa yang lama -- lihat drive_service.upload_boq)."""
+    label = get_row_label(row_num)
+    lop_label = f"{label.get('ihld') or ''} {label.get('lokasi') or ''}".strip() or f"row{row_num}"
+    return drive_service.upload_boq(row_num, lop_label, filename, file_stream, mimetype)
+
+
 def get_row_snapshot(row_num: int):
     """Return current Z, AA and keterangan info for the update panel.
     `last_note` = topmost entry dari kolom keterangan STATUS SAAT INI (mis. BA

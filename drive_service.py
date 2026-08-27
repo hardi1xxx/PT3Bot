@@ -309,3 +309,67 @@ def list_kml_files(row_num: int, lop_label: str):
         }
         for f in files
     ]
+
+
+# ── BOQ per-LOP (opsional, folder TERPISAH -- sama pola dengan KML di atas,
+# tapi TIDAK difilter per status Z, lihat config.BOQ_FOLDER_ID) ────────
+
+def upload_boq(row_num: int, lop_label: str, filename: str, file_stream, mimetype: str):
+    """Upload 1 file BOQ (.pdf/.xlsx/.xls) ke subfolder LOP di dalam
+    BOQ_FOLDER_ID. Sama seperti KML: tidak menimpa file lama, boleh lebih
+    dari 1 file per LOP. Returns dict {id, name, url}."""
+    if not config.BOQ_FOLDER_ID:
+        raise RuntimeError(
+            "BOQ_FOLDER_ID belum di-set di environment variable. "
+            "Tambahkan Folder ID Google Drive khusus BOQ di Railway sebelum upload."
+        )
+    drive = get_drive_client()
+    folder_id = _get_or_create_lop_folder(row_num, lop_label, parent_folder_id=config.BOQ_FOLDER_ID)
+    media = MediaIoBaseUpload(file_stream, mimetype=mimetype, resumable=False)
+    try:
+        created = drive.files().create(
+            body={"name": filename, "parents": [folder_id]},
+            media_body=media,
+            fields="id, name, webViewLink",
+        ).execute()
+    except HttpError as e:
+        raise RuntimeError(_describe_http_error(e)) from e
+    file_id = created["id"]
+    try:
+        drive.permissions().create(fileId=file_id, body={"type": "anyone", "role": "reader"}).execute()
+    except HttpError:
+        pass
+    view_url = created.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
+    return {"id": file_id, "name": created.get("name", filename), "url": view_url}
+
+
+def list_boq_files(row_num: int, lop_label: str):
+    """List semua file BOQ yang sudah diupload untuk 1 LOP, terbaru duluan.
+    Sama logikanya dengan list_kml_files -- folder belum ada -> [] tanpa
+    request tambahan."""
+    if not config.BOQ_FOLDER_ID:
+        return []
+    folder_id = _find_lop_folder(row_num, lop_label, config.BOQ_FOLDER_ID)
+    if not folder_id:
+        return []
+    drive = get_drive_client()
+    try:
+        res = drive.files().list(
+            q=f"'{folder_id}' in parents and trashed = false",
+            fields="files(id, name, mimeType, webViewLink, createdTime)",
+            orderBy="createdTime desc",
+            pageSize=50,
+        ).execute()
+    except HttpError as e:
+        raise RuntimeError(_describe_http_error(e)) from e
+    files = res.get("files", [])
+    return [
+        {
+            "id": f["id"],
+            "name": f.get("name", ""),
+            "mimeType": f.get("mimeType", ""),
+            "url": f.get("webViewLink") or f"https://drive.google.com/file/d/{f['id']}/view",
+            "created": f.get("createdTime"),
+        }
+        for f in files
+    ]
