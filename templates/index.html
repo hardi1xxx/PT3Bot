@@ -1813,7 +1813,7 @@ async function uploadBoqFile(rowNum) {
 // ditampilkan juga dibatasi (BOQ_PREVIEW_ROW_CAP) -- merender tabel HTML
 // puluhan ribu baris sendiri bisa bikin BROWSER lag walau parsing-nya
 // sudah kelar, jadi ini masalah terpisah dari soal thread-blocking di atas.
-const BOQ_PREVIEW_ROW_CAP = 500;
+const BOQ_PREVIEW_ROW_CAP = 800;
 let boqWorker = null;
 let boqWorkerRequestId = 0; // dipakai buang respons "nyasar" kalau modal dibuka-tutup-buka cepat / ganti file sebelum sheet sebelumnya kelar diparse
 
