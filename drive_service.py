@@ -225,6 +225,24 @@ def delete_document(url: str):
 # tidak perlu simpan link ke sheet, cukup baca langsung dari Drive tiap
 # panel dibuka.
 
+def get_file_content(file_id: str) -> bytes:
+    """Download isi mentah 1 file dari Drive (dipakai untuk proxy konten KML
+    ke browser tanpa masalah CORS -- lihat app.py /kml-content/<file_id>).
+    Server yang fetch (pakai kredensial OAuth yang sama), browser fetch ke
+    server KITA sendiri (same-origin), bukan langsung ke drive.google.com."""
+    from googleapiclient.http import MediaIoBaseDownload
+    import io
+
+    drive = get_drive_client()
+    request = drive.files().get_media(fileId=file_id)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _status, done = downloader.next_chunk()
+    return buf.getvalue()
+
+
 def upload_kml(row_num: int, lop_label: str, filename: str, file_stream, mimetype: str):
     """Upload 1 file KML ke subfolder LOP di dalam KML_FOLDER_ID (folder
     khusus KML, terpisah dari BAST/Foto Instalasi/Berita Acara Perijinan).

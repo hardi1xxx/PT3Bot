@@ -2,7 +2,7 @@ import json
 import traceback
 import datetime
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response
 from werkzeug.utils import secure_filename
 from googleapiclient.errors import HttpError
 
@@ -147,6 +147,22 @@ def api_row_document_upload(row_num, doc_key):
         return jsonify({"ok": True, "url": url})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/kml-content/<file_id>")
+def kml_content(file_id):
+    """Proxy isi mentah 1 file KML dari Drive ke browser. Dipakai oleh
+    peta Leaflet di index.html (ganti iframe preview Drive yang tidak
+    bisa render KML sebagai peta). Server yang fetch dari Drive (pakai
+    kredensial OAuth yang sama dengan upload), browser cuma fetch ke
+    domain kita sendiri -- jadi tidak kena CORS dan file TIDAK perlu
+    publik di Drive."""
+    import drive_service
+    try:
+        content = drive_service.get_file_content(file_id)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    return Response(content, mimetype="application/vnd.google-earth.kml+xml")
 
 
 @app.route("/api/row/<int:row_num>/kml")

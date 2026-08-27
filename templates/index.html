@@ -204,14 +204,24 @@
   <div class="modal-box" id="bhModalBox"></div>
 </div>
 
-<!-- KML preview modal: iframe pakai viewer bawaan Google Drive -->
+<!-- Leaflet (peta gratis, OpenStreetMap -- tanpa API key/billing) + plugin
+     KML, dipakai buat preview KML (ganti iframe Drive yang tidak bisa
+     render KML sebagai peta, cuma bisa tampilkan teks XML mentah). -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-kml@1.0.1/L.KML.js"></script>
+
+<!-- KML preview modal: peta Leaflet (bukan lagi iframe Drive -- Drive
+     tidak punya renderer peta untuk KML di iframe preview-nya). -->
 <div class="modal-overlay" id="kmlModalOverlay">
   <div class="modal-box" id="kmlModalBox" style="max-width:900px; width:92vw; padding:0; overflow:hidden;">
     <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--panel-alt);">
       <strong id="kmlModalTitle" style="font-size:0.85rem;">Preview KML</strong>
       <button type="button" class="btn-ghost btn-sm" onclick="closeKmlModal()">Tutup &times;</button>
     </div>
-    <iframe id="kmlModalIframe" src="" style="width:100%; height:70vh; border:0; display:block;"></iframe>
+    <div id="kmlModalMap" style="width:100%; height:70vh; position:relative; background:#0b1220;">
+      <div id="kmlModalMsg" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:0.85rem; padding:16px; text-align:center; pointer-events:none;"></div>
+    </div>
   </div>
 </div>
 
@@ -1216,15 +1226,71 @@ document.getElementById('bhModalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'bhModalOverlay') closeBhModal();
 });
 
-// ── KML preview modal ───────────────────────────────────────────────
-function openKmlModal(name, previewUrl) {
+// ── KML preview modal (peta Leaflet + OpenStreetMap -- gratis, tanpa API
+// key/billing). Ganti pendekatan iframe Drive lama: Drive TIDAK bisa
+// render KML jadi peta interaktif di iframe preview-nya (cuma "No preview
+// available" atau nampilin teks XML mentah), jadi kita render sendiri di
+// browser pakai plugin leaflet-kml, ambil isi filenya lewat proxy
+// /kml-content/<file_id> (same-origin -- tidak kena CORS, file juga tidak
+// perlu dibikin publik di Drive).
+let kmlLeafletMap = null;
+let kmlLeafletLayer = null;
+
+function ensureKmlMap() {
+  if (kmlLeafletMap) return kmlLeafletMap;
+  kmlLeafletMap = L.map('kmlModalMap').setView([-6.2, 106.8], 5); // default: Indonesia, nanti di-fit ke data KML
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(kmlLeafletMap);
+  return kmlLeafletMap;
+}
+
+function setKmlModalMsg(text) {
+  const el = document.getElementById('kmlModalMsg');
+  if (el) el.textContent = text || '';
+}
+
+async function openKmlModal(name, fileId) {
   document.getElementById('kmlModalTitle').textContent = name || 'Preview KML';
-  document.getElementById('kmlModalIframe').src = previewUrl;
   document.getElementById('kmlModalOverlay').classList.add('open');
+  setKmlModalMsg('');
+
+  const isKmz = (name || '').toLowerCase().endsWith('.kmz');
+  const map = ensureKmlMap();
+  setTimeout(() => map.invalidateSize(), 50); // modal baru kebuka -- ukuran container belum final saat ini
+
+  if (kmlLeafletLayer) { map.removeLayer(kmlLeafletLayer); kmlLeafletLayer = null; }
+
+  if (isKmz) {
+    // Plugin leaflet-kml yang dipakai di sini cuma baca .kml mentah,
+    // belum support .kmz (file terkompresi) -- daripada nampilin peta
+    // kosong/salah, arahkan ke tombol "Buka" untuk download saja.
+    setKmlModalMsg('Preview peta langsung belum didukung untuk file .kmz. Silakan pakai tombol "Buka" di daftar KML untuk download filenya.');
+    return;
+  }
+
+  setKmlModalMsg('Memuat peta...');
+  try {
+    const res = await fetch(`/kml-content/${fileId}`);
+    if (!res.ok) throw new Error('Server gagal ambil file dari Drive (status ' + res.status + ')');
+    const kmlText = await res.text();
+    const kmlDom = new DOMParser().parseFromString(kmlText, 'text/xml');
+    kmlLeafletLayer = new L.KML(kmlDom);
+    map.addLayer(kmlLeafletLayer);
+    const bounds = kmlLeafletLayer.getBounds();
+    if (bounds && bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [24, 24] });
+      setKmlModalMsg('');
+    } else {
+      setKmlModalMsg('File KML terbaca, tapi tidak ada koordinat yang bisa ditampilkan.');
+    }
+  } catch (e) {
+    setKmlModalMsg('Gagal menampilkan peta: ' + e.message);
+  }
 }
 function closeKmlModal() {
   document.getElementById('kmlModalOverlay').classList.remove('open');
-  document.getElementById('kmlModalIframe').src = ''; // stop loading begitu ditutup
 }
 document.getElementById('kmlModalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'kmlModalOverlay') closeKmlModal();
@@ -1578,7 +1644,7 @@ function renderKmlSection(rowNum, statusZ) {
           <div style="color:var(--muted); font-size:0.7rem;">Diupload ${fmtKmlDate(f.created)}</div>
         </div>
         <div style="display:flex; gap:6px; flex-shrink:0;">
-          <button type="button" class="btn-ghost btn-sm" onclick="openKmlModal('${esc(f.name).replace(/'/g, "\\'")}', '${f.preview_url}')">Preview</button>
+          <button type="button" class="btn-ghost btn-sm" onclick="openKmlModal('${esc(f.name).replace(/'/g, "\\'")}', '${f.id}')">Preview</button>
           <a href="${f.url}" target="_blank" rel="noopener" class="btn-ghost btn-sm" style="text-decoration:none;">Buka &#8599;</a>
         </div>
       </div>
