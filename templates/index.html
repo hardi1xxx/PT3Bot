@@ -1824,17 +1824,32 @@ function getBoqWorker() {
     let wb = null;
     const ROW_CAP = ${BOQ_PREVIEW_ROW_CAP};
     const COL_CAP = 100;
+    // Filter KHUSUS PREVIEW (tidak berlaku untuk "Buka"/download raw file
+    // di /boq-content -- itu tetap file asli utuh tanpa filter apapun):
+    //   - data ditampilkan mulai dari baris 6 (cell A6), semua kolom dari A
+    //   - baris dengan kolom G kosong DIBUANG dari preview
+    const PREVIEW_START_ROW = 5;  // baris 6 (0-indexed)
+    const COL_G = 6;              // kolom G (0-indexed: A=0 ... G=6)
     function sendSheet(reqId, idx) {
       const ws = wb.Sheets[wb.SheetNames[idx]];
       let rows = [];
       let colsTruncated = false;
       if (ws['!ref']) {
-        const range = XLSX.utils.decode_range(ws['!ref']);
-        if (range.e.c - range.s.c + 1 > COL_CAP) {
-          colsTruncated = true;
-          range.e.c = range.s.c + COL_CAP - 1;
+        const full = XLSX.utils.decode_range(ws['!ref']);
+        if (full.e.r >= PREVIEW_START_ROW) {
+          const range = { s: { r: PREVIEW_START_ROW, c: full.s.c }, e: { r: full.e.r, c: full.e.c } };
+          if (range.e.c - range.s.c + 1 > COL_CAP) {
+            colsTruncated = true;
+            range.e.c = range.s.c + COL_CAP - 1;
+          }
+          const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', range: range });
+          const gOffset = COL_G - range.s.c; // indeks kolom G RELATIF terhadap kolom awal range (biasanya A -> offset = 6)
+          rows = allRows.filter(r => {
+            const g = r[gOffset];
+            return g !== '' && g !== undefined && g !== null;
+          });
         }
-        rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', range: range });
+        // full.e.r < PREVIEW_START_ROW -> sheet ini lebih pendek dari baris 6, tidak ada yang bisa ditampilkan (rows tetap [])
       }
       postMessage({ reqId, type: 'sheet', index: idx, rows, colsTruncated });
     }
@@ -1891,7 +1906,7 @@ function renderBoqSheetTable(rows, colsTruncated) {
   // ditampilkan selalu (bukan cuma kalau "melebihi cap") demi kesederhanaan.
   const note = document.createElement('div');
   note.style.cssText = 'font-size:0.72rem; color:var(--muted); margin-bottom:6px;';
-  note.textContent = `Preview dibatasi ${BOQ_PREVIEW_ROW_CAP.toLocaleString('id-ID')} baris pertama${colsTruncated ? ' & 100 kolom pertama' : ''} per sheet (demi performa). Untuk data lengkap, pakai tombol "Buka".`;
+  note.textContent = `Preview: mulai dari baris 6 (A6), baris dengan kolom G kosong disembunyikan. Dibatasi ${BOQ_PREVIEW_ROW_CAP.toLocaleString('id-ID')} baris pertama${colsTruncated ? ' & 100 kolom pertama' : ''} (demi performa). File asli (tombol "Buka") tidak difilter.`;
   container.appendChild(note);
   container.appendChild(table);
 }
