@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — INTRA</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #1b2a6b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 24px;
+  }
+  .box {
+    background: #fff; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    width: 100%; max-width: 380px; padding: 36px 32px;
+  }
+  .logo { display: block; margin: 0 auto 22px; height: 56px; width: auto; }
+  h1 { font-size: 1.05rem; text-align: center; margin: 0 0 2px; color: #1e293b; font-weight: 800; }
+  .sub { text-align: center; color: #64748b; font-size: 0.78rem; margin: 0 0 22px; }
+  label { display: block; font-size: 0.75rem; font-weight: 700; color: #1d4ed8; margin-bottom: 4px; }
+  input {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #bfdbfe;
+    background: #eff6ff; font-size: 0.9rem; margin-bottom: 14px; color: #1e293b;
+  }
+  input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.25); }
+  button {
+    width: 100%; padding: 11px; border: none; border-radius: 10px; background: #1d4ed8; color: #fff;
+    font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-top: 4px;
+  }
+  button:hover { background: #1e3a8a; }
+  .error {
+    background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; border-radius: 10px;
+    padding: 8px 12px; font-size: 0.78rem; text-align: center; margin-bottom: 14px;
+  }
+  .footer { text-align: center; font-size: 0.68rem; color: #94a3b8; margin-top: 18px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <img class="logo" src="{{ url_for('static', filename='img/intra-logo.png') }}" alt="INTRA logo">
+    <h1>Welcome to INTRA</h1>
+    <p class="sub">INtegrated TRAcking — Please log in to continue</p>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('login', next=request.args.get('next')) }}">
+      <label for="nik">NIK</label>
+      <input type="text" id="nik" name="nik" autocomplete="username" autofocus required>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+      <button type="submit">LOGIN</button>
+    </form>
+
+    <p class="footer">Lupa password? Hubungi admin.</p>
+  </div>
+</body>
+</html>

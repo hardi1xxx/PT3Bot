@@ -2,20 +2,85 @@ import json
 import traceback
 import datetime
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response, session
 from werkzeug.utils import secure_filename
 from googleapiclient.errors import HttpError
 
 import config
 import sheets_service
+import auth_service
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
 
 
+# ── Definisi project untuk halaman "preview all project" (index.html) ──
+# status "active" -> ada halamannya beneran (route sudah ada di app.py ini
+# sejak sebelumnya). status "soon" -> belum ada fitur/halamannya sama
+# sekali, kartu tampil abu-abu/disabled di landing page.
+PROJECT_MENUS = [
+    {"key": "PT3", "label": "PT3", "desc": "Dashboard order, port & LOP per batch -- status fisik terkini.", "url": "/pt3", "status": "active"},
+    {"key": "PT2", "label": "PT2", "desc": "Dashboard PT2.", "url": "/pt2", "status": "active"},
+    {"key": "FBB", "label": "FBB", "desc": "Monitoring & laporan FBB.", "url": "/fbb", "status": "active"},
+    {"key": "MBB", "label": "MBB", "desc": "Monitoring All Node B.", "url": "/mbb-olo", "status": "active"},
+    {"key": "OLO", "label": "OLO", "desc": "Monitoring OLO (satu halaman sama dengan MBB).", "url": "/mbb-olo", "status": "active"},
+    {"key": "HEM", "label": "HEM", "desc": "Segera hadir.", "url": None, "status": "soon"},
+    {"key": "QE", "label": "QE", "desc": "Segera hadir.", "url": None, "status": "soon"},
+]
+
+
+@app.before_request
+def require_login():
+    """Gerbang login global -- semua route butuh login KECUALI yang
+    dikecualikan di bawah (halaman login sendiri, file static, health
+    check buat Railway, dan proxy konten file yang dipanggil lewat <img>/
+    <iframe> src langsung dari browser -- itu tetap perlu bisa diakses
+    tanpa cookie session ikut kebawa kalau dibuka di tab baru, TAPI karena
+    semuanya same-origin & session cookie otomatis ikut kebawa oleh
+    browser di request biasa, jadi tetap aman -- pengecualian di sini
+    murni untuk endpoint yang secara desain publik/tanpa login)."""
+    exempt_paths = ("/login", "/healthz", "/static/")
+    if request.path.startswith(exempt_paths):
+        return None
+    if not session.get("user"):
+        return redirect(url_for("login", next=request.path))
+    return None
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        return render_template("login.html", error=None)
+
+    nik = request.form.get("nik", "")
+    password = request.form.get("password", "")
+    user = auth_service.verify_login(nik, password)
+    if not user:
+        return render_template("login.html", error="NIK atau password salah."), 401
+
+    session["user"] = user
+    next_url = request.args.get("next") or url_for("index")
+    return redirect(next_url)
+
+
+@app.route("/logout")
+def logout():
+    session.pop("user", None)
+    return redirect(url_for("login"))
+
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    """Halaman 'preview all project' -- landing page setelah login, tempat
+    user pilih mau buka project yang mana."""
+    user = session.get("user")
+    menus = [m for m in PROJECT_MENUS if auth_service.can_access_menu(user, m["key"])]
+    return render_template("index.html", user=user, menus=menus, role_label=auth_service.ROLE_LABELS.get(user["role"], user["role"]))
+
+
+@app.route("/pt3")
+def pt3_dashboard():
+    return render_template("PT3.html")
 
 
 @app.route("/api/search")

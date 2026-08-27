@@ -6,3 +6,4 @@ google-auth-oauthlib==1.2.1
 google-api-python-client==2.143.0
 python-telegram-bot==21.4
 python-dateutil
+openpyxl==3.1.5
