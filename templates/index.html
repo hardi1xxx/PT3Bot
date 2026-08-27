@@ -25,6 +25,13 @@
   .golive-trend-gran button.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
   .mini-chart-wrap { position: relative; flex: 1 1 auto; min-height: 140px; }
 
+  /* Legend Distribusi Status: grid rapi 2 kolom biar ringkas & tidak
+     membuat kartu jadi terlalu tinggi / bentrok dgn kartu di bawahnya. */
+  #chartLegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 5px 14px; margin-top: 10px; row-gap: 6px; }
+  #chartLegend span { display: flex; align-items: center; gap: 5px; font-size: 0.72rem; line-height: 1.3; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #chartLegend span strong { color: var(--text); font-weight: 700; }
+  #chartLegend .dot { flex: 0 0 auto; }
+
   /* Trend Golive: kartu bergradasi biru, teks putih (ikut referensi desain) */
   .trend-golive-card { background: linear-gradient(160deg, #1c3466 0%, #2c4c8a 55%, #35569c 100%); border-radius: 14px; }
   .trend-golive-card .mini-chart-title { color: #fff; }
@@ -265,6 +272,12 @@ const STATUS_COLORS = {
 };
 
 let dashboardCache = null;   // { statuses, batches, branches, rows }
+// PENTING: tabel "Golive — [periode]" (Trend Golive) menampilkan "Nama ODP"
+// dari field `r.odp_bo` (kolom BO), BUKAN `r.odp_l` (kolom L, itu dipakai di
+// tempat lain seperti tabel Detail Lokasi). Field `odp_bo` ini harus
+// disediakan oleh backend saat membangun `dashboardCache.rows` -- kalau
+// belum ada di response backend, kolom "Nama ODP" di modal ini akan kosong.
+
 let selectedRow = null;
 let statusChart = null;
 let bhCurrentLabel = null;
@@ -1014,10 +1027,10 @@ function goliveTrendCsvEscape(value) {
 function downloadGoliveTrendCsv(bucketKey) {
   const items = (goliveTrendBucketIndex[bucketKey] || []).slice()
     .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
-  const header = ['Branch', 'LOP (IHLD)', 'Nama ODP', 'Tanggal Golive'];
+  const header = ['Branch', 'LOP (IHLD)', 'Lokasi', 'Nama ODP', 'Tanggal Golive'];
   const lines = [header.map(goliveTrendCsvEscape).join(',')];
   items.forEach(r => {
-    lines.push([r.branch || '', r.ihld || '', r.odp_l || '', r.golive_date_display || '']
+    lines.push([r.branch || '', r.ihld || '', r.lokasi || '', r.odp_bo || '', r.golive_date_display || '']
       .map(goliveTrendCsvEscape).join(','));
   });
   const csvContent = '\uFEFF' + lines.join('\r\n');
@@ -1046,16 +1059,17 @@ function openGoliveTrendBucket(bucketKey) {
     </div>
     <div class="pivot-table-wrap" style="max-height:420px; overflow:auto;">
       <table class="pivot">
-        <thead><tr><th>Branch</th><th>LOP (IHLD)</th><th>Nama ODP</th><th>Tanggal Golive</th></tr></thead>
+        <thead><tr><th>Branch</th><th>LOP (IHLD)</th><th>Lokasi</th><th>Nama ODP</th><th>Tanggal Golive</th></tr></thead>
         <tbody id="goliveTrendModalBody">
           ${items.length ? items.map(r => `
             <tr class="result-item" data-row="${r.row}" style="cursor:pointer;">
               <td>${esc(r.branch) || '(Tanpa Branch)'}</td>
               <td>${esc(r.ihld) || '-'}</td>
-              <td>${esc(r.odp_l) || '-'}</td>
+              <td>${esc(r.lokasi) || '-'}</td>
+              <td>${esc(r.odp_bo) || '-'}</td>
               <td>${esc(r.golive_date_display) || '-'}</td>
             </tr>
-          `).join('') : `<tr><td colspan="4"><div class="empty-state">Tidak ada lokasi Golive di periode ini.</div></td></tr>`}
+          `).join('') : `<tr><td colspan="5"><div class="empty-state">Tidak ada lokasi Golive di periode ini.</div></td></tr>`}
         </tbody>
       </table>
     </div>
@@ -1206,7 +1220,10 @@ function openFiCalMonthList() {
   const items = Object.keys(fiCalDayIndex)
     .filter(iso => iso.startsWith(monthPrefix))
     .sort()
-    .flatMap(iso => fiCalDayIndex[iso]);
+    .flatMap(iso => fiCalDayIndex[iso])
+    // Hanya 5 status utama tahapan pekerjaan (01. PERIJINAN s/d 05. FINISH
+    // INSTALASI) -- exclude lokasi yang sudah Drop atau di luar tahapan ini.
+    .filter(r => Object.prototype.hasOwnProperty.call(STATUS_COLORS, r.status));
 
   const totalPort = items.reduce((sum, r) => sum + (r.port || 0), 0);
   const monthName = `${FI_CAL_MONTH_NAMES[fiCalMonth]} ${fiCalYear}`;
