@@ -1823,18 +1823,32 @@ function getBoqWorker() {
     importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
     let wb = null;
     const ROW_CAP = ${BOQ_PREVIEW_ROW_CAP};
+    const COL_CAP = 100;
     function sendSheet(reqId, idx) {
       const ws = wb.Sheets[wb.SheetNames[idx]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-      const total = rows.length;
-      const truncated = total > ROW_CAP;
-      postMessage({ reqId, type: 'sheet', index: idx, rows: truncated ? rows.slice(0, ROW_CAP) : rows, total, truncated });
+      let rows = [];
+      let colsTruncated = false;
+      if (ws['!ref']) {
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        if (range.e.c - range.s.c + 1 > COL_CAP) {
+          colsTruncated = true;
+          range.e.c = range.s.c + COL_CAP - 1;
+        }
+        rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', range: range });
+      }
+      postMessage({ reqId, type: 'sheet', index: idx, rows, colsTruncated });
     }
     onmessage = function(e) {
       const msg = e.data;
       try {
         if (msg.type === 'parse') {
-          wb = XLSX.read(msg.buffer, { type: 'array' });
+          // sheetRows: HENTIKAN pembacaan tiap sheet begitu sampai baris
+          // ke-ROW_CAP -- baris sisanya (bisa jutaan kalau "used range"
+          // sheet-nya ke-inflate gara-gara formatting lama) TIDAK PERNAH
+          // diproses sama sekali. Beda dari sebelumnya (baca semua baris
+          // dulu baru dipotong belakangan) -- itu penyebab hang/"Page
+          // Unresponsive"-nya, bukan soal worker/thread.
+          wb = XLSX.read(msg.buffer, { type: 'array', sheetRows: ROW_CAP });
           postMessage({ reqId: msg.reqId, type: 'parsed', sheetNames: wb.SheetNames });
           sendSheet(msg.reqId, 0);
         } else if (msg.type === 'getSheet') {
@@ -1853,7 +1867,7 @@ function setBoqModalContent(html) {
   document.getElementById('boqModalBody').innerHTML = html;
 }
 
-function renderBoqSheetTable(rows, total, truncated) {
+function renderBoqSheetTable(rows, colsTruncated) {
   const container = document.getElementById('boqSheetContainer');
   if (!container) return;
   if (!rows.length) { container.innerHTML = '<div class="sub" style="color:var(--muted);">Sheet ini kosong.</div>'; return; }
@@ -1871,12 +1885,14 @@ function renderBoqSheetTable(rows, total, truncated) {
   });
   table.appendChild(tbody);
   container.innerHTML = '';
-  if (truncated) {
-    const note = document.createElement('div');
-    note.style.cssText = 'font-size:0.72rem; color:var(--muted); margin-bottom:6px;';
-    note.textContent = `Menampilkan ${BOQ_PREVIEW_ROW_CAP.toLocaleString('id-ID')} baris pertama dari ${total.toLocaleString('id-ID')} baris total. Download file (tombol "Buka") untuk lihat semua data.`;
-    container.appendChild(note);
-  }
+  // Total baris ASLI sengaja TIDAK ditampilkan -- menghitungnya butuh
+  // parsing seluruh sheet (termasuk baris kosong yang ke-inflate), yang
+  // justru masalah performa yang mau dihindari. Catatan ini fixed,
+  // ditampilkan selalu (bukan cuma kalau "melebihi cap") demi kesederhanaan.
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:0.72rem; color:var(--muted); margin-bottom:6px;';
+  note.textContent = `Preview dibatasi ${BOQ_PREVIEW_ROW_CAP.toLocaleString('id-ID')} baris pertama${colsTruncated ? ' & 100 kolom pertama' : ''} per sheet (demi performa). Untuk data lengkap, pakai tombol "Buka".`;
+  container.appendChild(note);
   container.appendChild(table);
 }
 
@@ -1930,7 +1946,7 @@ async function openBoqModal(name, fileId) {
           return;
         }
         if (msg.type === 'sheet') {
-          renderBoqSheetTable(msg.rows, msg.total, msg.truncated);
+          renderBoqSheetTable(msg.rows, msg.colsTruncated);
         }
       };
       worker.postMessage({ reqId: myReqId, type: 'parse', buffer: buf }, [buf]); // transferable -- zero-copy ke worker, lebih cepat untuk file besar
