@@ -25,6 +25,14 @@
   .golive-trend-gran button.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
   .mini-chart-wrap { position: relative; flex: 1 1 auto; min-height: 140px; }
 
+  /* Trend Golive: kartu bergradasi biru, teks putih (ikut referensi desain) */
+  .trend-golive-card { background: linear-gradient(160deg, #1c3466 0%, #2c4c8a 55%, #35569c 100%); border-radius: 14px; }
+  .trend-golive-card .mini-chart-title { color: #fff; }
+  .trend-golive-card .mini-chart-title .hint { color: rgba(255,255,255,0.65) !important; }
+  .trend-golive-card .golive-trend-gran button { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.28); }
+  .trend-golive-card .golive-trend-gran button:hover { background: rgba(255,255,255,0.22); }
+  .trend-golive-card .golive-trend-gran button.active { background: #f5b400; color: #1c3466; border-color: #f5b400; }
+
   .fi-cal-card { display: flex; flex-direction: column; }
   .fi-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
   .fi-cal-title { font-weight: 800; font-size: 0.95rem; color: var(--text); }
@@ -47,6 +55,10 @@
   .fi-badge.fi-upcoming { background: var(--brand-blue, #29467a); }
   .fi-badge.fi-done { background: #16a34a; }
   .fi-cal-empty { font-size: 0.78rem; color: var(--muted); padding: 10px 2px; }
+  .fi-cal-month-btn { border: 1px solid var(--brand-blue, #29467a); color: var(--brand-blue, #29467a); font-weight: 700; width: 100%; text-align: center; }
+  .fi-cal-month-btn:hover { background: var(--brand-blue, #29467a); color: #fff; }
+  .fi-cal-summary { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.8rem; color: var(--muted); margin: 4px 0 12px; }
+  .fi-cal-summary strong { color: var(--text); }
 
   .rb-table { width: 100%; border-collapse: collapse; }
   .rb-table th, .rb-table td { padding: 7px 10px; text-align: right; font-size: 0.82rem; border-bottom: 1px solid var(--border, #2a3550); white-space: nowrap; }
@@ -161,6 +173,7 @@
       <span><span class="dot" style="background:var(--brand-blue,#29467a);"></span>Terjadwal (Target FI)</span>
       <span><span class="dot" style="background:#16a34a;"></span>Sudah Golive (GOLIVE/UT/REKON/BAST)</span>
     </div>
+    <button type="button" class="btn-ghost btn-sm fi-cal-month-btn" id="fiCalMonthListBtn" style="align-self:flex-start; margin-bottom:10px;">&#128203; Cek Target Bulan Ini</button>
     <div class="fi-cal-grid" id="fiCalGrid"><div class="skeleton">Memuat kalender...</div></div>
   </div>
 </div>
@@ -241,6 +254,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script>
 const STATUS_COLORS = {
   '01. PERIJINAN': '#e30613',
@@ -736,8 +750,8 @@ function refreshAll() {
 
   try {
     if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
-    const chartLopTable = computePivotTables(filtered, dashboardCache.batches, dashboardCache.statuses, 'status').lopTable;
-    renderChart(chartLopTable, dashboardCache.statuses);
+    const chartPivot = computePivotTables(filtered, dashboardCache.batches, dashboardCache.statuses, 'status');
+    renderChart(chartPivot.lopTable, chartPivot.portTable, dashboardCache.statuses);
     renderGoliveTrendChart(filtered);
   } catch (e) {
     document.querySelector('.chart-card').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
@@ -778,11 +792,13 @@ document.getElementById('filterCardHeader').addEventListener('click', () => {
 });
 setFilterOpen(false);
 
-// ── Bar chart: distribusi status pekerjaan (jumlah order per status) ──
-function renderChart(lopTable, statuses) {
-  const totalRow = lopTable.find(r => r.batch === 'TOTAL');
+// ── Bar chart: distribusi status pekerjaan (jumlah order/LOP + Port per status) ──
+function renderChart(lopTable, portTable, statuses) {
+  const totalLopRow = lopTable.find(r => r.batch === 'TOTAL');
+  const totalPortRow = portTable.find(r => r.batch === 'TOTAL');
   const labels = statuses.map(s => s.replace(/^\d+\.\s*/, ''));
-  const values = statuses.map(s => (totalRow ? totalRow.values[s] : 0) || 0);
+  const values = statuses.map(s => (totalLopRow ? totalLopRow.values[s] : 0) || 0);
+  const portValues = statuses.map(s => (totalPortRow ? totalPortRow.values[s] : 0) || 0);
   const colors = statuses.map(s => STATUS_COLORS[s] || '#94a3b8');
 
   const ctx = document.getElementById('statusChart').getContext('2d');
@@ -791,12 +807,20 @@ function renderChart(lopTable, statuses) {
     type: 'bar',
     data: {
       labels,
-      datasets: [{ label: 'Jumlah Order', data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 46 }],
+      datasets: [{ label: 'Jumlah LOP', data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 46 }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        datalabels: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx2) => ` ${fmtNum(ctx2.raw)} LOP | ${fmtNum(portValues[ctx2.dataIndex])} Port`,
+          },
+        },
+      },
       scales: {
         y: { beginAtZero: true, ticks: { precision: 0 } },
         x: { grid: { display: false } },
@@ -806,7 +830,7 @@ function renderChart(lopTable, statuses) {
 
   const legend = document.getElementById('chartLegend');
   legend.innerHTML = statuses.map((s, i) => `
-    <span><span class="dot" style="background:${colors[i]}"></span>${esc(labels[i])}: <strong>${fmtNum(values[i])}</strong></span>
+    <span><span class="dot" style="background:${colors[i]}"></span>${esc(labels[i])}: <strong>${fmtNum(values[i])} LOP | ${fmtNum(portValues[i])} Port</strong></span>
   `).join('');
 }
 
@@ -908,19 +932,60 @@ function renderGoliveTrendChart(filteredRows) {
     return;
   }
 
+  const trendCanvas = ctx.canvas;
+  const gradient = ctx.createLinearGradient(0, 0, 0, trendCanvas.height || 220);
+  gradient.addColorStop(0, 'rgba(245,180,0,0.35)');
+  gradient.addColorStop(1, 'rgba(245,180,0,0.02)');
+
   goliveTrendChart = new Chart(ctx, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels,
-      datasets: [{ label: 'Jumlah Golive', data: values, backgroundColor: '#16a34a', borderRadius: 6, maxBarThickness: 40 }],
+      datasets: [{
+        label: 'Jumlah Golive',
+        data: values,
+        borderColor: '#f5b400',
+        backgroundColor: gradient,
+        pointBackgroundColor: '#f5b400',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        borderWidth: 3,
+        tension: 0.4,
+        fill: true,
+      }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          display: true,
+          align: 'top',
+          anchor: 'end',
+          offset: 6,
+          color: '#fff',
+          font: { weight: 800, size: 11 },
+          formatter: (v) => fmtNum(v),
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx2) => ` ${fmtNum(ctx2.raw)} lokasi Golive`,
+          },
+        },
+      },
       scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 } },
-        x: { grid: { display: false } },
+        y: {
+          beginAtZero: true,
+          ticks: { precision: 0, color: 'rgba(255,255,255,0.85)' },
+          grid: { color: 'rgba(255,255,255,0.12)' },
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: 'rgba(255,255,255,0.85)' },
+        },
       },
       onClick: (evt, elements) => {
         if (!elements.length) return;
@@ -1099,10 +1164,11 @@ function fiCalFmtDate(iso) {
 function openFiCalDay(iso) {
   fiCalCurrentIso = iso;
   const items = fiCalDayIndex[iso] || [];
+  const totalPort = items.reduce((sum, r) => sum + (r.port || 0), 0);
   const modalBox = document.getElementById('bhModalBox');
   modalBox.innerHTML = `
     <div class="modal-header">
-      <div class="modal-title">Target FI / Golive — ${fiCalFmtDate(iso)} <span class="badge">${fmtNum(items.length)}</span></div>
+      <div class="modal-title">Target FI / Golive — ${fiCalFmtDate(iso)} <span class="badge">${fmtNum(items.length)} LOP</span> <span class="badge">${fmtNum(totalPort)} Port</span></div>
       <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
     </div>
     <div class="loc-list" style="margin-top:10px;" id="fiCalModalList">
@@ -1111,6 +1177,7 @@ function openFiCalDay(iso) {
           <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
           <div class="meta">
             <span class="badge">${esc(r.batch) || '-'}</span>
+            <span class="badge">${fmtNum(r.port)} Port</span>
             ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
             <span class="badge">${r.cal_date_source === 'golive' ? 'Golive' : 'Target FI'}: ${esc(r.cal_date_display) || '-'}</span>
           </div>
@@ -1131,6 +1198,59 @@ function openFiCalDay(iso) {
   }
   document.getElementById('bhModalOverlay').classList.add('open');
 }
+
+// ── Cek Target Bulan Ini: list semua lokasi dgn Target FI/Golive pada
+// bulan yang lagi di-view di kalender (fiCalYear/fiCalMonth) ─────────
+function openFiCalMonthList() {
+  const monthPrefix = `${fiCalYear}-${String(fiCalMonth + 1).padStart(2, '0')}`;
+  const items = Object.keys(fiCalDayIndex)
+    .filter(iso => iso.startsWith(monthPrefix))
+    .sort()
+    .flatMap(iso => fiCalDayIndex[iso]);
+
+  const totalPort = items.reduce((sum, r) => sum + (r.port || 0), 0);
+  const monthName = `${FI_CAL_MONTH_NAMES[fiCalMonth]} ${fiCalYear}`;
+  const isCurrentMonth = fiCalYear === today0.getFullYear() && fiCalMonth === today0.getMonth();
+
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Target FI / Golive — ${esc(monthName)}${isCurrentMonth ? ' <span class="badge" style="background:var(--brand-blue,#29467a);">Bulan ini</span>' : ''}</div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="fi-cal-summary">
+      <span>Total lokasi: <strong>${fmtNum(items.length)} LOP</strong></span>
+      <span>Total Port: <strong>${fmtNum(totalPort)} Port</strong></span>
+    </div>
+    <div class="loc-list" style="max-height:420px; overflow:auto;" id="fiCalMonthModalList">
+      ${items.length ? items.map(r => `
+        <div class="result-item" data-row="${r.row}">
+          <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
+          <div class="meta">
+            <span class="badge">${esc(r.batch) || '-'}</span>
+            <span class="badge">${fmtNum(r.port)} Port</span>
+            ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
+            <span class="badge">${r.cal_date_source === 'golive' ? 'Golive' : 'Target FI'}: ${esc(r.cal_date_display) || '-'}</span>
+          </div>
+        </div>
+      `).join('') : `<div class="empty-state">Tidak ada lokasi dengan Target FI/Golive di bulan ${esc(monthName)}.</div>`}
+    </div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  const list = document.getElementById('fiCalMonthModalList');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) {
+        closeBhModal();
+        editFromDetail(parseInt(item.dataset.row, 10));
+      }
+    });
+  }
+  document.getElementById('bhModalOverlay').classList.add('open');
+}
+
+document.getElementById('fiCalMonthListBtn').addEventListener('click', openFiCalMonthList);
 
 // ── Kategori Drop (kolom BH): card -> list -> detail (kolom I..AB) ───
 function computeBhTable(filteredRows) {
