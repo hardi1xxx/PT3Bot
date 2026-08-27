@@ -67,6 +67,21 @@
   .fi-cal-summary { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.8rem; color: var(--muted); margin: 4px 0 12px; }
   .fi-cal-summary strong { color: var(--text); }
 
+  /* Tab Rekap Port & LOP: Per Branch (default) / Per Batch */
+  .rekap-tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--border, #2a3550); padding-bottom: 10px; }
+  .rekap-tab-btn { border: 1px solid var(--border, #2a3550); background: var(--panel-alt); color: var(--muted); font-weight: 700; font-size: 0.82rem; padding: 7px 16px; border-radius: 8px; cursor: pointer; }
+  .rekap-tab-btn:hover { color: var(--text); }
+  .rekap-tab-btn.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
+
+  /* Toggle "Hanya Order Priority" di header filter branch */
+  .priority-filter-toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 0.8rem; font-weight: 700; color: var(--text); padding: 4px 10px 4px 4px; border-radius: 999px; border: 1px solid var(--border, #2a3550); background: var(--panel-alt); }
+  .priority-filter-toggle input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+  .priority-filter-switch { position: relative; width: 32px; height: 18px; border-radius: 999px; background: #cbd5e1; transition: background 0.15s ease; flex: 0 0 auto; }
+  .priority-filter-switch::before { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.15s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+  .priority-filter-toggle input:checked + .priority-filter-switch { background: #dc2626; }
+  .priority-filter-toggle input:checked + .priority-filter-switch::before { transform: translateX(14px); }
+  .priority-filter-toggle #priorityFilterCount { font-size: 0.65rem; padding: 1px 6px; }
+
   .rb-table { width: 100%; border-collapse: collapse; }
   .rb-table th, .rb-table td { padding: 7px 10px; text-align: right; font-size: 0.82rem; border-bottom: 1px solid var(--border, #2a3550); white-space: nowrap; }
   .rb-table thead th { background: var(--brand-blue, #29467a); color: #fff; text-align: center; position: sticky; top: 0; }
@@ -108,6 +123,12 @@
   <div class="branch-filter-head" id="filterCardHeader" style="cursor:pointer; margin-bottom:0;">
     <label style="cursor:pointer;">Filter Branch (kolom S) — <span id="filterSummary">memuat...</span></label>
     <div class="branch-filter-actions">
+      <label class="priority-filter-toggle" id="priorityFilterWrap" onclick="event.stopPropagation();">
+        <input type="checkbox" id="priorityFilterCheckbox">
+        <span class="priority-filter-switch"></span>
+        <span>&#9888; Hanya Order Priority</span>
+        <span class="badge" id="priorityFilterCount" style="background:#dc2626;">0</span>
+      </label>
       <button type="button" class="btn-ghost btn-sm" id="filterToggleBtn">Tampilkan &#9662;</button>
     </div>
   </div>
@@ -122,23 +143,20 @@
   </div>
 </div>
 
-<!-- Combined Port + LOP table -->
+<!-- Rekap Port & LOP: tab Branch (default) / Batch, biar halaman tidak
+     terlalu panjang ke bawah -->
 <div class="section-title">
-  Rekap Port &amp; LOP per Batch
-  <span class="hint">baris = batch (kolom C) · setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan · klik angka untuk lihat &amp; download daftar lokasinya</span>
+  Rekap Port &amp; LOP
+  <span class="hint" id="rekapTableHint">baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya</span>
   <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">&#8635; Refresh</button>
 </div>
 <div class="card" style="margin-bottom:22px;">
-  <div class="pivot-table-wrap" id="pivotTableWrap"><div class="skeleton">Memuat data...</div></div>
-</div>
-
-<!-- Rekap Regional & Branch (kolom T & S) per status -->
-<div class="section-title">
-  Rekap Regional &amp; Branch per Status
-  <span class="hint">baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya</span>
-</div>
-<div class="card" style="margin-bottom:22px;">
+  <div class="rekap-tabs" id="rekapTabs">
+    <button type="button" class="rekap-tab-btn active" data-rekap-view="branch">Per Branch</button>
+    <button type="button" class="rekap-tab-btn" data-rekap-view="batch">Per Batch</button>
+  </div>
   <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
+  <div class="pivot-table-wrap" id="pivotTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Chart + Trend Golive (kiri) & Kalender Target FI (kolom AK, kanan) -->
@@ -343,10 +361,16 @@ function renderAgingProgress(snapshot) {
 }
 
 // ── Single source of truth: filter raw rows by selected branches ─────
-function getFilteredRows() {
+let priorityOnlyFilter = false;
+function getBranchFilteredRows() {
   if (!dashboardCache) return [];
   const selected = new Set(getSelectedBranches());
   return dashboardCache.rows.filter(r => selected.has(r.branch));
+}
+function getFilteredRows() {
+  const rows = getBranchFilteredRows();
+  if (priorityOnlyFilter) return rows.filter(r => !!r.order_prioritas);
+  return rows;
 }
 
 // ── Stat cards ─────────────────────────────────────────────────────
@@ -751,6 +775,7 @@ function refreshAll() {
   if (!dashboardCache) return;
   const filtered = getFilteredRows();
   updateBranchDropdownLabel();
+  updatePriorityFilterCount();
   refreshStats(filtered);
 
   // Tabel "Rekap Port & LOP per Batch": DROP MOM, DROP, 5 status utama,
@@ -789,6 +814,18 @@ document.getElementById('branchClearAll').addEventListener('click', () => {
   refreshAll();
 });
 
+// ── Filter "Hanya Order Priority" (kolom order_prioritas) ────────────
+function updatePriorityFilterCount() {
+  const countEl = document.getElementById('priorityFilterCount');
+  if (!countEl) return;
+  const count = getBranchFilteredRows().filter(r => !!r.order_prioritas).length;
+  countEl.textContent = fmtNum(count);
+}
+document.getElementById('priorityFilterCheckbox').addEventListener('change', (e) => {
+  priorityOnlyFilter = e.target.checked;
+  refreshAll();
+});
+
 // Filter card collapse/expand — hidden by default so it doesn't take up space
 const filterBody = document.getElementById('filterCardBody');
 const filterToggleBtn = document.getElementById('filterToggleBtn');
@@ -804,6 +841,29 @@ document.getElementById('filterCardHeader').addEventListener('click', () => {
   setFilterOpen(filterBody.style.display === 'none');
 });
 setFilterOpen(false);
+
+// ── Tab Rekap Port & LOP: Per Branch (default) / Per Batch ───────────
+const REKAP_HINTS = {
+  branch: 'baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+  batch: 'baris = batch (kolom C) &middot; setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+};
+let rekapView = 'branch';
+function setRekapView(view) {
+  rekapView = view;
+  document.querySelectorAll('.rekap-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.rekapView === view);
+  });
+  document.getElementById('regionalBranchTableWrap').style.display = view === 'branch' ? 'block' : 'none';
+  document.getElementById('pivotTableWrap').style.display = view === 'batch' ? 'block' : 'none';
+  const hint = document.getElementById('rekapTableHint');
+  if (hint) hint.innerHTML = REKAP_HINTS[view];
+}
+document.getElementById('rekapTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.rekap-tab-btn[data-rekap-view]');
+  if (!btn) return;
+  setRekapView(btn.dataset.rekapView);
+});
+setRekapView('branch');
 
 // ── Bar chart: distribusi status pekerjaan (jumlah order/LOP + Port per status) ──
 function renderChart(lopTable, portTable, statuses) {
@@ -1461,7 +1521,7 @@ function renderLocList(locations, filterText) {
 
   el.innerHTML = filtered.map(r => `
     <div class="result-item ${r.row === selectedRow ? 'selected' : ''}" onclick="openRow(${r.row})">
-      ${r.order_prioritas ? `<div class="badge priority-order" style="background:#dc2626; margin-bottom:4px; display:inline-block;">${esc(r.order_prioritas)}</div>` : ''}
+      ${r.order_prioritas ? `<div class="badge priority-order" style="background:#fef2f2; color:#b91c1c; border:1px solid #fca5a5; font-weight:800; letter-spacing:0.02em; margin-bottom:4px; display:inline-block;">&#9888; ${esc(r.order_prioritas)}</div>` : ''}
       <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
       <div class="meta">
         <span class="badge">${esc(r.batch)}</span>
