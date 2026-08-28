@@ -17,24 +17,19 @@
   .cell-empty{color:var(--muted, #94a3b8);}
   #table-wrap table td.num{font-family:monospace; text-align:right;}
 
-  /* Dashboard MBB (Tree / Notes / Target) -- grid 3 kolom, bukan literal
-     garis-cabang seperti sumber Power BI-nya, tapi datanya align: total,
-     breakdown status, dan target bulan berjalan, semua bisa diklik. */
-  .mbb-dash{display:grid; grid-template-columns: 1.1fr 1fr 0.7fr; gap:14px; margin-bottom:16px; align-items:start;}
-  @media (max-width: 980px){ .mbb-dash{grid-template-columns: 1fr;} }
-  .mbb-tree-top{display:flex; gap:8px; margin-bottom:10px;}
-  .mbb-tree-top .box{flex:1; border-radius:10px; padding:10px 8px; text-align:center; cursor:pointer; border:2px solid transparent;}
-  .mbb-tree-top .box.selected{border-color:var(--brand-blue,#29467a);}
-  .mbb-tree-top .box .n{font-size:1.35rem; font-weight:800; line-height:1.1;}
-  .mbb-tree-top .box .l{font-size:0.68rem; font-weight:700; text-transform:uppercase; opacity:0.85;}
-  .mbb-tree-top .box.total{background:#475569; color:#fff;}
-  .mbb-tree-top .box.active{background:#0f4c81; color:#fff;}
-  .mbb-tree-top .box.drop{background:#c2410c; color:#fff;}
-  .mbb-tree-sub{display:grid; grid-template-columns: repeat(3, 1fr); gap:6px;}
-  .mbb-tree-sub .box{background:#eef2f7; border-radius:8px; padding:7px 6px; text-align:center; cursor:pointer; border:2px solid transparent;}
-  .mbb-tree-sub .box.selected{border-color:var(--brand-blue,#29467a); background:#dbeafe;}
-  .mbb-tree-sub .box .n{font-size:1.05rem; font-weight:800; color:var(--text);}
-  .mbb-tree-sub .box .l{font-size:0.63rem; color:var(--muted); font-weight:600;}
+  /* Dashboard MBB (Tree / Notes / Resume / Target). Baris 1: tree diagram
+     (SVG, garis cabang beneran) full-width. Baris 2: Notes, Resume, Target
+     berdampingan. */
+  .mbb-dash{display:grid; grid-template-columns: 1fr 1fr 0.7fr; grid-template-areas: "tree tree tree" "notes resume target"; gap:14px; margin-bottom:16px; align-items:start;}
+  @media (max-width: 980px){ .mbb-dash{grid-template-columns: 1fr; grid-template-areas: "tree" "notes" "resume" "target";} }
+  .mbb-dash .tree-card{grid-area:tree;}
+  .mbb-dash .notes-card{grid-area:notes;}
+  .mbb-dash .resume-card{grid-area:resume;}
+  .mbb-dash .target-card{grid-area:target;}
+  .mbb-tree-subtitle{color:#be185d; font-weight:800; font-size:0.8rem; line-height:1.35; margin:0 0 8px;}
+  .mbb-tree-svg-wrap{overflow-x:auto;}
+  .mbb-tree-svg-wrap svg text{user-select:none;}
+  .mbb-tree-svg-wrap svg .tree-node:hover rect{opacity:0.88;}
   .mbb-notes-list{max-height:230px; overflow-y:auto; font-size:0.82rem;}
   .mbb-notes-list .item{padding:7px 0; border-bottom:1px dashed #e2e8f0;}
   .mbb-notes-list .item:last-child{border-bottom:none;}
@@ -182,6 +177,63 @@ function mbbDashboardFilter(row){
   return c.top === "active" && c.sub === mbbSelectedBucket;
 }
 
+// ===================== TREE DIAGRAM (SVG, garis cabang) ==================
+// Root "Site ID" -> 3 cabang (L1-ON AIR / Aktif / Drop) -> cabang "Aktif"
+// pecah lagi ke 9 sub-bucket (urutan ikut MBB_SUB_BUCKETS). Style ikut
+// referensi: root abu-abu, L1-ON AIR biru gelap, Aktif biru medium,
+// Drop oranye, 9 leaf biru muda. Tiap node bisa diklik (sama kayak
+// sebelumnya) buat filter dashboard via mbbSelectBucket().
+const TREE_SVG_W = 860, TREE_SVG_H = 460;
+
+function treeNodeSelected(key){
+  return (key === null) ? !mbbSelectedBucket : mbbSelectedBucket === key;
+}
+
+function treeConnector(x1, y, x2, y2, breakX){
+  return `<path d="M${x1},${y} H${breakX} V${y2} H${x2}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
+}
+
+function treeNodeRect(x, y, w, h, fill, textColor, label, value, key, valueSize, labelSize){
+  const sel = treeNodeSelected(key);
+  const keyArg = key === null ? "null" : `'${key}'`;
+  return `
+    <g class="tree-node" onclick="mbbSelectBucket(${keyArg})">
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="${fill}" stroke="${sel ? '#111827' : 'transparent'}" stroke-width="${sel ? 3 : 0}"/>
+      <text x="${x + w/2}" y="${y + h/2 - 4}" text-anchor="middle" font-size="${valueSize}" font-weight="800" fill="${textColor}">${fmtN(value)}</text>
+      <text x="${x + w/2}" y="${y + h/2 + 14}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${textColor}" opacity="0.92">${escapeHtml(label)}</text>
+    </g>`;
+}
+
+function renderMbbTreeSvg(total, l1oa, drop, active, subCounts){
+  const rootW = 130, rootH = 74, rootX = 8, rootCY = TREE_SVG_H/2;
+  const midW = 150, midH = 66, midX = 250;
+  const midCYs = [TREE_SVG_H*0.17, TREE_SVG_H/2, TREE_SVG_H*0.83];
+  const leafW = 160, leafH = 38, leafX = 620;
+  const leafSlot = TREE_SVG_H / MBB_SUB_BUCKETS.length;
+  const leafCYs = MBB_SUB_BUCKETS.map((_,i) => leafSlot*i + leafSlot/2);
+
+  const midDefs = [
+    { key:"l1oa",   label:"L1 - ON AIR", value:l1oa,  fill:"#0f4c81" },
+    { key:"active", label:"SITE ID",     value:active,fill:"#2f6690" },
+    { key:"drop",   label:"DROP",        value:drop,  fill:"#c2410c" },
+  ];
+
+  const rootRightX = rootX + rootW, midBreakX = rootRightX + 40;
+  const midRightX = midX + midW, leafBreakX = midRightX + 40;
+
+  let svg = `<svg viewBox="0 0 ${TREE_SVG_W} ${TREE_SVG_H}" width="100%" role="img" aria-label="Tree diagram progress MBB">`;
+
+  midCYs.forEach(cy => { svg += treeConnector(rootRightX, rootCY, midX, cy, midBreakX); });
+  leafCYs.forEach(cy => { svg += treeConnector(midRightX, midCYs[1], leafX, cy, leafBreakX); });
+
+  svg += treeNodeRect(rootX, rootCY - rootH/2, rootW, rootH, "#475569", "#fff", "Site ID", total, null, 22, 11);
+  midDefs.forEach((m,i) => { svg += treeNodeRect(midX, midCYs[i] - midH/2, midW, midH, m.fill, "#fff", m.label, m.value, m.key, 20, 11); });
+  MBB_SUB_BUCKETS.forEach((b,i) => { svg += treeNodeRect(leafX, leafCYs[i] - leafH/2, leafW, leafH, "#cfe8f5", "#0f2a3d", b.label, subCounts[b.key]||0, b.key, 15, 9); });
+
+  svg += `</svg>`;
+  return svg;
+}
+
 function renderMbbDashboard(rowsForView){
   const wrap = document.getElementById("mbb-dashboard-wrap");
   if (!wrap) return;
@@ -204,10 +256,10 @@ function renderMbbDashboard(rowsForView){
     <div class="item"><span class="site">${escapeHtml(getCol(r,"SITE ID"))}</span> — ${escapeHtml(firstParagraph(getCol(r,"Note Progress")))}</div>
   `).join("") : `<div class="empty-state" style="padding:16px 0;">Klik salah satu kategori di kiri untuk lihat catatan (Note Progress)-nya di sini.</div>`;
 
-  // Ringkasan tetap (nama SITE ID saja, dipisah koma) buat 3 status kolom U
-  // -- SELALU dari rowsForView (view MBB aktif), tidak ikut kena filter klik
-  // tree/bucket di atas, beda dari notesHtml.
-  const summaryHtml = `
+  // Resume: nama SITE ID saja (dipisah koma) buat 3 status kolom U -- SELALU
+  // dari rowsForView (view MBB aktif), tidak ikut kena filter klik tree di
+  // atas, dan sekarang jadi card sendiri terpisah dari Notes.
+  const resumeHtml = `
     <div class="item"><span class="site">List L0 Ready</span><br>${escapeHtml(siteListForStatus(rowsForView, "6. L0 Ready"))}</div>
     <div class="item"><span class="site">List L0 Issue BTS</span><br>${escapeHtml(siteListForStatus(rowsForView, "5.1 L0 Progress - Issue BTS"))}</div>
     <div class="item"><span class="site">Status Hold</span><br>${escapeHtml(siteListForStatus(rowsForView, "0. HOLD"))}</div>
@@ -215,33 +267,25 @@ function renderMbbDashboard(rowsForView){
 
   wrap.innerHTML = `
     <div class="mbb-dash">
-      <div class="card">
-        <div class="section-title" style="margin:0 0 10px;">Tree Diagram Progress</div>
-        <div class="mbb-tree-top">
-          <div class="box total ${mbbSelectedBucket===null||mbbSelectedBucket==='total'?'selected':''}" onclick="mbbSelectBucket(null)"><div class="n">${fmtN(total)}</div><div class="l">SITE ID</div></div>
-          <div class="box active ${mbbSelectedBucket==='active'?'selected':''}" onclick="mbbSelectBucket('active')"><div class="n">${fmtN(active)}</div><div class="l">Aktif</div></div>
-          <div class="box drop ${mbbSelectedBucket==='drop'?'selected':''}" onclick="mbbSelectBucket('drop')"><div class="n">${fmtN(drop)}</div><div class="l">Drop</div></div>
-        </div>
-        <div class="mbb-tree-top" style="margin-bottom:6px;">
-          <div class="box active ${mbbSelectedBucket==='l1oa'?'selected':''}" onclick="mbbSelectBucket('l1oa')" style="background:#0f4c81;"><div class="n">${fmtN(l1oa)}</div><div class="l">L1 - ON AIR</div></div>
-        </div>
-        <div class="mbb-tree-sub">
-          ${MBB_SUB_BUCKETS.map(b => `
-            <div class="box ${mbbSelectedBucket===b.key?'selected':''}" onclick="mbbSelectBucket('${b.key}')">
-              <div class="n">${fmtN(subCounts[b.key])}</div><div class="l">${escapeHtml(b.label)}</div>
-            </div>
-          `).join("")}
-        </div>
+      <div class="card tree-card">
+        <div class="section-title" style="margin:0 0 4px;">Tree Diagram Progress</div>
+        <div class="mbb-tree-subtitle">Node-B TIF Batch 1-29<br>NEW INFRA</div>
+        <div class="mbb-tree-svg-wrap">${renderMbbTreeSvg(total, l1oa, drop, active, subCounts)}</div>
       </div>
 
-      <div class="card">
+      <div class="card notes-card">
         <div class="section-title" style="margin:0 0 10px;">
           Notes <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
         </div>
-        <div class="mbb-notes-list">${notesHtml}${summaryHtml}</div>
+        <div class="mbb-notes-list">${notesHtml}</div>
       </div>
 
-      <div class="mbb-target-box">
+      <div class="card resume-card">
+        <div class="section-title" style="margin:0 0 10px;">Resume</div>
+        <div class="mbb-notes-list">${resumeHtml}</div>
+      </div>
+
+      <div class="mbb-target-box target-card">
         <div style="font-size:1.4rem;">&#127919;</div>
         <div class="n">${fmtN(targetCount)}</div>
         <div class="l">Target ${escapeHtml(monthName)} — Tsel</div>
