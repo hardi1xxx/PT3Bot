@@ -6,13 +6,14 @@
 <title>INTRA — INtegrated TRAcking</title>
 <style>
   :root {
-    --bg: #0f1420;
-    --panel: #171e2e;
-    --panel-alt: #1f273a;
-    --text: #e7ebf3;
-    --muted: #94a3b8;
+    --bg: #eef2f7;
+    --panel: #ffffff;
+    --panel-alt: #f8fafc;
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: #e2e8f0;
     --brand-blue: #2f6fed;
-    --brand-blue-2: #1b3a8a;
+    --brand-blue-2: #eaf1ff;
   }
   * { box-sizing: border-box; }
   body {
@@ -23,24 +24,25 @@
   }
   header.topbar {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 28px; background: var(--panel); border-bottom: 1px solid #232c40;
+    padding: 14px 28px; background: var(--panel); border-bottom: 1px solid var(--border);
   }
   .brand { display: flex; align-items: center; gap: 12px; }
   .brand img { height: 38px; width: auto; display: block; }
-  .user-box { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; }
+  .user-box { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; color: var(--text); }
   .user-box .role-badge {
-    font-size: 0.68rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
-    background: var(--brand-blue-2); color: #bcd0ff; border: 1px solid #2c4a9e;
+    font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    background: var(--brand-blue-2); color: var(--brand-blue); border: 1px solid #c7d9ff;
   }
   .user-box a.logout {
     color: var(--muted); text-decoration: none; font-size: 0.8rem;
-    border: 1px solid #2b3550; padding: 5px 12px; border-radius: 8px;
+    border: 1px solid var(--border); padding: 5px 12px; border-radius: 8px;
+    background: #f1f5f9;
   }
-  .user-box a.logout:hover { color: #f87171; border-color: #7f1d1d; }
+  .user-box a.logout:hover { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
 
   main { max-width: 1100px; margin: 0 auto; padding: 40px 24px 60px; }
   .hero { text-align: center; margin-bottom: 34px; }
-  .hero h1 { font-size: 1.5rem; margin: 0 0 6px; font-weight: 800; }
+  .hero h1 { font-size: 1.5rem; margin: 0 0 6px; font-weight: 800; color: var(--text); }
   .hero p { color: var(--muted); margin: 0; font-size: 0.9rem; }
 
   .grid {
@@ -48,30 +50,30 @@
     gap: 16px; margin-bottom: 44px;
   }
   .card {
-    background: var(--panel); border: 1px solid #232c40; border-radius: 14px;
-    padding: 20px; text-decoration: none; color: var(--text); transition: border-color .15s, transform .15s;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; text-decoration: none; color: var(--text); transition: border-color .15s, transform .15s, box-shadow .15s;
     display: flex; flex-direction: column; gap: 6px; min-height: 118px;
   }
-  .card:hover { border-color: var(--brand-blue); transform: translateY(-2px); }
+  .card:hover { border-color: var(--brand-blue); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15,23,42,0.08); }
   .card .label { font-weight: 800; font-size: 1.1rem; }
   .card .desc { font-size: 0.78rem; color: var(--muted); flex: 1; }
   .card .status-tag {
     align-self: flex-start; font-size: 0.65rem; font-weight: 700; letter-spacing: .04em;
     padding: 2px 8px; border-radius: 999px; margin-top: 4px;
   }
-  .card.active .status-tag { background: #113a24; color: #4ade80; border: 1px solid #1f6b3f; }
+  .card.active .status-tag { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
   .card.soon {
-    opacity: 0.5; cursor: not-allowed; pointer-events: none;
+    opacity: 0.55; cursor: not-allowed; pointer-events: none;
   }
-  .card.soon .status-tag { background: #332a13; color: #eab308; border: 1px solid #6b551f; }
+  .card.soon .status-tag { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
 
-  .partners { text-align: center; padding-top: 24px; border-top: 1px solid #232c40; }
+  .partners { text-align: center; padding-top: 24px; border-top: 1px solid var(--border); }
   .partners .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 14px; }
   .partner-row { display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap; }
   .partner-chip {
     display: flex; align-items: center; gap: 8px; padding: 8px 16px;
-    background: var(--panel); border: 1px solid #232c40; border-radius: 999px;
-    font-size: 0.82rem; font-weight: 700; color: #cbd5e1;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+    font-size: 0.82rem; font-weight: 700; color: var(--text);
   }
   .partner-chip .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 </style>
@@ -97,18 +99,20 @@
 
   <div class="grid">
     {% for m in menus %}
-      {% if m.status == 'active' %}
-        <a class="card active" href="{{ m.url }}">
-          <div class="label">{{ m.label }}</div>
-          <div class="desc">{{ m.desc }}</div>
-          <div class="status-tag">AKTIF</div>
-        </a>
-      {% else %}
-        <div class="card soon">
-          <div class="label">{{ m.label }}</div>
-          <div class="desc">{{ m.desc }}</div>
-          <div class="status-tag">SEGERA HADIR</div>
-        </div>
+      {% if m.label not in ['PT2', 'PT3'] %}
+        {% if m.status == 'active' %}
+          <a class="card active" href="{{ m.url }}">
+            <div class="label">{{ m.label }}</div>
+            <div class="desc">{{ m.desc }}</div>
+            <div class="status-tag">AKTIF</div>
+          </a>
+        {% else %}
+          <div class="card soon">
+            <div class="label">{{ m.label }}</div>
+            <div class="desc">{{ m.desc }}</div>
+            <div class="status-tag">SEGERA HADIR</div>
+          </div>
+        {% endif %}
       {% endif %}
     {% endfor %}
   </div>
