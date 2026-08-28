@@ -7,107 +7,373 @@
 <title>Login — Integrated Tracking System</title>
 <style>
   * { box-sizing: border-box; }
+
+  :root {
+    --app-scale: 0.7;
+
+    --viewport-height: calc(100vh / var(--app-scale));
+    --viewport-height-d: calc(100dvh / var(--app-scale));
+
+    /* Blue theme */
+    --theme-primary: #3552c4;
+    --theme-primary-dark: #243a96;
+    --theme-secondary: #e8edff;
+
+    /* Neutral */
+    --theme-text: #1a1a1a;
+    --theme-muted: #7b849b;
+    --theme-border: #d7dcef;
+  }
+
+  html,
   body {
-    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #3552c4; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    padding: 24px;
-  }
-
-  .card {
-    background: #fff; border-radius: 24px; box-shadow: 0 30px 70px rgba(15, 23, 60, .35);
-    width: 100%; max-width: 960px; display: flex; overflow: hidden; min-height: 560px;
-  }
-
-  /* ── Left: brand panel + illustration ── */
-  .left-panel {
-    flex: 1 1 46%; padding: 44px 40px 24px; display: flex; flex-direction: column;
-    align-items: center; text-align: center;
-  }
-  .left-panel h1 { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin: 0 0 4px; }
-  .left-panel .version { font-size: 0.72rem; color: #94a3b8; margin: 0 0 20px; }
-  .illustration {
     width: 100%;
-    max-width: 380px;
-    flex: 1 1 auto;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--theme-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow-x: hidden;
+  }
+
+  .page {
+    min-height: 100vh;
+    min-height: 100dvh;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    box-sizing: border-box;
+
+    background: var(--theme-primary);
+
     display: flex;
     align-items: center;
     justify-content: center;
+
+    padding: 24px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 980px;
+    display: flex;
     overflow: hidden;
+    background: #fff;
+    border-radius: 28px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+    flex-shrink: 0;
+  }
+
+  /* Left — brand & illustration */
+  .left-panel {
+    flex: 1 1 50%;
+    background: var(--theme-secondary);
+    display: flex;
+    flex-direction: column;
+    padding: 32px 36px 24px;
+    min-height: 520px;
+  }
+
+  .left-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .left-brand img {
+    display: block;
+    width: 100%;
+    max-width: 168px;
+    height: auto;
+  }
+
+  .left-panel .version {
+    margin: 2px 0 0;
+    font-size: 0.8rem;
+    color: #854f33;
+    font-weight: 400;
+  }
+
+  .illustration {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
   }
 
   .illustration img {
     display: block;
-    width: auto;
+    width: 100%;
+    max-width: 380px;
+    max-height: 280px;
     height: auto;
-    max-width: 100%;
-    max-height: 380px;
     object-fit: contain;
   }
 
+  .left-footer {
+    margin: 0;
+    color: #854f33;
+    font-size: 0.68rem;
+    line-height: 1.45;
+    text-align: center;
+  }
 
-  /* ── Right: login form panel ── */
+  /* Right — login form */
   .right-panel {
-    flex: 1 1 54%; background: #f4f6fb; padding: 36px 48px; display: flex; flex-direction: column;
+    flex: 1 1 50%;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    padding: 36px 48px;
+    min-height: 520px;
   }
-  .brand-logos { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 26px; flex-wrap: wrap; }
-  .brand-logos img { height: 40px; width: auto; object-fit: contain; }
 
-  .right-panel h2 { text-align: center; font-size: 1.15rem; font-weight: 800; color: #0f172a; margin: 0 0 6px; }
-  .right-panel .user-login { text-align: center; font-size: 1rem; font-weight: 800; color: #1d4ed8; margin: 0 0 2px; }
-  .right-panel .sub { text-align: center; color: #94a3b8; font-size: 0.78rem; margin: 0 0 22px; }
-
-  form { max-width: 340px; width: 100%; margin: 0 auto; }
-
-  label { display: block; font-size: 0.75rem; font-weight: 700; color: #1d4ed8; margin-bottom: 4px; }
-  .field-wrap { position: relative; margin-bottom: 4px; }
-  input[type="password"], input[type="text"] {
-    width: 100%; padding: 11px 42px 11px 14px; border-radius: 10px; border: 1px solid #bfdbfe;
-    background: #eff6ff; font-size: 0.95rem; color: #1e293b;
+  .brand-logos {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 18px;
   }
-  input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.25); }
+
+  .brand-logos img {
+    display: block;
+    width: auto;
+    height: 40px;
+    max-width: 100%;
+    object-fit: contain;
+  }
+
+  .right-panel h2 {
+    margin: 24px 0 2px;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--theme-text);
+    line-height: 1.3;
+    text-align: left;
+  }
+
+  .right-panel .user-login {
+    margin: 0 0 4px;
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: var(--theme-muted);
+    text-align: left;
+  }
+
+  .right-panel .sub {
+    margin: 0 0 22px;
+    color: var(--theme-muted);
+    font-size: 0.875rem;
+    text-align: left;
+  }
+
+  form {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--theme-text);
+  }
+
+  .field-wrap {
+    position: relative;
+    margin-bottom: 4px;
+  }
+
+  input[type="password"],
+  input[type="text"] {
+    width: 100%;
+    height: 44px;
+    padding: 10px 44px 10px 14px;
+    border: 1px solid var(--theme-border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--theme-text);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.175s, box-shadow 0.175s;
+  }
+
+  input[type="password"]:focus,
+  input[type="text"]:focus {
+    border-color: var(--theme-primary);
+    box-shadow: 0 0 0 2px rgba(92, 54, 36, 0.14);
+  }
+
   .toggle-eye {
-    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-    cursor: pointer; color: #64748b; background: none; border: none; padding: 4px; display: flex;
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    border: none;
+    background: transparent;
+    color: #8a8a8a;
+    cursor: pointer;
   }
-  .toggle-eye:hover { color: #1d4ed8; }
 
-  .forgot { text-align: center; font-size: 0.72rem; color: #64748b; margin: 8px 0 18px; }
-  .forgot a { color: #1d4ed8; text-decoration: none; }
-  .forgot a:hover { text-decoration: underline; }
+  .toggle-eye:hover {
+    color: var(--theme-primary);
+  }
+
+  .forgot {
+    margin: 8px 0 18px;
+    color: var(--theme-muted);
+    font-size: 0.72rem;
+    text-align: center;
+  }
+
+  .forgot a,
+  .signup-hint a {
+    color: var(--theme-primary);
+    text-decoration: none;
+  }
+
+  .forgot a:hover,
+  .signup-hint a:hover {
+    text-decoration: underline;
+  }
 
   button.login-btn {
-    width: 100%; padding: 12px; border: none; border-radius: 10px; background: #1d4ed8; color: #fff;
-    font-weight: 800; font-size: 0.92rem; letter-spacing: 0.03em; cursor: pointer;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: var(--theme-primary);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.92rem;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: 0.175s;
   }
-  button.login-btn:hover { background: #1e3a8a; }
 
-  .signup-hint { text-align: center; font-size: 0.72rem; color: #94a3b8; margin: 12px 0 0; }
-  .signup-hint a { color: #1d4ed8; text-decoration: none; }
+  button.login-btn:hover {
+    background: var(--theme-primary-dark);
+    transform: scale(1.023);
+  }
+
+  .signup-hint {
+    margin: 12px 0 0;
+    color: var(--theme-muted);
+    font-size: 0.72rem;
+    text-align: center;
+  }
 
   .error {
-    max-width: 340px; margin: 0 auto 14px; background: #fef2f2; border: 1px solid #fecaca; color: #dc2626;
-    border-radius: 10px; padding: 8px 12px; font-size: 0.78rem; text-align: center;
+    width: 100%;
+    margin: 0 auto 14px;
+    padding: 8px 12px;
+    border: 1px solid #e7c8bd;
+    border-radius: 10px;
+    background: #fdf4f0;
+    color: var(--theme-primary);
+    font-size: 0.78rem;
+    text-align: center;
   }
 
-  .footer { text-align: center; font-size: 0.66rem; color: #94a3b8; margin-top: auto; padding-top: 20px; }
+  .footer {
+    margin-top: auto;
+    padding-top: 20px;
+    color: var(--theme-muted);
+    font-size: 0.66rem;
+    text-align: center;
+  }
 
   @media (max-width: 760px) {
-    .card { flex-direction: column; min-height: 0; }
-    .left-panel { padding: 32px 24px 12px; }
-    .illustration { max-width: 240px; }
-    .right-panel { padding: 28px 24px; }
+    html,
+    body {
+      overflow: auto;
+    }
+
+    .page {
+      min-height: var(--viewport-height-d);
+      padding: 16px;
+      align-items: flex-start;
+    }
+
+    .card {
+      flex-direction: column;
+      border-radius: 20px;
+      max-width: 520px;
+    }
+
+    .left-panel {
+      min-height: auto;
+      padding: 24px 24px 16px;
+    }
+
+    .left-brand {
+      align-items: center;
+    }
+
+    .illustration {
+      min-height: 220px;
+      padding: 12px 0;
+    }
+
+    .illustration img {
+      max-width: 300px;
+      max-height: 220px;
+    }
+
+    .right-panel {
+      min-height: auto;
+      padding: 28px 24px 24px;
+    }
+
+    .right-panel h2,
+    .right-panel .user-login,
+    .right-panel .sub {
+      text-align: center;
+    }
+
+    .right-panel h2 {
+      margin-top: 12px;
+    }
+
+    .footer {
+      margin-top: 28px;
+    }
   }
 </style>
 </head>
 <body>
-  <div class="card">
+  <div class="page">
+    <div class="card">
 
     <div class="left-panel">
-      <h1>Integrated Tracking System</h1>
-      <p class="version">Development Version 0.0.1</p>
-      <div class="illustration">
-        <img src="{{ url_for('static', filename='img/default.png') }}" alt="Illustration of a person using a computer">  
+      <div class="left-brand">
+        <img src="{{ url_for('static', filename='img/Q-Hub-Logo.png') }}" alt="I.Q-Hub">
+        <p class="version">Version 1.0.0</p>
       </div>
+
+      <div class="illustration">
+        <img src="{{ url_for('static', filename='img/login-illustration.png') }}" alt="Login illustration">
+      </div>
+
+      <p class="left-footer">
+        © 2026 Intra Group – PT Telkom Akses. All rights reserved.
+      </p>
     </div>
 
     <div class="right-panel">
@@ -118,9 +384,8 @@
         <!-- <img src="{{ url_for('static', filename='img/logo-danantara.png') }}" alt="TELKOMSEL"> -->
       </div>
 
-      <h2>Welcome to application,</h2>
-      <p class="user-login">User Login</p>
-      <p class="sub">Please log in to continue</p>
+      <h2>Welcome to Intra - Integrated Tracking System!</h2>
+      <p class="user-login">Please login to your account</p>
 
       {% if error %}
         <div class="error">{{ error }}</div>
@@ -146,6 +411,7 @@
       <p class="footer">&copy; 2026. Integrated Tracking System</p>
     </div>
 
+    </div>
   </div>
 
   <script>
