@@ -85,7 +85,8 @@
   .left-brand {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    text-align: center;
   }
 
   .left-brand img {
@@ -100,6 +101,7 @@
     font-size: 0.8rem;
     color: #854f33;
     font-weight: 400;
+    text-align: center !important;
   }
 
   .illustration {
@@ -384,7 +386,7 @@
         <!-- <img src="{{ url_for('static', filename='img/logo-danantara.png') }}" alt="TELKOMSEL"> -->
       </div>
 
-      <h2>Welcome to Intra - Integrated Tracking System!</h2>
+      <h2 style="text-align: center;">Welcome to Intra!</h2>
       <p class="user-login">Please login to your account</p>
 
       {% if error %}

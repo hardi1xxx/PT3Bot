@@ -523,8 +523,12 @@ def do_update(row_num):
         flash(f"Berhasil diupdate ke kolom {note_col} (tanggal di {date_col}).", "success")
     except Exception as e:
         flash(f"Gagal update: {type(e).__name__}: {e}", "error")
+        return redirect(url_for("update_form", row_num=row_num))
 
-    return redirect(url_for("update_form", row_num=row_num))
+    # Sukses -> balik ke dashboard PT3, bukan render ulang form update yang
+    # sama (yang sebelumnya rawan gagal kalau get_row_snapshot() kena
+    # error/rate-limit tepat setelah proses tulis ke Google Sheets).
+    return redirect(url_for("pt3_dashboard"))
 
 
 @app.route("/healthz")
