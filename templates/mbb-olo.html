@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block active_category %}{{ 'mbb' if request.args.get('view','mbb-all').startswith('mbb') else 'olo' }}{% endblock %}
 {% block menu_mbb %}{{ 'active' if request.args.get('view','mbb-all').startswith('mbb') else '' }}{% endblock %}
 {% block menu_olo %}{{ 'active' if request.args.get('view','mbb-all').startswith('olo') else '' }}{% endblock %}
 {% block page_title %}MBB &amp; OLO Monitoring{% endblock %}
