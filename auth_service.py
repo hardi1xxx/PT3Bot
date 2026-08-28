@@ -67,6 +67,11 @@ def verify_login(password):
     ketemu). Role & akses per-project (kolom role/project) tetap jalan
     seperti biasa karena hasilnya tetap dict user yang lengkap.
 
+    Tiap baris di-bungkus try/except: kalau ADA SATU user yang
+    password_hash-nya rusak/format-nya salah di users.xlsx (mis. ke-korup
+    waktu di-paste ke Excel), baris itu di-skip aja -- supaya tidak bikin
+    SEMUA orang gagal login gara-gara satu baris yang rusak.
+
     Catatan performa: check_password_hash (scrypt) sengaja lambat demi
     keamanan, dan di sini di-loop ke semua user tiap kali login. Untuk
     jumlah user yang kecil (internal tool) ini masih aman; kalau jumlah
@@ -76,8 +81,16 @@ def verify_login(password):
     if not password:
         return None
     for u in load_users():
-        if u["password_hash"] and check_password_hash(u["password_hash"], password):
-            return u
+        stored_hash = u["password_hash"]
+        if not stored_hash:
+            continue
+        try:
+            if check_password_hash(stored_hash, password):
+                return u
+        except ValueError:
+            # Format hash user ini rusak (mis. field password_hash di
+            # users.xlsx ke-korup/terpotong). Skip baris ini saja.
+            continue
     return None
 
 
