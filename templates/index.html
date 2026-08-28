@@ -101,7 +101,14 @@
     {% for m in menus %}
       {% if m.label not in ['PT2', 'PT3'] %}
         {% if m.status == 'active' %}
-          <a class="card active" href="{{ m.url }}">
+          {% if m.label == 'MBB' %}
+            {% set card_url = '/mbb-olo?view=mbb-all' %}
+          {% elif m.label == 'OLO' %}
+            {% set card_url = '/mbb-olo?view=olo-all' %}
+          {% else %}
+            {% set card_url = m.url %}
+          {% endif %}
+          <a class="card active" href="{{ card_url }}">
             <div class="label">{{ m.label }}</div>
             <div class="desc">{{ m.desc }}</div>
             <div class="status-tag">AKTIF</div>
