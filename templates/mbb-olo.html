@@ -48,12 +48,13 @@
   <span id="view-title">MBB &amp; OLO</span>
   <span class="hint" id="view-sub"></span>
 </div>
+<div class="hint" id="mbb-base-filter-note" style="margin:-6px 0 12px;"></div>
 
 <div id="mbb-dashboard-wrap"></div>
 
 <div class="card" style="margin-bottom:14px;" id="mbb-curve-wrap">
   <div class="section-title" style="margin:0 0 8px;">Kurva PLAN vs REALISASI L0 Ready</div>
-  <div class="hint" style="margin-bottom:8px;">PLAN dari kolom AA (Target FI/L0), REALISASI dari kolom BD (Tanggal L0 Ready) &mdash; kumulatif per bulan. Data difilter: TAHUN = 2026 &amp; Plan Deploy mengandung &ldquo;TIF&rdquo;.</div>
+  <div class="hint" style="margin-bottom:8px;">PLAN dari kolom AA (Target FI/L0), REALISASI dari kolom BD (Tanggal L0 Ready) &mdash; kumulatif per bulan.</div>
   <div style="position:relative; height:220px;"><canvas id="mbb-curve-chart"></canvas></div>
 </div>
 
@@ -307,10 +308,12 @@ function parseLooseDate(raw){
   return isNaN(dt.getTime()) ? null : dt;
 }
 
-// Filter khusus kurva: kolom A (TAHUN) cuma 2026, kolom B (Plan Deploy)
-// harus mengandung "TIF". Berlaku SELALU buat data kurva ini, terpisah
-// dari filter tab/view MBB yang lagi aktif (mbb-all/newinfra/dst).
-function mbbCurveFilter(r){
+// Filter DASAR buat SELURUH data MBB (bukan cuma kurva): kolom A (TAHUN)
+// cuma 2026, kolom B (Plan Deploy) harus mengandung "TIF". Diterapkan di
+// render() sebelum filter tab/view (mbb-all/newinfra/dst) dan sebelum
+// pencarian, jadi tabel, dashboard tree/notes, dan kurva semuanya konsisten
+// cuma nampilin baris yang lolos filter ini.
+function mbbBaseFilter(r){
   const tahun = parseInt(getCol(r, "TAHUN"), 10);
   if (tahun !== 2026) return false;
   return matchCol(r, "Plan Deploy", "tif");
@@ -324,7 +327,7 @@ function renderMbbCurve(rowsForView){
   const planByMonth = new Array(12).fill(0);
   const realByMonth = new Array(12).fill(0);
 
-  rowsForView.filter(mbbCurveFilter).forEach(r=>{
+  rowsForView.forEach(r=>{
     const pd = parseLooseDate(getCol(r, "Target FI/L0"));
     if (pd && pd.getFullYear() === year) planByMonth[pd.getMonth()]++;
     const rd = parseLooseDate(getCol(r, "Tanggal L0 Ready"));
@@ -428,11 +431,15 @@ function render(){
   const view = VIEWS[currentView];
   document.getElementById("view-title").innerHTML = `${view.title} <span class="badge">${view.badge}</span>`;
   document.getElementById("view-sub").textContent = view.sub;
+  document.getElementById("mbb-base-filter-note").innerHTML = view.source === "mbb"
+    ? `Filter dasar aktif untuk seluruh data MBB di halaman ini: kolom A (TAHUN) = 2026, kolom B (Plan Deploy) mengandung &ldquo;TIF&rdquo;.`
+    : "";
 
   const cols = view.source === "mbb" ? MBB_LABELS : OLO_LABELS;
   const statusLabel = view.source === "mbb" ? "Status Pekerjaan" : "STATUS PEKERJAAN";
   let rows = view.source === "mbb" ? mbbRows : oloRows;
 
+  if (view.source === "mbb") rows = rows.filter(mbbBaseFilter);
   if(view.filter) rows = rows.filter(view.filter);
 
   // Dashboard (Tree/Notes/Target) & kurva PLAN-REALISASI cuma relevan buat
