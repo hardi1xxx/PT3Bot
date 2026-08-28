@@ -11,6 +11,73 @@
     .sidebar {
       transition: width .22s ease, opacity .18s ease, padding .22s ease;
       position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .sidebar nav {
+      flex: 1 1 auto;
+      overflow-y: auto;
+    }
+    .sidebar-logo-wrap {
+      display: flex;
+      justify-content: center;
+      padding: 4px 0 14px;
+    }
+    .sidebar-logo {
+      height: 40px;
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+    }
+    .sidebar-footer {
+      flex: none;
+      padding: 12px 8px 4px;
+      border-top: 1px solid rgba(15,23,42,0.08);
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .sidebar-back-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--muted, #475569);
+      text-decoration: none;
+      background: #f1f5f9;
+      border: 1px solid rgba(15,23,42,0.08);
+    }
+    .sidebar-back-btn:hover {
+      background: #e2e8f0;
+    }
+    .sidebar-back-icon {
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+    .sidebar-logout-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #dc2626;
+      text-decoration: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+    }
+    .sidebar-logout-btn:hover {
+      background: #fee2e2;
+    }
+    .sidebar-logout-icon {
+      font-size: 0.95rem;
+      line-height: 1;
     }
     .sidebar.is-hidden {
       width: 0 !important;
@@ -128,6 +195,10 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo-wrap">
+        <img class="sidebar-logo" src="{{ url_for('static', filename='img/intra-logo.png') }}" alt="INTRA logo"
+             onerror="this.style.display='none';">
+      </div>
       <div class="sidebar-header">
         <div class="sidebar-brand">MENU</div>
         <button type="button" class="sidebar-hide-btn" id="sidebarHideBtn" title="Sembunyikan menu">&#10094;</button>
@@ -160,6 +231,15 @@
           </div>
         </div>
       </nav>
+
+      <div class="sidebar-footer">
+        <a href="{{ url_for('index') }}" class="sidebar-back-btn" title="Kembali ke halaman utama">
+          <span class="sidebar-back-icon">&#8617;</span> Kembali
+        </a>
+        <a href="{{ url_for('logout') }}" class="sidebar-logout-btn" title="Logout">
+          <span class="sidebar-logout-icon">&#9211;</span> Logout
+        </a>
+      </div>
     </aside>
 
     <div class="main">
@@ -179,12 +259,12 @@
             </button>
           </div>
           <div class="logo-badge telkom">
-            <img src="{{ url_for('static', filename='logo-telkomakses.png') }}" alt="Telkom Akses"
+            <img src="{{ url_for('static', filename='img/telkomakses/logo.png') }}" alt="Telkom Akses"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
             <span class="logo-fallback" style="display:none;">TELKOM AKSES</span>
           </div>
           <div class="logo-badge infranexia">
-            <img src="{{ url_for('static', filename='logo-infranexia.png') }}" alt="Infranexia"
+            <img src="{{ url_for('static', filename='img/infranexia/logo.png') }}" alt="Infranexia"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
             <span class="logo-fallback" style="display:none;">INFRANEXIA</span>
           </div>
