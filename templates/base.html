@@ -261,12 +261,14 @@
           <p class="topbar-sub">{% block page_sub %}Monitoring status fisik & update lapangan{% endblock %}</p>
         </div>
         <div class="topbar-logos">
+          {% if active_category == 'fbb' %}
           <div class="notif-wrap" id="notifWrap">
             <button type="button" class="notif-bell" id="notifBellBtn" title="LOP belum update hari ini">
               &#128276;
               <span class="notif-badge" id="notifBadge" style="display:none;">0</span>
             </button>
           </div>
+          {% endif %}
           <div class="logo-badge telkom">
             <img src="{{ url_for('static', filename='img/telkomakses/logo.png') }}" alt="Telkom Akses"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
@@ -323,6 +325,8 @@
   <script>
   (function () {
     const bellBtn = document.getElementById('notifBellBtn');
+    if (!bellBtn) return; // notifikasi belum disesuaikan untuk halaman ini
+
     const badge = document.getElementById('notifBadge');
     const overlay = document.getElementById('notifModalOverlay');
     const box = document.getElementById('notifModalBox');
