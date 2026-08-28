@@ -52,11 +52,10 @@ def login():
     if request.method == "GET":
         return render_template("login.html", error=None)
 
-    nik = request.form.get("nik", "")
     password = request.form.get("password", "")
-    user = auth_service.verify_login(nik, password)
+    user = auth_service.verify_login(password)
     if not user:
-        return render_template("login.html", error="NIK atau password salah."), 401
+        return render_template("login.html", error="Password salah."), 401
 
     session["user"] = user
     next_url = request.args.get("next") or url_for("index")

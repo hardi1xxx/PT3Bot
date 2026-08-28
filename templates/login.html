@@ -3,60 +3,181 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login — INTRA</title>
+<title>Login — Integrated Tracking System</title>
 <style>
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #1b2a6b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #3552c4; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     padding: 24px;
   }
-  .box {
-    background: #fff; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.35);
-    width: 100%; max-width: 380px; padding: 36px 32px;
+
+  .card {
+    background: #fff; border-radius: 24px; box-shadow: 0 30px 70px rgba(15, 23, 60, .35);
+    width: 100%; max-width: 960px; display: flex; overflow: hidden; min-height: 560px;
   }
-  .logo { display: block; margin: 0 auto 22px; height: 56px; width: auto; }
-  h1 { font-size: 1.05rem; text-align: center; margin: 0 0 2px; color: #1e293b; font-weight: 800; }
-  .sub { text-align: center; color: #64748b; font-size: 0.78rem; margin: 0 0 22px; }
+
+  /* ── Left: brand panel + illustration ── */
+  .left-panel {
+    flex: 1 1 46%; padding: 44px 40px 24px; display: flex; flex-direction: column;
+    align-items: center; text-align: center;
+  }
+  .left-panel h1 { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin: 0 0 4px; }
+  .left-panel .version { font-size: 0.72rem; color: #94a3b8; margin: 0 0 20px; }
+  .illustration { width: 100%; max-width: 340px; flex: 1 1 auto; display: flex; align-items: center; }
+
+  /* ── Right: login form panel ── */
+  .right-panel {
+    flex: 1 1 54%; background: #f4f6fb; padding: 36px 48px; display: flex; flex-direction: column;
+  }
+  .brand-logos { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 26px; flex-wrap: wrap; }
+  .brand-logos img { height: 40px; width: auto; object-fit: contain; }
+
+  .right-panel h2 { text-align: center; font-size: 1.15rem; font-weight: 800; color: #0f172a; margin: 0 0 6px; }
+  .right-panel .user-login { text-align: center; font-size: 1rem; font-weight: 800; color: #1d4ed8; margin: 0 0 2px; }
+  .right-panel .sub { text-align: center; color: #94a3b8; font-size: 0.78rem; margin: 0 0 22px; }
+
+  form { max-width: 340px; width: 100%; margin: 0 auto; }
+
   label { display: block; font-size: 0.75rem; font-weight: 700; color: #1d4ed8; margin-bottom: 4px; }
-  input {
-    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #bfdbfe;
-    background: #eff6ff; font-size: 0.9rem; margin-bottom: 14px; color: #1e293b;
+  .field-wrap { position: relative; margin-bottom: 4px; }
+  input[type="password"], input[type="text"] {
+    width: 100%; padding: 11px 42px 11px 14px; border-radius: 10px; border: 1px solid #bfdbfe;
+    background: #eff6ff; font-size: 0.95rem; color: #1e293b;
   }
   input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.25); }
-  button {
-    width: 100%; padding: 11px; border: none; border-radius: 10px; background: #1d4ed8; color: #fff;
-    font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-top: 4px;
+  .toggle-eye {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    cursor: pointer; color: #64748b; background: none; border: none; padding: 4px; display: flex;
   }
-  button:hover { background: #1e3a8a; }
+  .toggle-eye:hover { color: #1d4ed8; }
+
+  .forgot { text-align: center; font-size: 0.72rem; color: #64748b; margin: 8px 0 18px; }
+  .forgot a { color: #1d4ed8; text-decoration: none; }
+  .forgot a:hover { text-decoration: underline; }
+
+  button.login-btn {
+    width: 100%; padding: 12px; border: none; border-radius: 10px; background: #1d4ed8; color: #fff;
+    font-weight: 800; font-size: 0.92rem; letter-spacing: 0.03em; cursor: pointer;
+  }
+  button.login-btn:hover { background: #1e3a8a; }
+
+  .signup-hint { text-align: center; font-size: 0.72rem; color: #94a3b8; margin: 12px 0 0; }
+  .signup-hint a { color: #1d4ed8; text-decoration: none; }
+
   .error {
-    background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; border-radius: 10px;
-    padding: 8px 12px; font-size: 0.78rem; text-align: center; margin-bottom: 14px;
+    max-width: 340px; margin: 0 auto 14px; background: #fef2f2; border: 1px solid #fecaca; color: #dc2626;
+    border-radius: 10px; padding: 8px 12px; font-size: 0.78rem; text-align: center;
   }
-  .footer { text-align: center; font-size: 0.68rem; color: #94a3b8; margin-top: 18px; }
+
+  .footer { text-align: center; font-size: 0.66rem; color: #94a3b8; margin-top: auto; padding-top: 20px; }
+
+  @media (max-width: 760px) {
+    .card { flex-direction: column; min-height: 0; }
+    .left-panel { padding: 32px 24px 12px; }
+    .illustration { max-width: 240px; }
+    .right-panel { padding: 28px 24px; }
+  }
 </style>
 </head>
 <body>
-  <div class="box">
-    <img class="logo" src="{{ url_for('static', filename='img/intra-logo.png') }}" alt="INTRA logo">
-    <h1>Welcome to INTRA</h1>
-    <p class="sub">INtegrated TRAcking — Please log in to continue</p>
+  <div class="card">
 
-    {% if error %}
-      <div class="error">{{ error }}</div>
-    {% endif %}
+    <div class="left-panel">
+      <h1>Integrated Tracking System</h1>
+      <p class="version">Development Version 0.0.1</p>
+      <div class="illustration">
+        <!-- Ilustrasi orisinal (bukan reproduksi karya berlisensi) -->
+        <svg viewBox="0 0 400 340" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="200" cy="300" rx="150" ry="18" fill="#eef2fb"/>
+          <circle cx="120" cy="120" r="90" fill="#eef2fb"/>
 
-    <form method="post" action="{{ url_for('login', next=request.args.get('next')) }}">
-      <label for="nik">NIK</label>
-      <input type="text" id="nik" name="nik" autocomplete="username" autofocus required>
+          <!-- monitor kiri -->
+          <rect x="55" y="90" width="150" height="110" rx="10" fill="#1d4ed8"/>
+          <rect x="67" y="102" width="126" height="80" rx="4" fill="#fff"/>
+          <polyline points="78,168 100,140 120,155 145,120 182,110" fill="none" stroke="#1d4ed8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="118" y="200" width="24" height="18" fill="#93a5e0"/>
+          <rect x="98" y="216" width="64" height="8" rx="4" fill="#93a5e0"/>
 
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" autocomplete="current-password" required>
+          <!-- monitor kanan -->
+          <rect x="210" y="70" width="150" height="110" rx="10" fill="#0f2f9e"/>
+          <rect x="222" y="82" width="126" height="80" rx="4" fill="#fff"/>
+          <rect x="235" y="130" width="14" height="24" fill="#bfdbfe"/>
+          <rect x="255" y="112" width="14" height="42" fill="#60a5fa"/>
+          <rect x="275" y="122" width="14" height="32" fill="#bfdbfe"/>
+          <rect x="295" y="100" width="14" height="54" fill="#1d4ed8"/>
+          <rect x="315" y="118" width="14" height="36" fill="#60a5fa"/>
+          <rect x="263" y="180" width="24" height="18" fill="#7d94db"/>
+          <rect x="243" y="196" width="64" height="8" rx="4" fill="#7d94db"/>
 
-      <button type="submit">LOGIN</button>
-    </form>
+          <!-- orang kiri (menunjuk grafik) -->
+          <circle cx="70" cy="222" r="16" fill="#fbbf24"/>
+          <path d="M40 292 C40 250 100 250 100 292 Z" fill="#f59e0b"/>
+          <path d="M40 292 L34 322 L52 322 L58 292 Z" fill="#7c3aed"/>
+          <path d="M100 292 L94 322 L112 322 L118 292 Z" fill="#7c3aed"/>
+          <path d="M50 250 C30 250 20 236 26 218" fill="none" stroke="#f59e0b" stroke-width="10" stroke-linecap="round"/>
 
-    <p class="footer">Lupa password? Hubungi admin.</p>
+          <!-- orang kanan (melompat gembira) -->
+          <circle cx="330" cy="205" r="16" fill="#fbbf24"/>
+          <path d="M300 275 C300 235 360 235 360 275 L354 300 L306 300 Z" fill="#ef4444"/>
+          <path d="M298 300 L292 330 L310 330 L316 300 Z" fill="#1e3a8a"/>
+          <path d="M344 300 L338 330 L356 330 L362 300 Z" fill="#1e3a8a"/>
+          <path d="M304 245 C284 220 292 200 300 190" fill="none" stroke="#ef4444" stroke-width="10" stroke-linecap="round"/>
+          <path d="M356 245 C376 220 368 195 358 182" fill="none" stroke="#ef4444" stroke-width="10" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <div class="brand-logos">
+        <!-- Ganti src di bawah dengan file logo resmi masing-masing di /static/img/.
+             Sengaja tidak digambar ulang di sini karena logo perusahaan adalah aset bermerek. -->
+        <img src="{{ url_for('static', filename='img/logo-telkom.png') }}" alt="Telkom Indonesia">
+        <img src="{{ url_for('static', filename='img/logo-danantara.png') }}" alt="Danantara Indonesia">
+        <img src="{{ url_for('static', filename='img/logo-regional.png') }}" alt="Regional">
+      </div>
+
+      <h2>Welcome to application,</h2>
+      <p class="user-login">User Login</p>
+      <p class="sub">Please log in to continue</p>
+
+      {% if error %}
+        <div class="error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('login', next=request.args.get('next')) }}">
+        <label for="password">Password</label>
+        <div class="field-wrap">
+          <input type="password" id="password" name="password" autocomplete="current-password" autofocus required>
+          <button type="button" class="toggle-eye" id="togglePassword" aria-label="Tampilkan password" tabindex="-1">
+            <svg id="eyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <p class="forgot">Forgot your password ? <a href="mailto:hardi.hidayat@telkomakses.co.id">contact admin</a></p>
+
+        <button type="submit" class="login-btn">LOGIN</button>
+        <p class="signup-hint">Dont have an account? <a href="mailto:hardi.hidayat@telkomakses.co.id">contact admin</a></p>
+      </form>
+
+      <p class="footer">&copy; 2026. Integrated Tracking System</p>
+    </div>
+
   </div>
+
+  <script>
+    const pwInput = document.getElementById('password');
+    const toggleBtn = document.getElementById('togglePassword');
+    const eyeIcon = document.getElementById('eyeIcon');
+    const eyeOpen = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>';
+    const eyeClosed = '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A10.5 10.5 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-3.22 4.36M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+    toggleBtn.addEventListener('click', () => {
+      const isPassword = pwInput.type === 'password';
+      pwInput.type = isPassword ? 'text' : 'password';
+      eyeIcon.innerHTML = isPassword ? eyeClosed : eyeOpen;
+    });
+  </script>
 </body>
 </html>

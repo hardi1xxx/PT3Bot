@@ -56,13 +56,27 @@ def load_users():
     return users
 
 
-def verify_login(nik, password):
-    """Return dict user kalau NIK + password cocok, None kalau tidak."""
-    nik = (nik or "").strip()
-    if not nik or not password:
+def verify_login(password):
+    """Return dict user kalau password cocok dengan salah satu user di
+    users.xlsx, None kalau tidak ada yang cocok.
+
+    NIK sudah tidak diminta lagi di form login -- password sendiri yang
+    jadi kredensial buat kenalin user-nya (makanya tiap user WAJIB punya
+    password unik masing-masing di users.xlsx, jangan sampai 2 user pakai
+    password yang sama, nanti yang kepilih cuma yang baris pertama
+    ketemu). Role & akses per-project (kolom role/project) tetap jalan
+    seperti biasa karena hasilnya tetap dict user yang lengkap.
+
+    Catatan performa: check_password_hash (scrypt) sengaja lambat demi
+    keamanan, dan di sini di-loop ke semua user tiap kali login. Untuk
+    jumlah user yang kecil (internal tool) ini masih aman; kalau jumlah
+    user sudah banyak (puluhan+), pertimbangkan balikin opsi isi
+    NIK/username lagi supaya lookup-nya O(1) per user, bukan di-scan
+    semua."""
+    if not password:
         return None
     for u in load_users():
-        if u["nik"] == nik and u["password_hash"] and check_password_hash(u["password_hash"], password):
+        if u["password_hash"] and check_password_hash(u["password_hash"], password):
             return u
     return None
 
