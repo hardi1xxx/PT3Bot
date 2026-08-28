@@ -74,7 +74,7 @@
 
   /* Left — brand & illustration */
   .left-panel {
-    flex: 1 1 50%;
+    flex: 1 1 60%;
     background: var(--theme-secondary);
     display: flex;
     flex-direction: column;
@@ -116,7 +116,7 @@
   .illustration img {
     display: block;
     width: 100%;
-    max-width: 380px;
+    max-width: 430px;
     max-height: 280px;
     height: auto;
     object-fit: contain;
@@ -132,7 +132,7 @@
 
   /* Right — login form */
   .right-panel {
-    flex: 1 1 50%;
+    flex: 1 1 40%;
     background: #fff;
     display: flex;
     flex-direction: column;
@@ -386,8 +386,11 @@
         <!-- <img src="{{ url_for('static', filename='img/logo-danantara.png') }}" alt="TELKOMSEL"> -->
       </div>
 
-      <h2 style="text-align: center;">Welcome to Intra!</h2>
-      <p class="user-login">Please login to your account</p>
+      <div style="height: 8em;">
+        <h2 style="text-align: center;">Welcome to Intra!</h2>
+        <p class="user-login" style="text-align: center;">Please login to your account</p>
+      </div>
+      
 
       {% if error %}
         <div class="error">{{ error }}</div>
