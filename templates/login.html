@@ -24,7 +24,25 @@
   }
   .left-panel h1 { font-size: 1.5rem; font-weight: 800; color: #0f172a; margin: 0 0 4px; }
   .left-panel .version { font-size: 0.72rem; color: #94a3b8; margin: 0 0 20px; }
-  .illustration { width: 100%; max-width: 340px; flex: 1 1 auto; display: flex; align-items: center; }
+  .illustration {
+    width: 100%;
+    max-width: 380px;
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .illustration img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 380px;
+    object-fit: contain;
+  }
+
 
   /* ── Right: login form panel ── */
   .right-panel {
