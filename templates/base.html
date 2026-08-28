@@ -22,10 +22,10 @@
     .sidebar-logo-wrap {
       display: flex;
       justify-content: center;
-      padding: 4px 0 14px;
+      padding: 10px 0 18px;
     }
     .sidebar-logo {
-      height: 40px;
+      height: 64px;
       width: auto;
       max-width: 100%;
       object-fit: contain;
@@ -278,6 +278,11 @@
             <img src="{{ url_for('static', filename='img/infranexia/logo.png') }}" alt="Infranexia"
                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
             <span class="logo-fallback" style="display:none;">INFRANEXIA</span>
+          </div>
+          <div class="logo-badge telkomsel">
+            <img src="{{ url_for('static', filename='img/telkomsel/logo.png') }}" alt="Telkomsel"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+            <span class="logo-fallback" style="display:none;">TELKOMSEL</span>
           </div>
         </div>
       </header>
