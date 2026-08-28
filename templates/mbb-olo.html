@@ -53,7 +53,7 @@
 
 <div class="card" style="margin-bottom:14px;" id="mbb-curve-wrap">
   <div class="section-title" style="margin:0 0 8px;">Kurva PLAN vs REALISASI L0 Ready</div>
-  <div class="hint" style="margin-bottom:8px;">PLAN dari kolom Target RFI, REALISASI dari kolom Tanggal LI &mdash; kumulatif per bulan.</div>
+  <div class="hint" style="margin-bottom:8px;">PLAN dari kolom AA (Target FI/L0), REALISASI dari kolom BD (Tanggal L0 Ready) &mdash; kumulatif per bulan. Data difilter: TAHUN = 2026 &amp; Plan Deploy mengandung &ldquo;TIF&rdquo;.</div>
   <div style="position:relative; height:220px;"><canvas id="mbb-curve-chart"></canvas></div>
 </div>
 
@@ -87,6 +87,7 @@ const MBB_LABELS = [
   "Panjang Kabel","Jenis Kabel","Kapasitas Kabel","Tiang","Nilai BoQ (Survey)","Kategori Comcase","Nilai Comcase","CC/BoQ","Nilai Survey + CC","MoM PO",
   "Tanggal NIM","NIM","Surat Permohonan ONT","Tgl Submit","NDE Pemenuhan","Tgl Approve","Merk","Tipe ONT",
   "SP SMILE","Nilai BAST",
+  "Tanggal L0 Ready",
   "ID iHLD",
   "NAMA WASPANG TA",
   "STATUS DRM",
@@ -250,8 +251,10 @@ function fmtN(n){
 }
 
 /* ===================== KURVA PLAN vs REALISASI ========================
-   PLAN dari "Target RFI", REALISASI dari "Tanggal LI" -- kumulatif per
-   bulan sepanjang tahun berjalan. */
+   PLAN dari "Target FI/L0" (kolom AA), REALISASI dari "Tanggal L0 Ready"
+   (kolom BD) -- kumulatif per bulan sepanjang tahun berjalan. Data yang
+   dipakai kurva ini SELALU difilter TAHUN=2026 & "Plan Deploy" mengandung
+   "TIF", terlepas dari tab/view MBB yang lagi aktif. */
 function parseLooseDate(raw){
   if (!raw) return null;
   const s = raw.toString().trim();
@@ -275,6 +278,15 @@ function parseLooseDate(raw){
   return isNaN(dt.getTime()) ? null : dt;
 }
 
+// Filter khusus kurva: kolom A (TAHUN) cuma 2026, kolom B (Plan Deploy)
+// harus mengandung "TIF". Berlaku SELALU buat data kurva ini, terpisah
+// dari filter tab/view MBB yang lagi aktif (mbb-all/newinfra/dst).
+function mbbCurveFilter(r){
+  const tahun = parseInt(getCol(r, "TAHUN"), 10);
+  if (tahun !== 2026) return false;
+  return matchCol(r, "Plan Deploy", "tif");
+}
+
 function renderMbbCurve(rowsForView){
   const canvas = document.getElementById("mbb-curve-chart");
   if (!canvas) return;
@@ -283,10 +295,10 @@ function renderMbbCurve(rowsForView){
   const planByMonth = new Array(12).fill(0);
   const realByMonth = new Array(12).fill(0);
 
-  rowsForView.forEach(r=>{
-    const pd = parseLooseDate(getCol(r, "Target RFI"));
+  rowsForView.filter(mbbCurveFilter).forEach(r=>{
+    const pd = parseLooseDate(getCol(r, "Target FI/L0"));
     if (pd && pd.getFullYear() === year) planByMonth[pd.getMonth()]++;
-    const rd = parseLooseDate(getCol(r, "Tanggal LI"));
+    const rd = parseLooseDate(getCol(r, "Tanggal L0 Ready"));
     if (rd && rd.getFullYear() === year) realByMonth[rd.getMonth()]++;
   });
 
@@ -301,8 +313,8 @@ function renderMbbCurve(rowsForView){
     data: {
       labels: INDO_MONTHS.map(m => m.slice(0,3)),
       datasets: [
-        { label: "PLAN (Target RFI)", data: planCum, borderColor:"#f59e0b", backgroundColor:"transparent", tension:0.25 },
-        { label: "REALISASI (Tanggal LI)", data: realCum, borderColor:"#0891b2", backgroundColor:"transparent", tension:0.25, spanGaps:false },
+        { label: "PLAN (Target FI/L0)", data: planCum, borderColor:"#f59e0b", backgroundColor:"transparent", tension:0.25 },
+        { label: "REALISASI (Tanggal L0 Ready)", data: realCum, borderColor:"#0891b2", backgroundColor:"transparent", tension:0.25, spanGaps:false },
       ],
     },
     options: {

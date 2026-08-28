@@ -545,9 +545,11 @@ MBB_OLO_SPREADSHEET_ID = os.environ.get(
 MBB_SHEET_GID = os.environ.get("MBB_SHEET_GID", "212134262")   # tab: All Node B
 OLO_SHEET_GID = os.environ.get("OLO_SHEET_GID", "487400008")    # tab: OLO
 
-# Kolom MBB: A-V, X-AA, AB (Tanggal LI), AD-AU, BB-BC, BP, BY, CM, CZ
+# Kolom MBB: A-V, X-AA, AB (Tanggal LI), AD-AU, BB-BC, BD (Tanggal L0 Ready --
+# HEADER ASLI BELUM DIKONFIRMASI, cek cell BD1 di sheet & sesuaikan label ini
+# kalau beda), BP, BY, CM, CZ
 # (label harus SEJAJAR urutan dengan MBB_RANGES kalau di-expand satu-satu).
-MBB_RANGES = [("A", "V"), ("X", "AA"), ("AB", "AB"), ("AD", "AU"), ("BB", "BC"), ("BP", "BP"), ("BY", "BY"), ("CM", "CM"), ("CZ", "CZ")]
+MBB_RANGES = [("A", "V"), ("X", "AA"), ("AB", "AB"), ("AD", "AU"), ("BB", "BC"), ("BD", "BD"), ("BP", "BP"), ("BY", "BY"), ("CM", "CM"), ("CZ", "CZ")]
 MBB_LABELS = [
     "TAHUN", "Plan Deploy", "Tipe Order", "Sub Sistem", "SITE ID", "WITEL", "STO", "SITE NAME", "Lat", "Long",
     "Jarak PO", "Catuan PO", "Nilai PO", "DASAR KERJA", "REG TSEL", "Tower Provider", "Status Tsel", "Status Recti", "Target RFI", "BULAN PLAN",
@@ -557,6 +559,7 @@ MBB_LABELS = [
     "Panjang Kabel", "Jenis Kabel", "Kapasitas Kabel", "Tiang", "Nilai BoQ (Survey)", "Kategori Comcase", "Nilai Comcase", "CC/BoQ", "Nilai Survey + CC", "MoM PO",
     "Tanggal NIM", "NIM", "Surat Permohonan ONT", "Tgl Submit", "NDE Pemenuhan", "Tgl Approve", "Merk", "Tipe ONT",
     "SP SMILE", "Nilai BAST",
+    "Tanggal L0 Ready",
     "ID iHLD",
     "NAMA WASPANG TA",
     "STATUS DRM",
