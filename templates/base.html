@@ -192,6 +192,7 @@
     }
   </style>
 </head>
+<!-- {% block active_category %}fbb{% endblock %} -->
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
@@ -204,6 +205,9 @@
         <button type="button" class="sidebar-hide-btn" id="sidebarHideBtn" title="Sembunyikan menu">&#10094;</button>
       </div>
       <nav>
+        {% set active_category = self.active_category() %}
+
+        {% if active_category == 'fbb' %}
         <div class="menu-group">
           <a href="/fbb" class="menu-item menu-group-title {% block menu_fbb %}{% endblock %}">FBB</a>
           <div class="menu-submenu">
@@ -212,7 +216,9 @@
             <a href="/pt2" class="menu-item menu-subitem {% block menu_pt2 %}{% endblock %}">PT2</a>
           </div>
         </div>
+        {% endif %}
 
+        {% if active_category == 'mbb' %}
         <div class="menu-group">
           <a href="/mbb-olo?view=mbb-all" class="menu-item menu-group-title {% block menu_mbb %}{% endblock %}">MBB</a>
           <div class="menu-submenu">
@@ -222,7 +228,9 @@
             <a href="/mbb-olo?view=mbb-fiberisasi" class="menu-item menu-subitem">Fiberisasi</a>
           </div>
         </div>
+        {% endif %}
 
+        {% if active_category == 'olo' %}
         <div class="menu-group">
           <a href="/mbb-olo?view=olo-all" class="menu-item menu-group-title {% block menu_olo %}{% endblock %}">OLO</a>
           <div class="menu-submenu">
@@ -230,6 +238,7 @@
             <a href="/mbb-olo?view=olo-progress" class="menu-item menu-subitem">Progress</a>
           </div>
         </div>
+        {% endif %}
       </nav>
 
       <div class="sidebar-footer">
