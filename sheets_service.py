@@ -584,6 +584,7 @@ def get_dashboard_data():
             "cal_date_source": cal_date_source,  # "golive" atau "target_fi"
             "regional": cell("regional") or "(TANPA REGIONAL)",
             "order_prioritas": cell("order_prioritas"),  # kolom BX, opsional -- badge di list "Lokasi Sedang Berjalan"
+            "priority_bx": cell("order_prioritas"),  # alias kolom BX -- dipakai filter "Hanya Order Priority" di PT3.html
         })
 
     return {
