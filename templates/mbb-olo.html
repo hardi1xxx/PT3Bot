@@ -200,8 +200,17 @@ function renderMbbDashboard(rowsForView){
 
   const notesRows = rowsForView.filter(mbbDashboardFilter).filter(r => getCol(r,"Note Progress") !== "");
   const notesHtml = notesRows.length ? notesRows.slice(0,15).map(r => `
-    <div class="item"><span class="site">${escapeHtml(getCol(r,"SITE ID"))}</span> — ${escapeHtml(getCol(r,"Note Progress"))}</div>
+    <div class="item"><span class="site">${escapeHtml(getCol(r,"SITE ID"))}</span> — ${escapeHtml(firstParagraph(getCol(r,"Note Progress")))}</div>
   `).join("") : `<div class="empty-state" style="padding:16px 0;">Klik salah satu kategori di kiri untuk lihat catatan (Note Progress)-nya di sini.</div>`;
+
+  // Ringkasan tetap (nama SITE ID saja, dipisah koma) buat 3 status kolom U
+  // -- SELALU dari rowsForView (view MBB aktif), tidak ikut kena filter klik
+  // tree/bucket di atas, beda dari notesHtml.
+  const summaryHtml = `
+    <div class="item"><span class="site">List L0 Ready</span><br>${escapeHtml(siteListForStatus(rowsForView, "6. L0 Ready"))}</div>
+    <div class="item"><span class="site">List L0 Issue BTS</span><br>${escapeHtml(siteListForStatus(rowsForView, "5.1 L0 Progress - Issue BTS"))}</div>
+    <div class="item"><span class="site">Status Hold</span><br>${escapeHtml(siteListForStatus(rowsForView, "0. HOLD"))}</div>
+  `;
 
   wrap.innerHTML = `
     <div class="mbb-dash">
@@ -228,7 +237,7 @@ function renderMbbDashboard(rowsForView){
         <div class="section-title" style="margin:0 0 10px;">
           Notes <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
         </div>
-        <div class="mbb-notes-list">${notesHtml}</div>
+        <div class="mbb-notes-list">${notesHtml}${summaryHtml}</div>
       </div>
 
       <div class="mbb-target-box">
@@ -248,6 +257,26 @@ function mbbSelectBucket(key){
 
 function fmtN(n){
   return n.toLocaleString('id-ID');
+}
+
+// Ambil paragraf PALING ATAS saja dari isian "Note Progress" -- sel Sheets
+// bisa berisi banyak baris/paragraf (Alt+Enter), tapi Notes panel cuma
+// nampilin baris pertama yang tidak kosong, bukan semua isinya.
+function firstParagraph(text){
+  if (!text) return "";
+  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  return lines.length ? lines[0] : "";
+}
+
+// Daftar nama SITE ID (dipisah koma) buat baris ringkasan status tetap
+// (List L0 Ready / List L0 Issue BTS / Status Hold) -- match "Status
+// Pekerjaan" (kolom U) case-insensitive terhadap teks filter yang dikasih.
+function siteListForStatus(rows, needle){
+  const sites = rows
+    .filter(r => matchCol(r, "Status Pekerjaan", needle.toLowerCase()))
+    .map(r => getCol(r, "SITE ID"))
+    .filter(Boolean);
+  return sites.length ? sites.join(", ") : "–";
 }
 
 /* ===================== KURVA PLAN vs REALISASI ========================
