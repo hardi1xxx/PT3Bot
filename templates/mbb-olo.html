@@ -17,15 +17,19 @@
   .cell-empty{color:var(--muted, #94a3b8);}
   #table-wrap table td.num{font-family:monospace; text-align:right;}
 
-  /* Dashboard MBB (Tree / Notes / Resume / Target). Baris 1: tree diagram
-     (SVG, garis cabang beneran) full-width. Baris 2: Notes, Resume, Target
-     berdampingan. */
-  .mbb-dash{display:grid; grid-template-columns: 1fr 1fr 0.7fr; grid-template-areas: "tree tree tree" "notes resume target"; gap:14px; margin-bottom:16px; align-items:start;}
-  @media (max-width: 980px){ .mbb-dash{grid-template-columns: 1fr; grid-template-areas: "tree" "notes" "resume" "target";} }
-  .mbb-dash .tree-card{grid-area:tree;}
-  .mbb-dash .notes-card{grid-area:notes;}
-  .mbb-dash .resume-card{grid-area:resume;}
-  .mbb-dash .target-card{grid-area:target;}
+  /* Dashboard MBB. Baris 1: Tree / Resume / Target (1 row, 3 kolom).
+     Baris 2: Notes / Kurva PLAN-REALISASI (1 row, 2 kolom). */
+  .mbb-dash-top{display:grid; grid-template-columns: 1.3fr 1fr 0.7fr; grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:start;}
+  .mbb-dash-bottom{display:grid; grid-template-columns: 1fr 1fr; grid-template-areas: "notes curve"; gap:14px; margin-bottom:14px; align-items:start;}
+  @media (max-width: 980px){
+    .mbb-dash-top{grid-template-columns: 1fr; grid-template-areas: "tree" "resume" "target";}
+    .mbb-dash-bottom{grid-template-columns: 1fr; grid-template-areas: "notes" "curve";}
+  }
+  .mbb-dash-top .tree-card{grid-area:tree;}
+  .mbb-dash-top .resume-card{grid-area:resume;}
+  .mbb-dash-top .target-card{grid-area:target;}
+  .mbb-dash-bottom .notes-card{grid-area:notes;}
+  .mbb-dash-bottom .curve-card{grid-area:curve;}
   .mbb-tree-subtitle{color:#be185d; font-weight:800; font-size:0.8rem; line-height:1.35; margin:0 0 8px;}
   .mbb-tree-svg-wrap{overflow-x:auto;}
   .mbb-tree-svg-wrap svg text{user-select:none;}
@@ -37,6 +41,15 @@
   .mbb-target-box{background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:14px; text-align:center;}
   .mbb-target-box .n{font-size:2rem; font-weight:800; color:#c2410c;}
   .mbb-target-box .l{font-size:0.75rem; font-weight:700; color:#9a3412; margin-top:2px;}
+
+  /* Toggle Aktif / Tidak Aktif (filter Status Pekerjaan = "0.3 Drop MoM") */
+  .seg-toggle{display:inline-flex; border:1px solid #cbd5e1; border-radius:8px; overflow:hidden;}
+  .seg-toggle button{border:none; background:#fff; padding:6px 14px; font-size:0.82rem; font-weight:600; color:#475569; cursor:pointer;}
+  .seg-toggle button + button{border-left:1px solid #cbd5e1;}
+  .seg-toggle button.on{background:#0f4c81; color:#fff;}
+
+  #mbb-pivot-wrap table.pivot th, #mbb-pivot-wrap table.pivot td{text-align:right;}
+  #mbb-pivot-wrap table.pivot th:first-child, #mbb-pivot-wrap table.pivot td:first-child{text-align:left;}
 </style>
 
 <div class="section-title">
@@ -47,17 +60,14 @@
 
 <div id="mbb-dashboard-wrap"></div>
 
-<div class="card" style="margin-bottom:14px;" id="mbb-curve-wrap">
-  <div class="section-title" style="margin:0 0 8px;">Kurva PLAN vs REALISASI L0 Ready</div>
-  <div class="hint" style="margin-bottom:8px;">PLAN dari kolom AA (Target FI/L0), REALISASI dari kolom BD (Tanggal L0 Ready) &mdash; kumulatif per bulan.</div>
-  <div style="position:relative; height:220px;"><canvas id="mbb-curve-chart"></canvas></div>
-</div>
+<div id="mbb-pivot-wrap"></div>
 
 <div class="card" style="margin-bottom:14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
   <div style="flex:1; min-width:240px;">
     <label for="q">Cari di semua kolom</label>
     <input type="text" id="q" placeholder="Ketik untuk mencari...">
   </div>
+  <div id="mbb-active-toggle-wrap" style="display:flex; align-items:center; gap:8px;"></div>
   <button type="button" class="refresh-btn" onclick="loadAll(true)">&#8635; Update Data</button>
 </div>
 
@@ -84,6 +94,7 @@ const MBB_LABELS = [
   "Tanggal NIM","NIM","Surat Permohonan ONT","Tgl Submit","NDE Pemenuhan","Tgl Approve","Merk","Tipe ONT",
   "SP SMILE","Nilai BAST",
   "Tanggal L0 Ready",
+  "NEW TA AREA",
   "ID iHLD",
   "NAMA WASPANG TA",
   "STATUS DRM",
@@ -153,8 +164,16 @@ const MBB_SUB_BUCKETS = [
 
 const INDO_MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
+// Kolom BO (NEW TA AREA) -- 4 kategori tetap buat tabel pivot Status
+// Pekerjaan x NEW TA AREA.
+const MBB_TA_AREAS = ["BANTEN", "JAKARTA", "EASTERN JABOTABEK", "JABAR"];
+
 let mbbSelectedBucket = null; // key bucket dashboard yang lagi diklik (null = semua)
 let mbbCurveChart = null;
+// Toggle "Aktif" / "Tidak Aktif" -- filter Status Pekerjaan (kolom U) =
+// "0.3 Drop MoM". "aktif" = sembunyikan baris itu, "tidak-aktif" = cuma
+// tampilkan baris itu. Default "aktif".
+let mbbActiveFilterMode = "aktif";
 
 function classifyMbbRow(row){
   const s = getCol(row, "Status Pekerjaan").toLowerCase();
@@ -266,18 +285,11 @@ function renderMbbDashboard(rowsForView){
   `;
 
   wrap.innerHTML = `
-    <div class="mbb-dash">
+    <div class="mbb-dash-top">
       <div class="card tree-card">
         <div class="section-title" style="margin:0 0 4px;">Tree Diagram Progress</div>
-        <div class="mbb-tree-subtitle">Node-B TIF Batch 1-29<br>NEW INFRA</div>
+        <div class="mbb-tree-subtitle">${escapeHtml(subProgramBatchLabel(rowsForView))}<br>NEW INFRA</div>
         <div class="mbb-tree-svg-wrap">${renderMbbTreeSvg(total, l1oa, drop, active, subCounts)}</div>
-      </div>
-
-      <div class="card notes-card">
-        <div class="section-title" style="margin:0 0 10px;">
-          Notes <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
-        </div>
-        <div class="mbb-notes-list">${notesHtml}</div>
       </div>
 
       <div class="card resume-card">
@@ -292,12 +304,88 @@ function renderMbbDashboard(rowsForView){
         <div class="hint" style="margin-top:6px;">Kolom Tower Provider mengandung "(${escapeHtml(monthName)})"</div>
       </div>
     </div>
+
+    <div class="mbb-dash-bottom">
+      <div class="card notes-card">
+        <div class="section-title" style="margin:0 0 10px;">
+          Notes <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
+        </div>
+        <div class="mbb-notes-list">${notesHtml}</div>
+      </div>
+
+      <div class="card curve-card">
+        <div class="section-title" style="margin:0 0 8px;">Kurva PLAN vs REALISASI L0 Ready</div>
+        <div class="hint" style="margin-bottom:8px;">PLAN dari kolom AA (Target FI/L0), REALISASI dari kolom BD (Tanggal L0 Ready) &mdash; kumulatif per bulan.</div>
+        <div style="position:relative; height:220px;"><canvas id="mbb-curve-chart"></canvas></div>
+      </div>
+    </div>
   `;
 }
 
 function mbbSelectBucket(key){
   mbbSelectedBucket = (mbbSelectedBucket === key) ? null : key; // klik dua kali = batal pilih
   render();
+}
+
+// ===================== TABEL PIVOT: Status Pekerjaan x NEW TA Area =======
+// Baris = tiap nilai unik "Status Pekerjaan" (kolom U) yang ada di data,
+// kolom = 4 kategori tetap dari "NEW TA AREA" (kolom BO).
+function renderMbbPivotTable(rowsForView){
+  const wrap = document.getElementById("mbb-pivot-wrap");
+  if (!wrap) return;
+
+  const byStatus = new Map(); // status -> {area: count}
+  rowsForView.forEach(r=>{
+    const status = getCol(r, "Status Pekerjaan");
+    if (!status) return;
+    const area = getCol(r, "NEW TA AREA").toUpperCase();
+    const matchedArea = MBB_TA_AREAS.find(a => a.toUpperCase() === area);
+    if (!matchedArea) return;
+    if (!byStatus.has(status)) byStatus.set(status, {});
+    const bucket = byStatus.get(status);
+    bucket[matchedArea] = (bucket[matchedArea] || 0) + 1;
+  });
+
+  const statuses = Array.from(byStatus.keys()).sort((a,b)=>a.localeCompare(b, 'id'));
+
+  if (!statuses.length){
+    wrap.innerHTML = `
+      <div class="card" style="margin-bottom:14px;">
+        <div class="section-title" style="margin:0 0 8px;">Status Pekerjaan per NEW TA Area</div>
+        <div class="empty-state">Tidak ada data yang cocok kolom NEW TA AREA (BANTEN/JAKARTA/EASTERN JABOTABEK/JABAR).</div>
+      </div>`;
+    return;
+  }
+
+  const colTotals = {}; MBB_TA_AREAS.forEach(a => colTotals[a] = 0);
+  let grandTotal = 0;
+
+  const bodyRows = statuses.map(status=>{
+    const bucket = byStatus.get(status);
+    let rowTotal = 0;
+    const tds = MBB_TA_AREAS.map(a=>{
+      const n = bucket[a] || 0;
+      colTotals[a] += n;
+      rowTotal += n;
+      return `<td class="num">${n ? fmtN(n) : '<span class="cell-empty">–</span>'}</td>`;
+    }).join("");
+    grandTotal += rowTotal;
+    return `<tr><td>${escapeHtml(status)}</td>${tds}<td class="num" style="font-weight:700;">${fmtN(rowTotal)}</td></tr>`;
+  }).join("");
+
+  const footRow = `<tr style="font-weight:700; background:#f8fafc;"><td>Total</td>${MBB_TA_AREAS.map(a=>`<td class="num">${fmtN(colTotals[a])}</td>`).join("")}<td class="num">${fmtN(grandTotal)}</td></tr>`;
+
+  wrap.innerHTML = `
+    <div class="card" style="margin-bottom:14px;">
+      <div class="section-title" style="margin:0 0 8px;">Status Pekerjaan per NEW TA Area</div>
+      <div class="hint" style="margin-bottom:8px;">Baris dari kolom U (Status Pekerjaan), kolom dari kolom BO (NEW TA AREA).</div>
+      <div style="overflow-x:auto;">
+        <table class="pivot">
+          <thead><tr><th>Status Pekerjaan</th>${MBB_TA_AREAS.map(a=>`<th>${escapeHtml(a)}</th>`).join("")}<th>Total</th></tr></thead>
+          <tbody>${bodyRows}${footRow}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function fmtN(n){
@@ -361,6 +449,46 @@ function mbbBaseFilter(r){
   const tahun = parseInt(getCol(r, "TAHUN"), 10);
   if (tahun !== 2026) return false;
   return matchCol(r, "Plan Deploy", "tif");
+}
+
+// Filter toggle "Aktif" / "Tidak Aktif": Status Pekerjaan (kolom U) =
+// "0.3 Drop MoM". Mode "aktif" -> sembunyikan baris itu (site aktif aja).
+// Mode "tidak-aktif" -> cuma tampilkan baris itu (drop MoM aja).
+function mbbActiveStatusFilter(r){
+  const isDropMom = matchCol(r, "Status Pekerjaan", "0.3 drop mom");
+  return mbbActiveFilterMode === "aktif" ? !isDropMom : isDropMom;
+}
+
+function setMbbActiveFilter(mode){
+  mbbActiveFilterMode = mode;
+  render();
+}
+
+function renderMbbActiveToggle(){
+  const wrap = document.getElementById("mbb-active-toggle-wrap");
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <span class="hint">Status:</span>
+    <div class="seg-toggle">
+      <button type="button" class="${mbbActiveFilterMode==='aktif'?'on':''}" onclick="setMbbActiveFilter('aktif')">Aktif</button>
+      <button type="button" class="${mbbActiveFilterMode==='tidak-aktif'?'on':''}" onclick="setMbbActiveFilter('tidak-aktif')">Tidak Aktif</button>
+    </div>`;
+}
+
+// Ambil range nomor BATCH dari kolom D (Sub Sistem), misal nilai "BATCH 27"
+// s/d "BATCH 30" di data -> "BATCH 27-30". Dipakai buat subtitle Tree
+// Diagram, gantiin teks statis, jadi selalu ngikutin batch yang beneran
+// ada di data (bisa nambah kalau ada batch baru).
+function subProgramBatchLabel(rowsForView){
+  const nums = new Set();
+  rowsForView.forEach(r=>{
+    const m = getCol(r, "Sub Sistem").match(/(\d+)/);
+    if (m) nums.add(parseInt(m[1], 10));
+  });
+  if (!nums.size) return "Sub Program: –";
+  const sorted = Array.from(nums).sort((a,b)=>a-b);
+  const min = sorted[0], max = sorted[sorted.length-1];
+  return min === max ? `Batch ${min}` : `Batch ${min}-${max}`;
 }
 
 function renderMbbCurve(rowsForView){
@@ -483,22 +611,25 @@ function render(){
   const statusLabel = view.source === "mbb" ? "Status Pekerjaan" : "STATUS PEKERJAAN";
   let rows = view.source === "mbb" ? mbbRows : oloRows;
 
-  if (view.source === "mbb") rows = rows.filter(mbbBaseFilter);
+  if (view.source === "mbb") rows = rows.filter(mbbBaseFilter).filter(mbbActiveStatusFilter);
   if(view.filter) rows = rows.filter(view.filter);
 
-  // Dashboard (Tree/Notes/Target) & kurva PLAN-REALISASI cuma relevan buat
-  // data MBB, dan dihitung dari hasil filter VIEW saja (belum kena kata
-  // kunci pencarian di bawah) -- baru diikuti filter klik dashboard.
+  // Dashboard (Tree/Resume/Target/Notes/Kurva) & tabel pivot cuma relevan
+  // buat data MBB, dan dihitung dari hasil filter VIEW saja (belum kena
+  // kata kunci pencarian di bawah) -- baru diikuti filter klik dashboard.
   const dashWrap = document.getElementById("mbb-dashboard-wrap");
-  const curveWrap = document.getElementById("mbb-curve-wrap");
+  const pivotWrap = document.getElementById("mbb-pivot-wrap");
+  const toggleWrap = document.getElementById("mbb-active-toggle-wrap");
   if (view.source === "mbb"){
-    curveWrap.style.display = "";
+    renderMbbActiveToggle();
     renderMbbDashboard(rows);
     renderMbbCurve(rows);
+    renderMbbPivotTable(rows);
     rows = rows.filter(mbbDashboardFilter);
   } else {
     dashWrap.innerHTML = "";
-    curveWrap.style.display = "none";
+    pivotWrap.innerHTML = "";
+    toggleWrap.innerHTML = "";
     mbbSelectedBucket = null;
   }
 
