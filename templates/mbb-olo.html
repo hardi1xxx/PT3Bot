@@ -561,20 +561,37 @@ async function fetchRows(url, force){
 async function loadAll(force){
   setStatus(force ? "Mengambil data terbaru dari Google Sheets..." : "Memuat data...");
   showLoading();
+  showAllRows = false;
+  mbbRows = null;
+  oloRows = null;
+
+  // Render begitu data yang relevan buat TAB YANG LAGI DIBUKA sudah siap --
+  // nggak perlu nunggu MBB & OLO dua-duanya selesai kalau yang kepake cuma
+  // salah satunya. Ini yang bikin loading kerasa lebih cepat (data lain
+  // tetap nyusul di background lewat Promise.all di bawah).
+  function maybeRender(){
+    const view = VIEWS[currentView];
+    const ready = view.source === "mbb" ? mbbRows : oloRows;
+    if (ready !== null) render();
+  }
+
+  const mbbPromise = fetchRows('/api/mbb-data', force).then(rows => { mbbRows = rows; maybeRender(); });
+  const oloPromise = fetchRows('/api/olo-data', force).then(rows => { oloRows = rows; maybeRender(); });
+
   try{
-    const [mbb, olo] = await Promise.all([
-      fetchRows('/api/mbb-data', force),
-      fetchRows('/api/olo-data', force),
-    ]);
-    mbbRows = mbb;
-    oloRows = olo;
-    showAllRows = false;
+    await Promise.all([mbbPromise, oloPromise]);
     setStatus(`Data dimuat — ${mbbRows.length} baris MBB, ${oloRows.length} baris OLO`);
-    render();
   }catch(err){
     console.error(err);
-    setStatus("Gagal memuat data");
-    showError(err);
+    if (mbbRows === null && oloRows === null){
+      setStatus("Gagal memuat data");
+      showError(err);
+    } else {
+      // Salah satu sheet (MBB/OLO) berhasil, yang lain gagal -- tab yang
+      // lagi aktif kemungkinan tetap kepake normal, cuma kasih tau ada
+      // yang gagal di background.
+      setStatus("Sebagian data gagal dimuat — coba klik Update Data lagi");
+    }
   }
 }
 
