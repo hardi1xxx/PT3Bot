@@ -124,11 +124,39 @@ const _initialViewParam = new URLSearchParams(window.location.search).get('view'
 let currentView = _initialViewParam || "mbb-all";
 let searchTerm = "";
 
+// Nama bulan Indonesia + "bulan berjalan" (bulan saat halaman dibuka) --
+// dipindah ke ATAS (sebelum VIEWS) karena sekarang dipakai langsung di
+// definisi VIEWS di bawah (bukan cuma di dalam dashboard Target lagi).
+const INDO_MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const CURRENT_MONTH_NAME = INDO_MONTHS[new Date().getMonth()];
+
+// Match "{Keyword} ( NamaBulan )" di kolom Tower Provider -- LONGGAR
+// terhadap spasi di dalam kurung (nilai aslinya mis. "Rescoping ( Agustus )",
+// "Fronthaul ( Agustus )", "New Infra ( Agustus )"). Dipakai untuk
+// menentukan menu New Infra / Rescoping / Fiberisasi (BUKAN lagi dari
+// kolom "Tipe Order") -- begitu ganti bulan (mis. September), isian
+// gsheet-nya juga berubah jadi "... ( September )" dan pencarian di sini
+// otomatis ikut karena pakai CURRENT_MONTH_NAME, tidak di-hardcode "Agustus".
+function towerProviderTypeMonthMatch(text, keyword, monthName){
+  const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(escapedKeyword + "\\s*\\(\\s*" + monthName + "\\s*\\)", "i");
+  return re.test((text || "").toString());
+}
+
+// Keyword Tower Provider per menu MBB -- "Fiberisasi" di menu = keyword
+// "Fronthaul" di kolom Tower Provider (penamaan menu vs isian gsheet
+// memang beda, sama seperti filter Tipe Order yang lama).
+const MBB_TARGET_KEYWORD = {
+  "mbb-newinfra":   "New Infra",
+  "mbb-rescoping":  "Rescoping",
+  "mbb-fiberisasi": "Fronthaul",
+};
+
 const VIEWS = {
   "mbb-all":        { title:"MBB", badge:"Semua Data", sub:"Sheet: All Node B", source:"mbb", filter:null },
-  "mbb-newinfra":    { title:"MBB", badge:"New Infra", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cNew Infra\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","new infra") },
-  "mbb-rescoping":   { title:"MBB", badge:"Rescoping", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201crescop\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","rescop") },
-  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cfronthaul\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","fronthaul") },
+  "mbb-newinfra":    { title:"MBB", badge:"New Infra", sub:`Sheet: All Node B — filter kolom \u201cTower Provider\u201d mengandung \u201cNew Infra ( ${CURRENT_MONTH_NAME} )\u201d`, source:"mbb", filter:(r)=>towerProviderTypeMonthMatch(getCol(r,"Tower Provider"), "New Infra", CURRENT_MONTH_NAME) },
+  "mbb-rescoping":   { title:"MBB", badge:"Rescoping", sub:`Sheet: All Node B — filter kolom \u201cTower Provider\u201d mengandung \u201cRescoping ( ${CURRENT_MONTH_NAME} )\u201d`, source:"mbb", filter:(r)=>towerProviderTypeMonthMatch(getCol(r,"Tower Provider"), "Rescoping", CURRENT_MONTH_NAME) },
+  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:`Sheet: All Node B — filter kolom \u201cTower Provider\u201d mengandung \u201cFronthaul ( ${CURRENT_MONTH_NAME} )\u201d`, source:"mbb", filter:(r)=>towerProviderTypeMonthMatch(getCol(r,"Tower Provider"), "Fronthaul", CURRENT_MONTH_NAME) },
   "olo-all":         { title:"OLO", badge:"Semua Data", sub:"Sheet: OLO", source:"olo", filter:null },
   "olo-progress":    { title:"OLO", badge:"Progress", sub:"Sheet: OLO — filter status belum Done/Drop", source:"olo", filter:(r)=>{
                           const v = getCol(r,"STATUS PEKERJAAN").toLowerCase();
@@ -147,14 +175,6 @@ function getCol(row, label){
 function matchCol(row, label, needle){
   return getCol(row, label).toLowerCase().includes(needle);
 }
-// Match "(NamaBulan)" di kolom Tower Provider -- LONGGAR terhadap spasi di
-// dalam kurung, karena nilai aslinya "Fronthaul ( Agustus )" (ada spasi
-// sebelum/sesudah nama bulan), bukan "(Agustus)" rapat.
-function monthParenMatch(text, monthName){
-  const re = new RegExp("\\(\\s*" + monthName.toLowerCase() + "\\s*\\)", "i");
-  return re.test((text || "").toLowerCase());
-}
-
 /* ===================== BUCKET STATUS PEKERJAAN (untuk dashboard MBB) ===
    Urutan berpengaruh -- dicek dari atas, yang match PERTAMA yang dipakai.
    Kata kunci ini best-effort (belum divalidasi ke nilai asli kolom
@@ -178,8 +198,6 @@ const MBB_SUB_BUCKETS = [
   { key:"survey",     label:"Survey",       match:(s)=> s.includes("survey") },
   { key:"hold",       label:"HOLD",         match:(s)=> s.includes("hold") },
 ];
-
-const INDO_MONTHS = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
 // Kolom BO (NEW TA AREA) -- 4 kategori tetap buat tabel pivot Status
 // Pekerjaan x NEW TA AREA.
@@ -401,8 +419,19 @@ function renderMbbDashboard(rowsForView, view){
     else { active++; if (c.sub) subCounts[c.sub]++; }
   });
 
-  const monthName = INDO_MONTHS[new Date().getMonth()];
-  const targetRows = rowsForView.filter(r => monthParenMatch(getCol(r, "Tower Provider"), monthName));
+  const monthName = CURRENT_MONTH_NAME;
+  // Penentuan target SEKARANG murni dari kolom "Tower Provider" (bukan
+  // "Tipe Order" lagi):
+  // - Menu New Infra/Rescoping/Fiberisasi: rowsForView SUDAH difilter
+  //   Tower Provider + bulan berjalan di VIEWS di atas -- total order
+  //   target di sini otomatis sama dengan jumlah baris menu itu.
+  // - Menu "Semua Data" (mbb-all): target = gabungan ketiganya, yaitu
+  //   union baris yang Tower Provider-nya cocok salah satu dari
+  //   "Rescoping ( bulan )" / "Fronthaul ( bulan )" / "New Infra ( bulan )".
+  const targetKeyword = MBB_TARGET_KEYWORD[currentView];
+  const targetRows = targetKeyword
+    ? rowsForView
+    : rowsForView.filter(r => Object.values(MBB_TARGET_KEYWORD).some(kw => towerProviderTypeMonthMatch(getCol(r, "Tower Provider"), kw, monthName)));
   const targetCount = targetRows.length;
 
   const notesRows = rowsForView.filter(mbbDashboardFilter).filter(r => getCol(r,"Note Progress") !== "");
@@ -434,7 +463,6 @@ function renderMbbDashboard(rowsForView, view){
 
       <div class="card target-card">
         <div class="section-title" style="margin:0 0 4px;">&#127919; Target ${escapeHtml(monthName)} — Tsel</div>
-        <div class="hint" style="margin-bottom:8px;">Tower Provider mengandung "(${escapeHtml(monthName)})" — RFI/belum RFI dari Status Tsel (kolom Q), lalu dipecah lagi dari Status Pekerjaan (kolom U).</div>
         <div class="mbb-tree-svg-wrap">${renderTargetTreeSvg(targetRows)}</div>
       </div>
     </div>
