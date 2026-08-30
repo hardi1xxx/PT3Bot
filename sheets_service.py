@@ -1113,7 +1113,8 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
         raise ValueError(f"Unknown status Z value: {z_value!r}")
 
     when = when or datetime.date.today()
-    date_str = when.strftime("%d/%m/%y")
+    date_str = when.strftime("%d/%m/%y")          # buat prefix teks "DD/MM/YY : ..." di kolom keterangan
+    date_str_iso = when.isoformat()                # buat isi kolom TANGGAL asli (lihat batch_update di bawah)
 
     ws = get_worksheet()
     mapping = config.STATUS_COLUMN_MAP[z_value]
@@ -1147,11 +1148,25 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     ]
     if aa_value:
         updates.append({"range": f"{config.COL_STATUS_AA}{row_num}", "values": [[aa_value]]})
+
+    # Kolom tanggal (AR/AT/AV/AX/AZ/BB/BD/BF) DITULIS SEBAGAI TANGGAL ASLI,
+    # bukan teks. Value dikirim dalam format ISO (YYYY-MM-DD) karena itu
+    # satu-satunya format yang SELALU dikenali Google Sheets sebagai
+    # tanggal apapun locale spreadsheet-nya -- format "DD/MM/YY" bisa salah
+    # tafsir (jadi teks, atau kebalik) kalau locale sheet ternyata MM/DD.
+    # Tampilan dikembalikan ke dd/mm/yy lewat batch_format() di bawah, biar
+    # tetap konsisten dgn tampilan lama & dengan _parse_date().
+    date_format_targets = []  # [(col, pattern), ...] -> diformat setelah value ditulis
     if write_date:
-        updates.append({"range": f"{date_col}{row_num}", "values": [[date_str]]})
+        updates.append({"range": f"{date_col}{row_num}", "values": [[date_str_iso]]})
+        date_format_targets.append((date_col, "dd/mm/yy"))
 
     # 4. Field tambahan BL-BQ — OPSIONAL: cuma ditulis kalau ada isinya.
     #    Kosong = tidak diubah, nilai lama di sheet tetap dipertahankan.
+    #    nilai_perijinan/nilai_boq/jumlah_odp/jumlah_port berisi angka polos
+    #    -> otomatis jadi tipe NUMBER begitu ditulis dgn USER_ENTERED (lihat
+    #    batch_update paling bawah). idsw/odp_golive tetap TEXT karena
+    #    formatnya selalu mengandung karakter non-angka ('#', '-', '/').
     if extra_fields:
         for key, raw_value in extra_fields.items():
             raw_value = (raw_value or "").strip()
@@ -1166,10 +1181,11 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                     continue
             updates.append({"range": f"{col}{row_num}", "values": [[raw_value]]})
 
-    # 5. Target Finish Instalasi (kolom AK).
-    #    Ditulis dalam format DD/Mon/YY (mis. 05/Aug/26) -- bulan berupa
-    #    huruf supaya tidak pernah tertukar dengan DD/MM/YY atau MM/DD/YY,
-    #    termasuk kalau sheet dibuka di Excel dengan locale tanggal beda.
+    # 5. Target Finish Instalasi (kolom AK) -- tanggal asli juga (lihat
+    #    catatan date_format_targets di atas). Ditampilkan dd/mmm/yy (mis.
+    #    05/Aug/26) -- bulan berupa huruf supaya tidak pernah tertukar
+    #    dengan DD/MM/YY atau MM/DD/YY, termasuk kalau sheet dibuka di
+    #    Excel dengan locale tanggal beda.
     if z_value in config.PROGRESS_DROP_STATUSES:
         # Drop -> komit FI dihapus (LOP batal, tidak relevan lagi).
         updates.append({"range": f"{config.COL_TARGET_FI}{row_num}", "values": [[""]]})
@@ -1184,8 +1200,9 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
             if parsed_target_fi:
                 updates.append({
                     "range": f"{config.COL_TARGET_FI}{row_num}",
-                    "values": [[parsed_target_fi.strftime("%d/%b/%y")]],
+                    "values": [[parsed_target_fi.isoformat()]],
                 })
+                date_format_targets.append((config.COL_TARGET_FI, "dd/mmm/yy"))
 
     # 6. Kategori Drop (kolom BH) — cuma relevan & ditulis kalau status Z
     #    Drop dan ada nilainya (kosong = tidak diubah, sama seperti field
@@ -1194,7 +1211,27 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     if z_value in config.PROGRESS_DROP_STATUSES and kategori_drop:
         updates.append({"range": f"{config.COL_BH}{row_num}", "values": [[kategori_drop]]})
 
-    ws.batch_update(updates)
+    # PENTING: value_input_option="USER_ENTERED" -- default gspread adalah
+    # "RAW", yang menyimpan APAPUN yang dikirim sebagai teks literal apa
+    # adanya (inilah sebabnya tanggal & angka selama ini tercatat sebagai
+    # text di sheet, bukan tipe Date/Number asli). USER_ENTERED membuat
+    # Sheets mem-parsing value persis seperti kalau diketik manual oleh
+    # manusia: string tanggal ISO -> tipe DATE, string angka polos -> tipe
+    # NUMBER, selain itu (label status, keterangan, dll) tetap TEXT karena
+    # tidak match pola tanggal/angka.
+    ws.batch_update(updates, value_input_option="USER_ENTERED")
+
+    # Paksa format tampilan kolom tanggal yang baru saja ditulis, supaya
+    # tetap terbaca dd/mm/yy (atau dd/mmm/yy utk AK) tanpa bergantung pada
+    # format tanggal default locale spreadsheet-nya.
+    if date_format_targets:
+        ws.batch_format([
+            {
+                "range": f"{col}{row_num}",
+                "format": {"numberFormat": {"type": "DATE", "pattern": pattern}},
+            }
+            for col, pattern in date_format_targets
+        ])
 
     return date_col, note_col
 
