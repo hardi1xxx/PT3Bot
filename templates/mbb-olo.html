@@ -20,7 +20,7 @@
   /* Dashboard MBB. Baris 1: Tree / Resume / Target (1 row, 3 kolom).
      Baris 2: Notes / Kurva PLAN-REALISASI (1 row, 2 kolom). */
   .mbb-dash-top{display:grid; grid-template-columns: 1fr 0.55fr 1fr; grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:start;}
-  .mbb-dash-bottom{display:grid; grid-template-columns: 1fr 1fr; grid-template-areas: "notes curve"; gap:14px; margin-bottom:14px; align-items:start;}
+  .mbb-dash-bottom{display:grid; grid-template-columns: 1fr 1fr; grid-template-areas: "notes curve"; gap:14px; margin-bottom:14px; align-items:stretch;}
   @media (max-width: 980px){
     .mbb-dash-top{grid-template-columns: 1fr; grid-template-areas: "tree" "resume" "target";}
     .mbb-dash-bottom{grid-template-columns: 1fr; grid-template-areas: "notes" "curve";}
@@ -61,7 +61,6 @@
   <span id="view-title">MBB &amp; OLO</span>
   <span class="hint" id="view-sub"></span>
 </div>
-<div class="hint" id="mbb-base-filter-note" style="margin:-6px 0 12px;"></div>
 
 <div id="mbb-dashboard-wrap"></div>
 
@@ -573,7 +572,6 @@ function renderMbbDashboard(rowsForView, view){
       <div class="card tree-card">
         <div class="section-title" style="margin:0 0 4px;">Tree Diagram Progress</div>
         <div class="mbb-tree-subtitle">${escapeHtml(subProgramBatchLabel(rowsForView))}<br>${escapeHtml(MBB_TREE_VIEW_LABEL[currentView] || view.badge)}</div>
-        <div class="hint" style="margin-bottom:6px;">&#9650;/&#9660; di pojok kotak = deviasi vs H-1 (kolom CZ) dibanding hari ini (kolom U).</div>
         <div class="mbb-tree-svg-wrap">${renderMbbTreeSvg(total, l1oa, drop, active, subCounts, mbbTreeDeltas)}</div>
       </div>
 
@@ -591,15 +589,14 @@ function renderMbbDashboard(rowsForView, view){
     <div class="mbb-dash-bottom">
       <div class="card notes-card">
         <div class="section-title" style="margin:0 0 10px;">
-          Notes <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
+          SITEID <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
         </div>
         <div class="mbb-notes-list">${notesHtml}</div>
       </div>
 
       <div class="card curve-card">
-        <div class="section-title" style="margin:0 0 8px;">Kurva PLAN vs REALISASI L0 Ready</div>
-        <div class="hint" style="margin-bottom:8px;">PLAN dari kolom AA (Target FI/L0), REALISASI dari kolom BD (Tanggal L0 Ready) &mdash; kumulatif per bulan.</div>
-        <div style="position:relative; height:220px;"><canvas id="mbb-curve-chart"></canvas></div>
+        <div class="section-title" style="margin:0 0 10px;">Kurva PLAN vs REALISASI L0 Ready</div>
+        <div style="position:relative; height:230px;"><canvas id="mbb-curve-chart"></canvas></div>
       </div>
     </div>
   `;
@@ -936,9 +933,6 @@ function render(){
   const view = VIEWS[currentView];
   document.getElementById("view-title").innerHTML = `${view.title} <span class="badge">${view.badge}</span>`;
   document.getElementById("view-sub").textContent = view.sub;
-  document.getElementById("mbb-base-filter-note").innerHTML = view.source === "mbb"
-    ? `Filter dasar aktif untuk seluruh data MBB di halaman ini: kolom A (TAHUN) = 2026, kolom B (Plan Deploy) mengandung &ldquo;TIF&rdquo;.`
-    : "";
 
   const cols = view.source === "mbb" ? MBB_LABELS : OLO_LABELS;
   const statusLabel = view.source === "mbb" ? "Status Pekerjaan" : "STATUS PEKERJAAN";
