@@ -180,16 +180,18 @@ function matchCol(row, label, needle){
    Kata kunci ini best-effort (belum divalidasi ke nilai asli kolom
    "Status Pekerjaan"); kalau ada status yang salah kelompok, tinggal
    sesuaikan kata kuncinya di sini. */
-const MBB_L1OA_MATCH = (s)=> s.includes("l1") || s.includes("on air");
+const MBB_L1OA_MATCH = (s)=> s.includes("l1 ready") || s.includes("oa confirmation");
 const MBB_DROP_MATCH = (s)=> s.includes("drop");
-// "5.1 L0 Progress - Issue BTS", "6. L0 Ready" dan "7. L3. OA Confirmation"
-// DIGABUNG jadi satu bucket "Progress - Issue BTS" (sesuai breakdown pivot
-// yang dicek user: ketiganya muncul di sisi RFI MAUPUN NY RFI, jadi tidak
-// bisa lagi dipisah/di-exclude sebelah). "oa confir" SENGAJA tidak lagi
-// masuk MBB_L1OA_MATCH di atas -- kalau tidak, "L3. OA Confirmation" akan
-// kehitung ganda ke L1-ON AIR alih-alih ke bucket gabungan ini.
+// Dikoreksi sesuai definisi resmi user:
+// - L1 - ON AIR = "7. L1 Ready" & "7. L3. OA Confirmation" (masuk
+//   MBB_L1OA_MATCH di atas, BUKAN lagi ke bucket gabungan di bawah).
+// - Progress - Issue BTS = HANYA "5.1 L0 Progress - Issue BTS" (tidak lagi
+//   digabung dengan "6. L0 Ready"/"OA Confirmation" seperti sebelumnya).
+// Perubahan ini otomatis ikut ke Tree Diagram Progress MAUPUN Target
+// bulan berjalan, karena keduanya pakai classifyMbbRow/MBB_SUB_BUCKETS
+// yang sama.
 const MBB_SUB_BUCKETS = [
-  { key:"progress-issue-bts", label:"Progress - Issue BTS", match:(s)=> s.includes("issue bts") || s.includes("lo issue") || s.includes("lo ready") || s.includes("l0 ready") || s.includes("oa confir") },
+  { key:"progress-issue-bts", label:"Progress - Issue BTS", match:(s)=> s.includes("issue bts") },
   { key:"progress-fo",label:"Progress FO",  match:(s)=> s.includes("progress fo") || s.includes("fo progress") },
   { key:"matdev",     label:"Matdev",       match:(s)=> s.includes("matdev") || s.includes("material") },
   { key:"perijinan",  label:"Perijinan",    match:(s)=> s.includes("perijinan") || s.includes("izin") },
@@ -508,7 +510,12 @@ function renderMbbPivotTable(rowsForView){
   rowsForView.forEach(r=>{
     const status = getCol(r, "Status Pekerjaan");
     if (!status) return;
-    const area = getCol(r, "NEW TA AREA").toUpperCase();
+    // Isian asli kolom BO (NEW TA AREA) ternyata pakai prefix angka, mis.
+    // "1. BANTEN", "2. JAKARTA", dst (lihat MBB_TA_AREA_ROW_LABELS) --
+    // BUKAN teks polos "BANTEN" saja. Exact-match sebelumnya ("BANTEN"
+    // === "1. BANTEN") selalu gagal -> tabel selalu kosong. Dibersihkan
+    // dulu prefix angka + titiknya sebelum dibandingkan.
+    const area = getCol(r, "NEW TA AREA").toUpperCase().replace(/^\d+\.\s*/, "").trim();
     const matchedArea = MBB_TA_AREAS.find(a => a.toUpperCase() === area);
     if (!matchedArea) return;
     statusSet.add(status);
