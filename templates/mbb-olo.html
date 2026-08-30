@@ -19,7 +19,7 @@
 
   /* Dashboard MBB. Baris 1: Tree / Resume / Target (1 row, 3 kolom).
      Baris 2: Notes / Kurva PLAN-REALISASI (1 row, 2 kolom). */
-  .mbb-dash-top{display:grid; grid-template-columns: 1fr 0.7fr 1.3fr; grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:start;}
+  .mbb-dash-top{display:grid; grid-template-columns: 1fr 0.55fr 1fr; grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:start;}
   .mbb-dash-bottom{display:grid; grid-template-columns: 1fr 1fr; grid-template-areas: "notes curve"; gap:14px; margin-bottom:14px; align-items:start;}
   @media (max-width: 980px){
     .mbb-dash-top{grid-template-columns: 1fr; grid-template-areas: "tree" "resume" "target";}
@@ -229,7 +229,7 @@ function mbbDashboardFilter(row){
 // referensi: root abu-abu, L1-ON AIR biru gelap, Aktif biru medium,
 // Drop oranye, 9 leaf biru muda. Tiap node bisa diklik (sama kayak
 // sebelumnya) buat filter dashboard via mbbSelectBucket().
-const TREE_SVG_W = 620, TREE_SVG_H = 480;
+const TREE_SVG_W = 460, TREE_SVG_H = 480;
 
 function treeNodeSelected(key){
   return (key === null) ? !mbbSelectedBucket : mbbSelectedBucket === key;
@@ -251,12 +251,13 @@ function treeNodeRect(x, y, w, h, fill, textColor, label, value, key, valueSize,
 }
 
 function renderMbbTreeSvg(total, l1oa, drop, active, subCounts){
-  // Kotak sedikit lebih besar dari sebelumnya, jarak antar kolom (garis
-  // cabang) dipendekin jadi 36px aja (dulu 220px+ buat kolom leaf).
-  const rootW = 140, rootH = 82, rootX = 6, rootCY = TREE_SVG_H/2;
-  const midW = 160, midH = 76, midX = rootX + rootW + 36;
+  // Ukuran kotak & jarak antar kolom disesuaikan supaya viewBox tree ini
+  // PERSIS sama besar dengan viewBox tree Target Agustus (460x480) --
+  // biar dua card kelihatan sama ukurannya berdampingan.
+  const rootW = 105, rootH = 78, rootX = 6, rootCY = TREE_SVG_H/2;
+  const midW = 120, midH = 72, midX = rootX + rootW + 26;
   const midCYs = [TREE_SVG_H*0.17, TREE_SVG_H/2, TREE_SVG_H*0.83];
-  const leafW = 170, leafH = 44, leafX = midX + midW + 36;
+  const leafW = 160, leafH = 36, leafX = midX + midW + 26;
   const leafSlot = TREE_SVG_H / MBB_SUB_BUCKETS.length;
   const leafCYs = MBB_SUB_BUCKETS.map((_,i) => leafSlot*i + leafSlot/2);
 
@@ -308,7 +309,7 @@ function targetTreeBox(x, y, w, h, color, label, value, valueSize, labelSize){
     <g>
       <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#fff" stroke="${color}" stroke-width="2"/>
       <text x="${x + w/2}" y="${y + h/2 - 3}" text-anchor="middle" font-size="${valueSize}" font-weight="800" fill="${color}">${fmtN(value)}</text>
-      <text x="${x + w/2}" y="${y + h/2 + 15}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${color}" opacity="0.9">${escapeHtml(label)}</text>
+      <text x="${x + w/2}" y="${y + h/2 + 12}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${color}" opacity="0.9">${escapeHtml(label)}</text>
     </g>`;
 }
 
@@ -317,7 +318,7 @@ function targetTreeBox(x, y, w, h, color, label, value, valueSize, labelSize){
 // di bawahnya -- supaya diagram tidak terlalu lebar ke samping (dulu ada
 // 2 kolom "mid" terpisah kiri-kanan). Leaf tetap 2 kolom (kiri utk NY RFI,
 // kanan utk RFI) yang cabangnya nyambung dari kolom tengah itu.
-const TARGET_TREE_W = 580, TARGET_TREE_H = 580;
+const TARGET_TREE_W = 460, TARGET_TREE_H = 480;
 const TARGET_LEAF_LABEL = (key)=> key === "l1oa" ? "L1 - ON AIR" : (MBB_SUB_BUCKETS.find(b=>b.key===key)||{}).label;
 
 function renderTargetTreeSvg(rowsForMonth){
@@ -341,14 +342,15 @@ function renderTargetTreeSvg(rowsForMonth){
   const total = rowsForMonth.length;
 
   // Kolom tengah: Total (root), RFI, NY RFI -- sejajar X, ditumpuk vertikal.
-  const colW = 150;
+  // Kotak dikecilkan lagi supaya pas sama besar dengan Tree Diagram Progress.
+  const colW = 110;
   const colX = TARGET_TREE_W/2 - colW/2;
-  const rootH = 76, branchH = 64, gap = 26;
+  const rootH = 60, branchH = 50, gap = 18;
   const rootCY = TARGET_TREE_H/2;
   const rfiCY = rootCY - rootH/2 - gap - branchH/2;
   const nyRfiCY = rootCY + rootH/2 + gap + branchH/2;
 
-  const leafW = 165, leafH = 38, leafGap = 34;
+  const leafW = 130, leafH = 30, leafGap = 30;
   const leafRightX = colX + colW + leafGap;
   const leafLeftX = colX - leafGap - leafW;
 
