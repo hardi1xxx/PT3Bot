@@ -19,7 +19,7 @@
 
   /* Dashboard MBB. Baris 1: Tree / Resume / Target (1 row, 3 kolom).
      Baris 2: Notes / Kurva PLAN-REALISASI (1 row, 2 kolom). */
-  .mbb-dash-top{display:grid; grid-template-columns: 1.3fr 1fr 0.7fr; grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:start;}
+  .mbb-dash-top{display:grid; grid-template-columns: 1fr 0.7fr 1.3fr; grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:start;}
   .mbb-dash-bottom{display:grid; grid-template-columns: 1fr 1fr; grid-template-areas: "notes curve"; gap:14px; margin-bottom:14px; align-items:start;}
   @media (max-width: 980px){
     .mbb-dash-top{grid-template-columns: 1fr; grid-template-areas: "tree" "resume" "target";}
@@ -386,9 +386,9 @@ function renderMbbDashboard(rowsForView, view){
   // dari rowsForView (view MBB aktif), tidak ikut kena filter klik tree di
   // atas, dan sekarang jadi card sendiri terpisah dari Notes.
   const resumeHtml = `
-    <div class="item"><span class="site">List L0 Ready</span><br>${escapeHtml(siteListForStatus(rowsForView, "6. L0 Ready"))}</div>
-    <div class="item"><span class="site">List L0 Issue BTS</span><br>${escapeHtml(siteListForStatus(rowsForView, "5.1 L0 Progress - Issue BTS"))}</div>
-    <div class="item"><span class="site">Status Hold</span><br>${escapeHtml(siteListForStatus(rowsForView, "0. HOLD"))}</div>
+    <div class="item"><span class="site">List L0 Ready</span>${siteListByWitel(rowsForView, "6. L0 Ready")}</div>
+    <div class="item"><span class="site">List L0 Issue BTS</span>${siteListByWitel(rowsForView, "5.1 L0 Progress - Issue BTS")}</div>
+    <div class="item"><span class="site">Status Hold</span>${siteListByWitel(rowsForView, "0. HOLD")}</div>
   `;
 
   wrap.innerHTML = `
@@ -404,11 +404,10 @@ function renderMbbDashboard(rowsForView, view){
         <div class="mbb-notes-list">${resumeHtml}</div>
       </div>
 
-      <div class="mbb-target-box target-card">
-        <div style="font-size:1.4rem;">&#127919;</div>
-        <div class="n">${fmtN(targetCount)}</div>
-        <div class="l">Target ${escapeHtml(monthName)} — Tsel</div>
-        <div class="hint" style="margin-top:6px;">Kolom Tower Provider mengandung "(${escapeHtml(monthName)})"</div>
+      <div class="card target-card">
+        <div class="section-title" style="margin:0 0 4px;">&#127919; Target ${escapeHtml(monthName)} — Tsel</div>
+        <div class="hint" style="margin-bottom:8px;">Tower Provider mengandung "(${escapeHtml(monthName)})" — RFI/belum RFI dari Status Tsel (kolom Q), lalu dipecah lagi dari Status Pekerjaan (kolom U).</div>
+        <div class="mbb-tree-svg-wrap">${renderTargetTreeSvg(targetRows)}</div>
       </div>
     </div>
 
@@ -425,12 +424,6 @@ function renderMbbDashboard(rowsForView, view){
         <div class="hint" style="margin-bottom:8px;">PLAN dari kolom AA (Target FI/L0), REALISASI dari kolom BD (Tanggal L0 Ready) &mdash; kumulatif per bulan.</div>
         <div style="position:relative; height:220px;"><canvas id="mbb-curve-chart"></canvas></div>
       </div>
-    </div>
-
-    <div class="card" style="margin-bottom:14px;">
-      <div class="section-title" style="margin:0 0 4px;">&#127919; Target ${escapeHtml(monthName)} — Tsel</div>
-      <div class="hint" style="margin-bottom:8px;">Baris = order yang kolom Tower Provider mengandung "(${escapeHtml(monthName)})" — dipecah RFI / belum RFI dari Status Tsel (kolom Q), lalu tiap cabang dipecah lagi dari Status Pekerjaan (kolom U).</div>
-      <div class="mbb-tree-svg-wrap">${renderTargetTreeSvg(targetRows)}</div>
     </div>
   `;
 }
@@ -520,15 +513,38 @@ function firstParagraph(text){
   return lines.length ? lines[0] : "";
 }
 
-// Daftar nama SITE ID (dipisah koma) buat baris ringkasan status tetap
-// (List L0 Ready / List L0 Issue BTS / Status Hold) -- match "Status
-// Pekerjaan" (kolom U) case-insensitive terhadap teks filter yang dikasih.
-function siteListForStatus(rows, needle){
-  const sites = rows
-    .filter(r => matchCol(r, "Status Pekerjaan", needle.toLowerCase()))
-    .map(r => getCol(r, "SITE ID"))
-    .filter(Boolean);
-  return sites.length ? sites.join(", ") : "–";
+// Gabung array nama jadi teks "A,B,C dan D" -- semua dipisah koma kecuali
+// item terakhir digabung pakai " dan " (bukan koma).
+function joinDan(arr){
+  if (!arr.length) return "–";
+  if (arr.length === 1) return arr[0];
+  return arr.slice(0, -1).join(",") + " dan " + arr[arr.length - 1];
+}
+
+// Daftar nama SITE ID buat baris ringkasan status tetap (List L0 Ready /
+// List L0 Issue BTS / Status Hold) -- match "Status Pekerjaan" (kolom U)
+// case-insensitive terhadap teks filter yang dikasih, DIKELOMPOKKAN per
+// WITEL (kolom F): tiap WITEL jadi sub-judul sendiri, site-nya digabung
+// "A,B dan C".
+function siteListByWitel(rows, needle){
+  const matched = rows.filter(r => matchCol(r, "Status Pekerjaan", needle.toLowerCase()));
+  if (!matched.length) return `<div class="hint" style="padding:2px 0;">–</div>`;
+
+  const byWitel = new Map();
+  matched.forEach(r=>{
+    const witel = getCol(r, "WITEL") || "-";
+    const site = getCol(r, "SITE ID");
+    if (!site) return;
+    if (!byWitel.has(witel)) byWitel.set(witel, []);
+    byWitel.get(witel).push(site);
+  });
+
+  const witels = Array.from(byWitel.keys()).sort((a,b)=>a.localeCompare(b, 'id'));
+  return witels.map(w => `
+    <div style="margin:4px 0;">
+      <div style="font-weight:700; color:var(--text);">${escapeHtml(w)}</div>
+      <div>${escapeHtml(joinDan(byWitel.get(w)))}</div>
+    </div>`).join("");
 }
 
 /* ===================== KURVA PLAN vs REALISASI ========================
