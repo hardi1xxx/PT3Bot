@@ -160,11 +160,16 @@ function monthParenMatch(text, monthName){
    Kata kunci ini best-effort (belum divalidasi ke nilai asli kolom
    "Status Pekerjaan"); kalau ada status yang salah kelompok, tinggal
    sesuaikan kata kuncinya di sini. */
-const MBB_L1OA_MATCH = (s)=> s.includes("l1") || s.includes("on air") || s.includes("oa confirm");
+const MBB_L1OA_MATCH = (s)=> s.includes("l1") || s.includes("on air");
 const MBB_DROP_MATCH = (s)=> s.includes("drop");
+// "5.1 L0 Progress - Issue BTS", "6. L0 Ready" dan "7. L3. OA Confirmation"
+// DIGABUNG jadi satu bucket "Progress - Issue BTS" (sesuai breakdown pivot
+// yang dicek user: ketiganya muncul di sisi RFI MAUPUN NY RFI, jadi tidak
+// bisa lagi dipisah/di-exclude sebelah). "oa confir" SENGAJA tidak lagi
+// masuk MBB_L1OA_MATCH di atas -- kalau tidak, "L3. OA Confirmation" akan
+// kehitung ganda ke L1-ON AIR alih-alih ke bucket gabungan ini.
 const MBB_SUB_BUCKETS = [
-  { key:"lo-ready",   label:"LO Ready",     match:(s)=> s.includes("lo ready") || s.includes("l0 ready") },
-  { key:"lo-issue",   label:"LO Issue BTS", match:(s)=> s.includes("issue bts") || s.includes("lo issue") },
+  { key:"progress-issue-bts", label:"Progress - Issue BTS", match:(s)=> s.includes("issue bts") || s.includes("lo issue") || s.includes("lo ready") || s.includes("l0 ready") || s.includes("oa confir") },
   { key:"progress-fo",label:"Progress FO",  match:(s)=> s.includes("progress fo") || s.includes("fo progress") },
   { key:"matdev",     label:"Matdev",       match:(s)=> s.includes("matdev") || s.includes("material") },
   { key:"perijinan",  label:"Perijinan",    match:(s)=> s.includes("perijinan") || s.includes("izin") },
@@ -330,8 +335,8 @@ function renderTargetTreeSvg(rowsForMonth){
     }).length;
   }
 
-  const rfiLeafKeys = ["l1oa", ...MBB_SUB_BUCKETS.map(b=>b.key)];               // 10 item
-  const nyRfiLeafKeys = MBB_SUB_BUCKETS.map(b=>b.key).filter(k=>k!=="lo-ready"); // 8 item (tanpa L1-ON AIR & LO Ready)
+  const rfiLeafKeys = ["l1oa", ...MBB_SUB_BUCKETS.map(b=>b.key)];   // L1-ON AIR + 8 sub-bucket (setelah digabung)
+  const nyRfiLeafKeys = MBB_SUB_BUCKETS.map(b=>b.key);              // 8 sub-bucket, sama persis (tanpa L1-ON AIR)
 
   const total = rowsForMonth.length;
 
