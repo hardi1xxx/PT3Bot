@@ -17,10 +17,10 @@
   .cell-empty{color:var(--muted, #94a3b8);}
   #table-wrap table td.num{font-family:monospace; text-align:right;}
 
-  /* Dashboard MBB. Baris 0 (baru): 3 kotak Nilai PO/BoQ Survey/Comcase.
-     Baris 1: Tree / Resume / Target (1 row, 3 kolom) -- tinggi ketiganya
-     DISAMAKAN (align-items:stretch + cap tinggi konten + scroll) supaya
-     Tree & Target tidak jauh lebih tinggi dari Resume lagi.
+  /* Dashboard MBB. Baris 0: 3 kotak Nilai PO/BoQ Survey/Comcase.
+     Baris 1: Tree / Resume / Target (1 row, 3 kolom) -- align-items:stretch
+     supaya tinggi card-nya seragam (tanpa scroll, tanpa cap tinggi --
+     Resume yang lebih pendek tinggal ikut setinggi Tree/Target).
      Baris 2: Notes / Kurva PLAN-REALISASI (1 row, 2 kolom). */
   .mbb-value-cards{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:14px;}
   @media (max-width: 980px){ .mbb-value-cards{grid-template-columns:1fr;} }
@@ -36,9 +36,6 @@
   .mbb-dash-top .tree-card{grid-area:tree;}
   .mbb-dash-top .resume-card{grid-area:resume;}
   .mbb-dash-top .target-card{grid-area:target;}
-  .mbb-dash-top .card{display:flex; flex-direction:column;}
-  .mbb-dash-top .mbb-tree-svg-wrap{flex:1; overflow:auto; max-height:420px;}
-  .mbb-dash-top .mbb-resume-list{flex:1; overflow-y:auto; max-height:420px;}
   .mbb-dash-bottom .notes-card{grid-area:notes;}
   .mbb-dash-bottom .curve-card{grid-area:curve;}
   .mbb-tree-subtitle{color:#be185d; font-weight:800; font-size:0.8rem; line-height:1.35; margin:0 0 8px;}
@@ -49,9 +46,9 @@
   .mbb-notes-list .item{padding:7px 0; border-bottom:1px dashed #e2e8f0;}
   .mbb-notes-list .item:last-child{border-bottom:none;}
   .mbb-notes-list .item .site{font-weight:700; color:var(--text);}
-  /* Resume: style sama kayak Notes, sekarang JUGA discroll (max-height
-     420px, lihat .mbb-dash-top .mbb-resume-list di atas) supaya tinggi
-     card-nya konsisten dengan Tree & Target. */
+  /* Resume: sama style-nya kayak Notes, tapi TANPA scroll (tampil sampai
+     bawah semua) -- tingginya cuma ikut nyamain Tree/Target lewat
+     align-items:stretch di .mbb-dash-top di atas. */
   .mbb-resume-list{font-size:0.82rem;}
   .mbb-resume-list .item{padding:7px 0; border-bottom:1px dashed #e2e8f0;}
   .mbb-resume-list .item:last-child{border-bottom:none;}
@@ -732,16 +729,12 @@ function parseIdrNumber(raw){
   return isNaN(n) ? 0 : n;
 }
 
-// Format ringkas ala "99.0B" / "62.3M" / "9.6K" -- dipakai di 3 kotak
-// Nilai PO / Nilai BoQ (Survey) / Nilai Comcase supaya angkanya tetap
-// muat di kotak kecil walau nilainya miliaran.
+// Format ala "29.400,0M" -- SELALU dalam satuan juta (M), bukan
+// auto-scale B/M/K lagi. Dipakai di 3 kotak Nilai PO / Nilai BoQ
+// (Survey) / Nilai Comcase.
 function fmtCompactIdr(n){
-  const sign = n < 0 ? "-" : "";
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return sign + (abs/1e9).toFixed(1) + "B";
-  if (abs >= 1e6) return sign + (abs/1e6).toFixed(1) + "M";
-  if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + "K";
-  return sign + fmtN(Math.round(abs));
+  const million = n / 1e6;
+  return million.toLocaleString('id-ID', { minimumFractionDigits:1, maximumFractionDigits:1 }) + "M";
 }
 
 // Ambil paragraf PALING ATAS saja dari isian "Note Progress" -- sel Sheets
