@@ -232,6 +232,23 @@ function classifyMbbRow(row){
   return { top:"active", sub:null }; // status lain yang tidak kena bucket manapun
 }
 
+// Sama persis kayak classifyMbbRow, tapi baca kolom "Status Pekerjaan H-1"
+// (kolom CZ, snapshot status kemarin) -- dipakai buat hitung deviasi
+// (panah naik/turun) di Tree Diagram Progress & Target. Kalau kolom CZ
+// kosong (baris baru / H-1 belum keisi), return null supaya baris itu
+// TIDAK ikut dihitung ke bucket H-1 manapun (bukan dianggap "active tanpa
+// sub" begitu saja).
+function classifyMbbRowH1(row){
+  const s = getCol(row, "Status Pekerjaan H-1").toLowerCase();
+  if (!s) return null;
+  if (MBB_DROP_MATCH(s)) return { top:"drop", sub:null };
+  if (MBB_L1OA_MATCH(s)) return { top:"l1oa", sub:null };
+  for (const b of MBB_SUB_BUCKETS){
+    if (b.match(s)) return { top:"active", sub:b.key };
+  }
+  return { top:"active", sub:null };
+}
+
 /* Filter TAMBAHAN dari klik dashboard (di atas filter view + pencarian) */
 function mbbDashboardFilter(row){
   if (!mbbSelectedBucket) return true;
@@ -255,11 +272,27 @@ function treeNodeSelected(key){
   return (key === null) ? !mbbSelectedBucket : mbbSelectedBucket === key;
 }
 
+// Badge kecil "▲12" (hijau, naik) / "▼3" (merah, turun) / "±0" (abu-abu,
+// tidak berubah) di pojok kanan-atas tiap kotak -- deviasi dari kolom
+// "Status Pekerjaan H-1" (CZ, kemarin) vs "Status Pekerjaan" (U, hari
+// ini). delta = null artinya TIDAK ditampilkan sama sekali (dipakai utk
+// node yang bukan hasil klasifikasi Status Pekerjaan, mis. Total Site ID
+// & RFI/NY RFI di Target -- itu berasal dari Tower Provider/Status Tsel,
+// bukan dari kolom U/CZ, jadi tidak ada deviasi yang bisa dihitung).
+function deltaBadge(x, y, delta){
+  if (delta === null || delta === undefined) return "";
+  if (delta === 0) return `<text x="${x}" y="${y}" text-anchor="end" font-size="9" font-weight="700" fill="#94a3b8">&#177;0</text>`;
+  const up = delta > 0;
+  const color = up ? "#16a34a" : "#dc2626";
+  const arrow = up ? "&#9650;" : "&#9660;";
+  return `<text x="${x}" y="${y}" text-anchor="end" font-size="10" font-weight="800" fill="${color}">${arrow}${fmtN(Math.abs(delta))}</text>`;
+}
+
 function treeConnector(x1, y, x2, y2, breakX, color){
   return `<path d="M${x1},${y} H${breakX} V${y2} H${x2}" fill="none" stroke="${color || '#94a3b8'}" stroke-width="2"/>`;
 }
 
-function treeNodeRect(x, y, w, h, fill, textColor, label, value, key, valueSize, labelSize){
+function treeNodeRect(x, y, w, h, fill, textColor, label, value, key, valueSize, labelSize, delta){
   const sel = treeNodeSelected(key);
   const keyArg = key === null ? "null" : `'${key}'`;
   return `
@@ -267,10 +300,13 @@ function treeNodeRect(x, y, w, h, fill, textColor, label, value, key, valueSize,
       <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="${fill}" stroke="${sel ? '#111827' : 'transparent'}" stroke-width="${sel ? 3 : 0}"/>
       <text x="${x + w/2}" y="${y + h/2 - 4}" text-anchor="middle" font-size="${valueSize}" font-weight="800" fill="${textColor}">${fmtN(value)}</text>
       <text x="${x + w/2}" y="${y + h/2 + 15}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${textColor}" opacity="0.92">${escapeHtml(label)}</text>
+      ${deltaBadge(x + w - 6, y + 13, delta)}
     </g>`;
 }
 
-function renderMbbTreeSvg(total, l1oa, drop, active, subCounts){
+function renderMbbTreeSvg(total, l1oa, drop, active, subCounts, deltas){
+  deltas = deltas || {};
+  const subDeltas = deltas.sub || {};
   // Ukuran kotak & jarak antar kolom disesuaikan supaya viewBox tree ini
   // PERSIS sama besar dengan viewBox tree Target Agustus (460x480) --
   // biar dua card kelihatan sama ukurannya berdampingan.
@@ -282,9 +318,9 @@ function renderMbbTreeSvg(total, l1oa, drop, active, subCounts){
   const leafCYs = MBB_SUB_BUCKETS.map((_,i) => leafSlot*i + leafSlot/2);
 
   const midDefs = [
-    { key:"l1oa",   label:"L1 - ON AIR", value:l1oa,  fill:"#0f4c81" },
-    { key:"active", label:"SITE ID",     value:active,fill:"#2f6690" },
-    { key:"drop",   label:"DROP",        value:drop,  fill:"#c2410c" },
+    { key:"l1oa",   label:"L1 - ON AIR", value:l1oa,  fill:"#0f4c81", delta:deltas.l1oa },
+    { key:"active", label:"SITE ID",     value:active,fill:"#2f6690", delta:deltas.active },
+    { key:"drop",   label:"DROP",        value:drop,  fill:"#c2410c", delta:deltas.drop },
   ];
 
   const rootRightX = rootX + rootW, midBreakX = rootRightX + 18;
@@ -295,9 +331,12 @@ function renderMbbTreeSvg(total, l1oa, drop, active, subCounts){
   midCYs.forEach(cy => { svg += treeConnector(rootRightX, rootCY, midX, cy, midBreakX); });
   leafCYs.forEach(cy => { svg += treeConnector(midRightX, midCYs[1], leafX, cy, leafBreakX); });
 
-  svg += treeNodeRect(rootX, rootCY - rootH/2, rootW, rootH, "#475569", "#fff", "Site ID", total, null, 24, 12);
-  midDefs.forEach((m,i) => { svg += treeNodeRect(midX, midCYs[i] - midH/2, midW, midH, m.fill, "#fff", m.label, m.value, m.key, 22, 12); });
-  MBB_SUB_BUCKETS.forEach((b,i) => { svg += treeNodeRect(leafX, leafCYs[i] - leafH/2, leafW, leafH, "#cfe8f5", "#0f2a3d", b.label, subCounts[b.key]||0, b.key, 16, 10); });
+  // Total "Site ID" (root) SENGAJA tidak dikasih badge delta (null) --
+  // jumlah baris total tidak dipengaruhi klasifikasi Status Pekerjaan
+  // (U vs CZ), jadi deviasinya tidak bermakna di sini.
+  svg += treeNodeRect(rootX, rootCY - rootH/2, rootW, rootH, "#475569", "#fff", "Site ID", total, null, 24, 12, null);
+  midDefs.forEach((m,i) => { svg += treeNodeRect(midX, midCYs[i] - midH/2, midW, midH, m.fill, "#fff", m.label, m.value, m.key, 22, 12, m.delta); });
+  MBB_SUB_BUCKETS.forEach((b,i) => { svg += treeNodeRect(leafX, leafCYs[i] - leafH/2, leafW, leafH, "#cfe8f5", "#0f2a3d", b.label, subCounts[b.key]||0, b.key, 16, 10, subDeltas[b.key]); });
 
   svg += `</svg>`;
   return svg;
@@ -324,12 +363,13 @@ function classifyStatusTsel(row){
   return null; // nilai lain di luar 2 daftar -- nggak dihitung ke cabang manapun
 }
 
-function targetTreeBox(x, y, w, h, color, label, value, valueSize, labelSize){
+function targetTreeBox(x, y, w, h, color, label, value, valueSize, labelSize, delta){
   return `
     <g>
       <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#fff" stroke="${color}" stroke-width="2"/>
       <text x="${x + w/2}" y="${y + h/2 - 3}" text-anchor="middle" font-size="${valueSize}" font-weight="800" fill="${color}">${fmtN(value)}</text>
       <text x="${x + w/2}" y="${y + h/2 + 12}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${color}" opacity="0.9">${escapeHtml(label)}</text>
+      ${deltaBadge(x + w - 5, y + 11, delta)}
     </g>`;
 }
 
@@ -352,6 +392,17 @@ function renderTargetTreeSvg(rowsForMonth){
   function subCount(rows, key){
     return rows.filter(r=>{
       const c = classifyMbbRow(r);
+      return key === "l1oa" ? c.top === "l1oa" : (c.top === "active" && c.sub === key);
+    }).length;
+  }
+
+  // Sama seperti subCount, tapi klasifikasi pakai "Status Pekerjaan H-1"
+  // (CZ) -- dipakai buat hitung deviasi tiap leaf. Baris yang classifyMbbRowH1
+  // return null (CZ kosong) otomatis tidak ke-hitung ke bucket manapun.
+  function subCountH1(rows, key){
+    return rows.filter(r=>{
+      const c = classifyMbbRowH1(r);
+      if (!c) return false;
       return key === "l1oa" ? c.top === "l1oa" : (c.top === "active" && c.sub === key);
     }).length;
   }
@@ -396,12 +447,12 @@ function renderTargetTreeSvg(rowsForMonth){
   rightCYs.forEach(cy => { svg += treeConnector(colRightX, rfiCY, leafRightX, cy, leafRightBreakX, BLUE); });
   leftCYs.forEach(cy => { svg += treeConnector(colX, nyRfiCY, leafLeftX+leafW, cy, leafLeftBreakX, ORANGE); });
 
-  svg += targetTreeBox(colX, rootCY-rootH/2, colW, rootH, DARK, "Site ID", total, 24, 13);
-  svg += targetTreeBox(colX, rfiCY-branchH/2, colW, branchH, BLUE, "RFI", rfiRows.length, 20, 12);
-  svg += targetTreeBox(colX, nyRfiCY-branchH/2, colW, branchH, ORANGE, "NY RFI", nyRfiRows.length, 20, 12);
+  svg += targetTreeBox(colX, rootCY-rootH/2, colW, rootH, DARK, "Site ID", total, 24, 13, null);
+  svg += targetTreeBox(colX, rfiCY-branchH/2, colW, branchH, BLUE, "RFI", rfiRows.length, 20, 12, null);
+  svg += targetTreeBox(colX, nyRfiCY-branchH/2, colW, branchH, ORANGE, "NY RFI", nyRfiRows.length, 20, 12, null);
 
-  rfiLeafKeys.forEach((key,i)=>{ svg += targetTreeBox(leafRightX, rightCYs[i]-leafH/2, leafW, leafH, BLUE, TARGET_LEAF_LABEL(key), subCount(rfiRows,key), 15, 10); });
-  nyRfiLeafKeys.forEach((key,i)=>{ svg += targetTreeBox(leafLeftX, leftCYs[i]-leafH/2, leafW, leafH, ORANGE, TARGET_LEAF_LABEL(key), subCount(nyRfiRows,key), 15, 10); });
+  rfiLeafKeys.forEach((key,i)=>{ svg += targetTreeBox(leafRightX, rightCYs[i]-leafH/2, leafW, leafH, BLUE, TARGET_LEAF_LABEL(key), subCount(rfiRows,key), 15, 10, subCount(rfiRows,key)-subCountH1(rfiRows,key)); });
+  nyRfiLeafKeys.forEach((key,i)=>{ svg += targetTreeBox(leafLeftX, leftCYs[i]-leafH/2, leafW, leafH, ORANGE, TARGET_LEAF_LABEL(key), subCount(nyRfiRows,key), 15, 10, subCount(nyRfiRows,key)-subCountH1(nyRfiRows,key)); });
 
   svg += `</svg>`;
   return svg;
@@ -413,13 +464,26 @@ function renderMbbDashboard(rowsForView, view){
 
   let total = 0, l1oa = 0, drop = 0, active = 0;
   const subCounts = {}; MBB_SUB_BUCKETS.forEach(b => subCounts[b.key] = 0);
+  let l1oaH1 = 0, dropH1 = 0, activeH1 = 0;
+  const subCountsH1 = {}; MBB_SUB_BUCKETS.forEach(b => subCountsH1[b.key] = 0);
   rowsForView.forEach(r=>{
     total++;
     const c = classifyMbbRow(r);
     if (c.top === "l1oa") l1oa++;
     else if (c.top === "drop") drop++;
     else { active++; if (c.sub) subCounts[c.sub]++; }
+
+    const c1 = classifyMbbRowH1(r);
+    if (c1){
+      if (c1.top === "l1oa") l1oaH1++;
+      else if (c1.top === "drop") dropH1++;
+      else { activeH1++; if (c1.sub) subCountsH1[c1.sub]++; }
+    }
   });
+  // Deviasi = hari ini (kolom U) - kemarin (kolom CZ, "Status Pekerjaan
+  // H-1"), ditampilkan sebagai panah naik/turun di tiap kotak tree diagram.
+  const subDeltas = {}; MBB_SUB_BUCKETS.forEach(b => subDeltas[b.key] = subCounts[b.key] - subCountsH1[b.key]);
+  const mbbTreeDeltas = { l1oa: l1oa - l1oaH1, drop: drop - dropH1, active: active - activeH1, sub: subDeltas };
 
   const monthName = CURRENT_MONTH_NAME;
   // Penentuan target SEKARANG murni dari kolom "Tower Provider" (bukan
@@ -455,7 +519,8 @@ function renderMbbDashboard(rowsForView, view){
       <div class="card tree-card">
         <div class="section-title" style="margin:0 0 4px;">Tree Diagram Progress</div>
         <div class="mbb-tree-subtitle">${escapeHtml(subProgramBatchLabel(rowsForView))}<br>${escapeHtml(MBB_TREE_VIEW_LABEL[currentView] || view.badge)}</div>
-        <div class="mbb-tree-svg-wrap">${renderMbbTreeSvg(total, l1oa, drop, active, subCounts)}</div>
+        <div class="hint" style="margin-bottom:6px;">&#9650;/&#9660; di pojok kotak = deviasi vs H-1 (kolom CZ) dibanding hari ini (kolom U).</div>
+        <div class="mbb-tree-svg-wrap">${renderMbbTreeSvg(total, l1oa, drop, active, subCounts, mbbTreeDeltas)}</div>
       </div>
 
       <div class="card resume-card">
