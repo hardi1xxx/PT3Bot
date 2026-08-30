@@ -38,6 +38,11 @@
   .mbb-notes-list .item{padding:7px 0; border-bottom:1px dashed #e2e8f0;}
   .mbb-notes-list .item:last-child{border-bottom:none;}
   .mbb-notes-list .item .site{font-weight:700; color:var(--text);}
+  /* Resume: sama style-nya, tapi TANPA scroll -- tampil sampai bawah semua. */
+  .mbb-resume-list{font-size:0.82rem;}
+  .mbb-resume-list .item{padding:7px 0; border-bottom:1px dashed #e2e8f0;}
+  .mbb-resume-list .item:last-child{border-bottom:none;}
+  .mbb-resume-list .item .site{font-weight:700; color:var(--text);}
   .mbb-target-box{background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:14px; text-align:center;}
   .mbb-target-box .n{font-size:2rem; font-weight:800; color:#c2410c;}
   .mbb-target-box .l{font-size:0.75rem; font-weight:700; color:#9a3412; margin-top:2px;}
@@ -141,6 +146,13 @@ function getCol(row, label){
 }
 function matchCol(row, label, needle){
   return getCol(row, label).toLowerCase().includes(needle);
+}
+// Match "(NamaBulan)" di kolom Tower Provider -- LONGGAR terhadap spasi di
+// dalam kurung, karena nilai aslinya "Fronthaul ( Agustus )" (ada spasi
+// sebelum/sesudah nama bulan), bukan "(Agustus)" rapat.
+function monthParenMatch(text, monthName){
+  const re = new RegExp("\\(\\s*" + monthName.toLowerCase() + "\\s*\\)", "i");
+  return re.test((text || "").toLowerCase());
 }
 
 /* ===================== BUCKET STATUS PEKERJAAN (untuk dashboard MBB) ===
@@ -374,7 +386,7 @@ function renderMbbDashboard(rowsForView, view){
   });
 
   const monthName = INDO_MONTHS[new Date().getMonth()];
-  const targetRows = rowsForView.filter(r => matchCol(r, "Tower Provider", "(" + monthName.toLowerCase() + ")"));
+  const targetRows = rowsForView.filter(r => monthParenMatch(getCol(r, "Tower Provider"), monthName));
   const targetCount = targetRows.length;
 
   const notesRows = rowsForView.filter(mbbDashboardFilter).filter(r => getCol(r,"Note Progress") !== "");
@@ -401,7 +413,7 @@ function renderMbbDashboard(rowsForView, view){
 
       <div class="card resume-card">
         <div class="section-title" style="margin:0 0 10px;">Resume</div>
-        <div class="mbb-notes-list">${resumeHtml}</div>
+        <div class="mbb-resume-list">${resumeHtml}</div>
       </div>
 
       <div class="card target-card">
@@ -518,7 +530,7 @@ function firstParagraph(text){
 function joinDan(arr){
   if (!arr.length) return "–";
   if (arr.length === 1) return arr[0];
-  return arr.slice(0, -1).join(",") + " dan " + arr[arr.length - 1];
+  return arr.slice(0, -1).join(", ") + " dan " + arr[arr.length - 1];
 }
 
 // Daftar nama SITE ID buat baris ringkasan status tetap (List L0 Ready /
