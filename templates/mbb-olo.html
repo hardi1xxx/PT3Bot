@@ -128,7 +128,7 @@ const VIEWS = {
   "mbb-all":        { title:"MBB", badge:"Semua Data", sub:"Sheet: All Node B", source:"mbb", filter:null },
   "mbb-newinfra":    { title:"MBB", badge:"New Infra", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cNew Infra\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","new infra") },
   "mbb-rescoping":   { title:"MBB", badge:"Rescoping", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201crescop\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","rescop") },
-  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cfiber\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","fiber") },
+  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:"Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cfronthaul\u201d", source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","fronthaul") },
   "olo-all":         { title:"OLO", badge:"Semua Data", sub:"Sheet: OLO", source:"olo", filter:null },
   "olo-progress":    { title:"OLO", badge:"Progress", sub:"Sheet: OLO — filter status belum Done/Drop", source:"olo", filter:(r)=>{
                           const v = getCol(r,"STATUS PEKERJAAN").toLowerCase();
