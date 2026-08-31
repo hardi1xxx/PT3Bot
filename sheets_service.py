@@ -9,6 +9,7 @@ import datetime
 import calendar
 import threading
 import time
+import logging
 
 import gspread
 from dateutil import parser as date_parser
@@ -16,6 +17,12 @@ from google.oauth2.service_account import Credentials
 
 import config
 import drive_service
+
+# Kalau proses ini dijalankan sebagai web (app.py) belum ada basicConfig sama
+# sekali (bot.py sudah punya) -- ini no-op kalau sudah dikonfigurasi duluan,
+# supaya logger.info/exception di bawah pasti muncul di log Railway.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -1224,14 +1231,25 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     # Paksa format tampilan kolom tanggal yang baru saja ditulis, supaya
     # tetap terbaca dd/mm/yy (atau dd/mmm/yy utk AK) tanpa bergantung pada
     # format tanggal default locale spreadsheet-nya.
+    # DEBUG: di-log dulu (bukan langsung diam-diam) karena sebelumnya ada
+    # laporan value-nya sudah jadi Date asli tapi tampilannya masih
+    # YYYY-MM-DD (bukan dd/mm/yy) -- ini akan menunjukkan apakah request-nya
+    # benar-benar terkirim & apa balasannya dari Sheets API.
     if date_format_targets:
-        ws.batch_format([
+        payload = [
             {
                 "range": f"{col}{row_num}",
                 "format": {"numberFormat": {"type": "DATE", "pattern": pattern}},
             }
             for col, pattern in date_format_targets
-        ])
+        ]
+        logger.info("batch_format request row=%s payload=%s", row_num, payload)
+        try:
+            resp = ws.batch_format(payload)
+            logger.info("batch_format response row=%s resp=%s", row_num, resp)
+        except Exception:
+            logger.exception("batch_format GAGAL row=%s payload=%s", row_num, payload)
+            raise
 
     return date_col, note_col
 
