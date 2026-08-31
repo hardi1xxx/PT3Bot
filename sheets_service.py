@@ -1193,9 +1193,12 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     #    05/Aug/26) -- bulan berupa huruf supaya tidak pernah tertukar
     #    dengan DD/MM/YY atau MM/DD/YY, termasuk kalau sheet dibuka di
     #    Excel dengan locale tanggal beda.
+    #    Komit Golive (kolom AM) dihitung & ditulis otomatis di sini juga --
+    #    lihat config.COL_KOMIT_GL untuk aturan lengkapnya.
     if z_value in config.PROGRESS_DROP_STATUSES:
         # Drop -> komit FI dihapus (LOP batal, tidak relevan lagi).
         updates.append({"range": f"{config.COL_TARGET_FI}{row_num}", "values": [[""]]})
+        updates.append({"range": f"{config.COL_KOMIT_GL}{row_num}", "values": [[""]]})
     elif z_value not in config.PRE_FINISH_INSTALL_STATUSES:
         # Sudah Finish Instalasi/Golive ke atas -> target_fi diabaikan
         # total (tidak ditulis, tidak dihapus -- dibiarkan apa adanya).
@@ -1210,6 +1213,19 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                     "values": [[parsed_target_fi.isoformat()]],
                 })
                 date_format_targets.append((config.COL_TARGET_FI, "dd/mmm/yy"))
+
+                # Komit GL = Komit FI + 2 hari, KECUALI Komit FI jatuh di
+                # tanggal akhir bulan (30/31) -> Komit GL disamakan persis
+                # dgn Komit FI (tidak ditambah 2 hari).
+                if parsed_target_fi.day in (30, 31):
+                    komit_gl = parsed_target_fi
+                else:
+                    komit_gl = parsed_target_fi + datetime.timedelta(days=2)
+                updates.append({
+                    "range": f"{config.COL_KOMIT_GL}{row_num}",
+                    "values": [[komit_gl.isoformat()]],
+                })
+                date_format_targets.append((config.COL_KOMIT_GL, "dd/mmm/yy"))
 
     # 6. Kategori Drop (kolom BH) — cuma relevan & ditulis kalau status Z
     #    Drop dan ada nilainya (kosong = tidak diubah, sama seperti field

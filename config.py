@@ -256,6 +256,14 @@ COL_WO_TERBIT = "D"
 # daripada estimasi statis. PINDAH dari kolom AK ke AK (permintaan user).
 COL_TARGET_FI = "AK"
 
+# ── Komit Golive (kolom AM) — DIHITUNG OTOMATIS dari Komit FI ──────────
+# Bukan input manual. Setiap kali Komit FI (AK) ditulis/diperbarui, kolom
+# ini ikut dihitung ulang: Komit FI + 2 hari, KECUALI kalau tanggal Komit
+# FI jatuh di tanggal akhir bulan (30 atau 31) -- dalam kasus itu Komit GL
+# disamakan persis dengan Komit FI (tidak ditambah 2 hari), supaya tidak
+# "meluber" ke bulan berikutnya.
+COL_KOMIT_GL = "AM"
+
 # Status Z di mana kolom AK WAJIB terisi setiap kali update (boleh nilai
 # lama yang sudah ada di sheet -- tidak harus diisi ulang tiap update,
 # tapi TIDAK BOLEH kosong sama sekali). Begitu status sudah mencapai
