@@ -16,40 +16,43 @@ COL_STATUS_Z = "Z"    # Status Fisik (main status)
 COL_STATUS_AA = "AA"  # SUB Status Fisik (sub status)
 COL_KETERANGAN_AB = "AB"  # auto-merge formula, never written by the bot
 
-# ── Kolom tambahan BL-BQ (isian opsional, muncul tergantung status Z) ──
-COL_NILAI_PERIJINAN = "BL"  # rupiah
-COL_NILAI_BOQ = "BM"        # rupiah
-COL_IDSW = "BN"             # wajib ada '#', contoh: 9671760#9671766
-COL_ODP_GOLIVE = "BO"       # wajib ada '-' dan '/', contoh: FBE/D08/068 - FBE/D08/071
-COL_JUMLAH_ODP = "BP"       # angka saja
-COL_JUMLAH_PORT = "BQ"      # angka saja
+# ── Kolom tambahan (isian opsional, muncul tergantung status Z) ────────
+COL_NILAI_BOQ_SP = "BL"     # rupiah (dulu Nilai Perijinan -- direlokasi ke AQ)
+COL_NILAI_BOQ_REAL = "BM"   # rupiah (dulu Nilai BOQ)
+COL_IDSW = "AC"             # wajib ada '#', contoh: 9671760#9671766 (dulu BN)
+COL_ODP_GOLIVE = "AD"       # wajib ada '-' dan '/', contoh: FBE/D08/068 - FBE/D08/071 (dulu BO)
+COL_ODP_REAL = "AE"         # angka saja (dulu Jumlah ODP / BP)
+COL_PORT_REAL = "AF"        # angka saja (dulu Jumlah Port / BQ)
+COL_NILAI_PERIJINAN = "AQ"  # rupiah (dulu BL)
 
 # Status Z -> field tambahan mana yang dimunculkan di form update.
 # Semua field ini OPSIONAL: kalau dikosongkan saat update, nilai lama di
 # sheet TIDAK ditimpa (beda dari kolom Z/AA/keterangan yang selalu ditulis).
 EXTRA_FIELDS_BY_STATUS = {
-    "01. PERIJINAN": ["nilai_perijinan", "nilai_boq"],
-    "05. FINISH INSTALASI": ["jumlah_odp", "jumlah_port"],
-    "06. GOLIVE": ["jumlah_odp", "jumlah_port", "idsw", "odp_golive"],
+    "01. PERIJINAN": ["nilai_perijinan", "nilai_boq_sp", "nilai_boq_real"],
+    "05. FINISH INSTALASI": ["odp_real", "port_real"],
+    "06. GOLIVE": ["odp_real", "port_real", "idsw", "odp_golive"],
 }
 
 EXTRA_FIELD_COLUMNS = {
     "nilai_perijinan": COL_NILAI_PERIJINAN,
-    "nilai_boq": COL_NILAI_BOQ,
+    "nilai_boq_sp": COL_NILAI_BOQ_SP,
+    "nilai_boq_real": COL_NILAI_BOQ_REAL,
     "idsw": COL_IDSW,
     "odp_golive": COL_ODP_GOLIVE,
-    "jumlah_odp": COL_JUMLAH_ODP,
-    "jumlah_port": COL_JUMLAH_PORT,
+    "odp_real": COL_ODP_REAL,
+    "port_real": COL_PORT_REAL,
 }
 
 # Metadata per field supaya frontend tinggal render, tidak perlu hardcode.
 EXTRA_FIELD_META = {
     "nilai_perijinan": {"label": "Nilai Perijinan", "col": COL_NILAI_PERIJINAN, "type": "currency", "placeholder": "misal: 5000000"},
-    "nilai_boq":       {"label": "Nilai BOQ", "col": COL_NILAI_BOQ, "type": "currency", "placeholder": "misal: 3500000"},
+    "nilai_boq_sp":    {"label": "Nilai BOQ SP", "col": COL_NILAI_BOQ_SP, "type": "currency", "placeholder": "misal: 3500000"},
+    "nilai_boq_real":  {"label": "Nilai BOQ REAL", "col": COL_NILAI_BOQ_REAL, "type": "currency", "placeholder": "misal: 3500000"},
     "idsw":            {"label": "IDSW", "col": COL_IDSW, "type": "text", "placeholder": "9671760#9671766"},
     "odp_golive":      {"label": "ODP GOLIVE", "col": COL_ODP_GOLIVE, "type": "text", "placeholder": "FBE/D08/068 - FBE/D08/071"},
-    "jumlah_odp":      {"label": "Jumlah ODP", "col": COL_JUMLAH_ODP, "type": "number", "placeholder": "misal: 24"},
-    "jumlah_port":     {"label": "Jumlah Port", "col": COL_JUMLAH_PORT, "type": "number", "placeholder": "misal: 96"},
+    "odp_real":        {"label": "ODP Real", "col": COL_ODP_REAL, "type": "number", "placeholder": "misal: 24"},
+    "port_real":       {"label": "Port Real", "col": COL_PORT_REAL, "type": "number", "placeholder": "misal: 96"},
 }
 
 # ── Dashboard columns ───────────────────────────────────────────────────
@@ -256,13 +259,19 @@ COL_WO_TERBIT = "D"
 # daripada estimasi statis. PINDAH dari kolom AK ke AK (permintaan user).
 COL_TARGET_FI = "AK"
 
-# ── Komit Golive (kolom AM) — DIHITUNG OTOMATIS dari Komit FI ──────────
+# ── Komit Golive (kolom AL) — DIHITUNG OTOMATIS dari Komit FI ──────────
 # Bukan input manual. Setiap kali Komit FI (AK) ditulis/diperbarui, kolom
 # ini ikut dihitung ulang: Komit FI + 2 hari, KECUALI kalau tanggal Komit
 # FI jatuh di tanggal akhir bulan (30 atau 31) -- dalam kasus itu Komit GL
 # disamakan persis dengan Komit FI (tidak ditambah 2 hari), supaya tidak
 # "meluber" ke bulan berikutnya.
-COL_KOMIT_GL = "AM"
+COL_KOMIT_GL = "AL"
+
+# Kolom baru -- DIDEFINISIKAN dulu, BELUM ada logika bot yang menulis ke
+# sini (menyusul kemudian). Jangan pakai dua constant ini di kode lain
+# sebelum logikanya benar-benar diimplementasikan.
+COL_TANGGAL_UT = "AM"     # Tanggal UT -- logika penulisan otomatis: TBD
+COL_TANGGAL_BAST = "AN"   # Tanggal BAST -- logika penulisan otomatis: TBD
 
 # Status Z di mana kolom AK WAJIB terisi setiap kali update (boleh nilai
 # lama yang sudah ada di sheet -- tidak harus diisi ulang tiap update,

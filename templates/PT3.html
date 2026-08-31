@@ -73,6 +73,11 @@
   .rekap-tab-btn:hover { color: var(--text); }
   .rekap-tab-btn.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
 
+  /* Tombol grouping TSEL: gabungkan baris Regional BANTEN & JAKARTA jadi satu baris */
+  .rekap-tsel-btn { margin-left: auto; border: 1px solid #16a34a; background: var(--panel-alt); color: #16a34a; font-weight: 700; font-size: 0.82rem; padding: 7px 16px; border-radius: 8px; cursor: pointer; }
+  .rekap-tsel-btn:hover { background: rgba(22, 163, 74, 0.1); }
+  .rekap-tsel-btn.active { background: #16a34a; color: #fff; border-color: #16a34a; }
+
   /* Toggle "Hanya Order Priority" di header filter branch */
   .priority-filter-toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 0.8rem; font-weight: 700; color: var(--text); padding: 4px 10px 4px 4px; border-radius: 999px; border: 1px solid var(--border, #2a3550); background: var(--panel-alt); }
   .priority-filter-toggle input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
@@ -154,6 +159,7 @@
   <div class="rekap-tabs" id="rekapTabs">
     <button type="button" class="rekap-tab-btn active" data-rekap-view="branch">Per Branch</button>
     <button type="button" class="rekap-tab-btn" data-rekap-view="batch">Per Batch</button>
+    <button type="button" class="rekap-tsel-btn" id="tselGroupBtn" title="Gabungkan baris Regional BANTEN &amp; JAKARTA jadi satu baris (TSEL)">Grouping (TSEL)</button>
   </div>
   <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="pivotTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
@@ -437,6 +443,15 @@ function escJs(s) {
 // daftar ini ditaruh di akhir, urut abjad.
 const REGIONAL_ORDER_PREFIXES = ['BANTEN', 'JAKARTA', 'EASTERN', 'JABAR'];
 
+// Tombol "Grouping (TSEL)": saat aktif, semua Regional yang namanya diawali
+// BANTEN atau JAKARTA (termasuk variasi penulisan seperti "Jakarta" vs
+// "JAKARTA" di kolom T) digabung jadi satu baris Regional gabungan.
+// Branch dengan nama sama di dalam regional-regional yang digabung ini
+// dijumlahkan (mis. "SERANG" yang muncul di BANTEN & di JAKARTA).
+const TSEL_MERGE_PREFIXES = [REGIONAL_ORDER_PREFIXES[0], REGIONAL_ORDER_PREFIXES[1]]; // BANTEN, JAKARTA
+const TSEL_GROUP_LABEL = 'BANTEN & JAKARTA (TSEL)';
+let tselGroupingActive = false;
+
 function regionalSortRank(name) {
   const upper = (name || '').toUpperCase();
   const idx = REGIONAL_ORDER_PREFIXES.findIndex(p => upper.startsWith(p));
@@ -451,7 +466,7 @@ function sortRegionals(names) {
   });
 }
 
-function computeRegionalBranchTable(filteredRows, pivotColumns) {
+function computeRegionalBranchTable(filteredRows, pivotColumns, groupTsel) {
   // regional -> branch -> status -> { lop, port }, plus regional-level &
   // grand totals (Port dari kolom AG, sama field 'port' yang sudah dipakai
   // tabel "Rekap Port & LOP per Batch").
@@ -487,9 +502,43 @@ function computeRegionalBranchTable(filteredRows, pivotColumns) {
     grandTotal[key].port += (r.port || 0);
   });
 
+  // Grouping (TSEL): gabungkan semua Regional yang cocok dengan prefix
+  // BANTEN / JAKARTA jadi satu baris Regional bernama TSEL_GROUP_LABEL,
+  // termasuk menjumlahkan Branch dengan nama sama lintas regional asal.
+  let tselSourceRegionals = null;
+  if (groupTsel) {
+    const mergeKeys = Object.keys(regionals).filter(name => {
+      const upper = (name || '').toUpperCase();
+      return TSEL_MERGE_PREFIXES.some(p => upper.startsWith(p));
+    });
+    if (mergeKeys.length > 0) {
+      const mergedBranches = {};
+      const mergedTotals = emptyStatusMap();
+      mergeKeys.forEach(name => {
+        pivotColumns.forEach(s => {
+          mergedTotals[s].lop += regionalTotals[name][s].lop;
+          mergedTotals[s].port += regionalTotals[name][s].port;
+        });
+        Object.keys(regionals[name]).forEach(branch => {
+          if (!mergedBranches[branch]) mergedBranches[branch] = emptyStatusMap();
+          pivotColumns.forEach(s => {
+            mergedBranches[branch][s].lop += regionals[name][branch][s].lop;
+            mergedBranches[branch][s].port += regionals[name][branch][s].port;
+          });
+        });
+        delete regionals[name];
+        delete regionalTotals[name];
+      });
+      regionals[TSEL_GROUP_LABEL] = mergedBranches;
+      regionalTotals[TSEL_GROUP_LABEL] = mergedTotals;
+      tselSourceRegionals = mergeKeys;
+    }
+  }
+
   const orderedRegionals = sortRegionals(Object.keys(regionals)).map(regional => ({
     regional,
     totals: regionalTotals[regional],
+    sourceRegionals: regional === TSEL_GROUP_LABEL ? tselSourceRegionals : null,
     branches: Object.keys(regionals[regional]).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
       .map(branch => ({ branch, values: regionals[regional][branch] })),
   }));
@@ -511,16 +560,22 @@ function rbRowTotal(values, pivotColumns) {
 // cuma nambah dimensi regional/branch di samping batch/column.
 function setRegionalCellFilter(regional, branch, column) {
   if (regional === null && branch === null && column === null) { clearCellFilter(); return; }
-  activeCellFilter = { regional, branch, column };
+  // Kalau baris yang diklik adalah baris gabungan TSEL, `regional` berupa
+  // array berisi nama-nama Regional asli (mis. ['BANTEN','JAKARTA','Jakarta']).
+  if (Array.isArray(regional)) {
+    activeCellFilter = { regionalList: regional, branch, column };
+  } else {
+    activeCellFilter = { regional, branch, column };
+  }
   refreshAll();
   const locCard = document.getElementById('locList');
   if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function renderRegionalBranchTable(filteredRows, pivotColumns) {
+function renderRegionalBranchTable(filteredRows, pivotColumns, groupTsel) {
   const el = document.getElementById('regionalBranchTableWrap');
   if (!el) return;
-  const { orderedRegionals, grandTotal } = computeRegionalBranchTable(filteredRows, pivotColumns);
+  const { orderedRegionals, grandTotal } = computeRegionalBranchTable(filteredRows, pivotColumns, groupTsel);
 
   if (!orderedRegionals.length) {
     el.innerHTML = '<div class="empty-state">Belum ada data Regional (kolom T) / Branch (kolom S).</div>';
@@ -548,8 +603,12 @@ function renderRegionalBranchTable(filteredRows, pivotColumns) {
     return out;
   }
 
-  orderedRegionals.forEach(({ regional, totals, branches }) => {
-    const regionalArg = `'${escJs(regional)}'`;
+  orderedRegionals.forEach(({ regional, totals, branches, sourceRegionals }) => {
+    // Regional gabungan TSEL diklik pakai daftar (array) nama Regional asli
+    // di kolom T, biar filter daftar lokasi di bawah tetap ikut semuanya.
+    const regionalArg = (sourceRegionals && sourceRegionals.length)
+      ? `[${sourceRegionals.map(r => `'${escJs(r)}'`).join(',')}]`
+      : `'${escJs(regional)}'`;
     html += `<tr class="rb-regional-row"><td>${esc(regional)}</td>${cellsHtml(totals, regionalArg, 'null')}</tr>`;
 
     branches.forEach(({ branch, values }) => {
@@ -590,7 +649,8 @@ function renderCellFilterChip() {
   if (!activeCellFilter) { el.innerHTML = ''; return; }
   const parts = [];
   if (activeCellFilter.batch) parts.push(`Batch: ${esc(activeCellFilter.batch)}`);
-  if (activeCellFilter.regional) parts.push(`Regional: ${esc(activeCellFilter.regional)}`);
+  if (activeCellFilter.regionalList) parts.push(`Regional: ${esc(activeCellFilter.regionalList.join(' + '))}`);
+  else if (activeCellFilter.regional) parts.push(`Regional: ${esc(activeCellFilter.regional)}`);
   if (activeCellFilter.branch) parts.push(`Branch: ${esc(activeCellFilter.branch)}`);
   if (activeCellFilter.column) parts.push(`Status: ${esc(activeCellFilter.column.replace(/^\d+\.\s*/, ''))}`);
   el.innerHTML = `<span class="badge status">${parts.join(' · ')}
@@ -624,7 +684,8 @@ function downloadLocListCsv() {
   const filterParts = [];
   if (activeCellFilter) {
     if (activeCellFilter.batch) filterParts.push(activeCellFilter.batch);
-    if (activeCellFilter.regional) filterParts.push(activeCellFilter.regional);
+    if (activeCellFilter.regionalList) filterParts.push(activeCellFilter.regionalList.join('_'));
+    else if (activeCellFilter.regional) filterParts.push(activeCellFilter.regional);
     if (activeCellFilter.branch) filterParts.push(activeCellFilter.branch);
     if (activeCellFilter.column) filterParts.push(activeCellFilter.column.replace(/^\d+\.\s*/, ''));
   }
@@ -647,7 +708,8 @@ function getLocListRows(filteredRows) {
     return filteredRows.filter(r => {
       if (activeCellFilter.column && r.pivot_group !== activeCellFilter.column) return false;
       if (activeCellFilter.batch && r.batch !== activeCellFilter.batch) return false;
-      if (activeCellFilter.regional && r.regional !== activeCellFilter.regional) return false;
+      if (activeCellFilter.regionalList && !activeCellFilter.regionalList.includes(r.regional)) return false;
+      if (!activeCellFilter.regionalList && activeCellFilter.regional && r.regional !== activeCellFilter.regional) return false;
       if (activeCellFilter.branch && r.branch !== activeCellFilter.branch) return false;
       return true;
     });
@@ -786,7 +848,7 @@ function refreshAll() {
   const pivotColumns = dashboardCache.pivot_columns || dashboardCache.statuses;
   const { portTable, lopTable } = computePivotTables(filtered, dashboardCache.batches, pivotColumns, 'pivot_group');
   renderCombinedTable(document.getElementById('pivotTableWrap'), portTable, lopTable, pivotColumns);
-  renderRegionalBranchTable(filtered, pivotColumns);
+  renderRegionalBranchTable(filtered, pivotColumns, tselGroupingActive);
 
   try {
     if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
@@ -870,6 +932,13 @@ document.getElementById('rekapTabs').addEventListener('click', (e) => {
   setRekapView(btn.dataset.rekapView);
 });
 setRekapView('branch');
+
+// Tombol "Grouping (TSEL)": toggle gabungkan baris Regional BANTEN & JAKARTA
+document.getElementById('tselGroupBtn').addEventListener('click', () => {
+  tselGroupingActive = !tselGroupingActive;
+  document.getElementById('tselGroupBtn').classList.toggle('active', tselGroupingActive);
+  refreshAll();
+});
 
 // ── Bar chart: distribusi status pekerjaan (jumlah order/LOP + Port per status) ──
 function renderChart(lopTable, portTable, statuses) {

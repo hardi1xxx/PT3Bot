@@ -1063,12 +1063,12 @@ def validate_extra_field(key: str, raw: str):
     if not raw:
         return True, ""
 
-    if key in ("nilai_perijinan", "nilai_boq"):
+    if key in ("nilai_perijinan", "nilai_boq_sp", "nilai_boq_real"):
         if not _clean_number(raw):
             return False, "Harus berupa angka (rupiah)."
         return True, ""
 
-    if key in ("jumlah_odp", "jumlah_port"):
+    if key in ("odp_real", "port_real"):
         if not raw.isdigit():
             return False, "Harus berupa angka saja."
         return True, ""
@@ -1168,12 +1168,13 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
         updates.append({"range": f"{date_col}{row_num}", "values": [[date_str_iso]]})
         date_format_targets.append((date_col, "dd/mm/yy"))
 
-    # 4. Field tambahan BL-BQ — OPSIONAL: cuma ditulis kalau ada isinya.
+    # 4. Field tambahan — OPSIONAL: cuma ditulis kalau ada isinya.
     #    Kosong = tidak diubah, nilai lama di sheet tetap dipertahankan.
-    #    nilai_perijinan/nilai_boq/jumlah_odp/jumlah_port berisi angka polos
-    #    -> otomatis jadi tipe NUMBER begitu ditulis dgn USER_ENTERED (lihat
-    #    batch_update paling bawah). idsw/odp_golive tetap TEXT karena
-    #    formatnya selalu mengandung karakter non-angka ('#', '-', '/').
+    #    nilai_perijinan/nilai_boq_sp/nilai_boq_real/odp_real/port_real
+    #    berisi angka polos -> otomatis jadi tipe NUMBER begitu ditulis dgn
+    #    USER_ENTERED (lihat batch_update paling bawah). idsw/odp_golive
+    #    tetap TEXT karena formatnya selalu mengandung karakter non-angka
+    #    ('#', '-', '/').
     if extra_fields:
         for key, raw_value in extra_fields.items():
             raw_value = (raw_value or "").strip()
@@ -1182,7 +1183,7 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
             col = config.EXTRA_FIELD_COLUMNS.get(key)
             if not col:
                 continue
-            if key in ("nilai_perijinan", "nilai_boq"):
+            if key in ("nilai_perijinan", "nilai_boq_sp", "nilai_boq_real"):
                 raw_value = _clean_number(raw_value)  # simpan angka polos, tanpa "Rp"/titik ribuan
                 if not raw_value:
                     continue
@@ -1193,7 +1194,7 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     #    05/Aug/26) -- bulan berupa huruf supaya tidak pernah tertukar
     #    dengan DD/MM/YY atau MM/DD/YY, termasuk kalau sheet dibuka di
     #    Excel dengan locale tanggal beda.
-    #    Komit Golive (kolom AM) dihitung & ditulis otomatis di sini juga --
+    #    Komit Golive (kolom AL) dihitung & ditulis otomatis di sini juga --
     #    lihat config.COL_KOMIT_GL untuk aturan lengkapnya.
     if z_value in config.PROGRESS_DROP_STATUSES:
         # Drop -> komit FI dihapus (LOP batal, tidak relevan lagi).
