@@ -481,10 +481,17 @@ function renderTargetTreeSvg(rowsForMonth){
   const leafRightX = colX + colW + leafGap;
   const leafLeftX = colX - leafGap - leafW;
 
-  const rightSlot = TARGET_TREE_H / rfiLeafKeys.length;
-  const rightCYs = rfiLeafKeys.map((_,i)=> rightSlot*i + rightSlot/2);
-  const leftSlot = TARGET_TREE_H / nyRfiLeafKeys.length;
-  const leftCYs = nyRfiLeafKeys.map((_,i)=> leftSlot*i + leftSlot/2);
+  // Dulu slot vertikal leaf dihitung mulai dari 0 (TARGET_TREE_H/jumlah),
+  // jadi leaf PALING ATAS nempel ke tepi atas SVG. Sekarang dikasih
+  // margin atas-bawah (LEAF_MARGIN) supaya seluruh list leaf ke-tengah
+  // secara vertikal di dalam tinggi card, tidak lagi mepet ke tabel/tepi.
+  const LEAF_MARGIN = 24;
+  const rightUsableH = TARGET_TREE_H - LEAF_MARGIN*2;
+  const rightSlot = rightUsableH / rfiLeafKeys.length;
+  const rightCYs = rfiLeafKeys.map((_,i)=> LEAF_MARGIN + rightSlot*i + rightSlot/2);
+  const leftUsableH = TARGET_TREE_H - LEAF_MARGIN*2;
+  const leftSlot = leftUsableH / nyRfiLeafKeys.length;
+  const leftCYs = nyRfiLeafKeys.map((_,i)=> LEAF_MARGIN + leftSlot*i + leftSlot/2);
 
   const colRightX = colX + colW;
   const leafRightBreakX = colRightX + leafGap/2;
@@ -729,12 +736,13 @@ function parseIdrNumber(raw){
   return isNaN(n) ? 0 : n;
 }
 
-// Format ala "29.400,0M" -- SELALU dalam satuan juta (M), bukan
-// auto-scale B/M/K lagi. Dipakai di 3 kotak Nilai PO / Nilai BoQ
-// (Survey) / Nilai Comcase.
+// Format ala "29,41 M" -- SEKARANG dalam satuan MILIAR (miliar = "M" di
+// Indonesia, bukan million), 2 angka desimal, koma sebagai pemisah
+// desimal (id-ID). Dipakai di 3 kotak Nilai PO / Nilai BoQ (Survey) /
+// Nilai Comcase.
 function fmtCompactIdr(n){
-  const million = n / 1e6;
-  return million.toLocaleString('id-ID', { minimumFractionDigits:1, maximumFractionDigits:1 }) + "M";
+  const miliar = n / 1e9;
+  return miliar.toLocaleString('id-ID', { minimumFractionDigits:2, maximumFractionDigits:2 }) + " M";
 }
 
 // Ambil paragraf PALING ATAS saja dari isian "Note Progress" -- sel Sheets
