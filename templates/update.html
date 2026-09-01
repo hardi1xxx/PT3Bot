@@ -42,6 +42,34 @@
 </div>
 
 <form method="post" class="card" style="max-width:640px; margin:0 auto;" enctype="multipart/form-data">
+  <style>
+    /* Dropdown pencarian Nama Mitra (kolom Y) -- daftar bisa ~500 nama,
+       jadi dibuat combobox kecil dgn hasil filter dibatasi (lihat JS),
+       BUKAN <select> berisi 500 <option> yang bikin render awal berat. */
+    .mitra-combo { position: relative; }
+    .mitra-combo input[type="text"] { width: 100%; box-sizing: border-box; }
+    .mitra-combo-list {
+      display: none; position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+      max-height: 220px; overflow-y: auto; background: var(--panel, #fff);
+      border: 1px solid var(--border, #2a3550); border-radius: 8px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    }
+    .mitra-combo-list.open { display: block; }
+    .mitra-combo-item { padding: 7px 10px; font-size: 0.85rem; cursor: pointer; }
+    .mitra-combo-item:hover, .mitra-combo-item.active { background: var(--brand-blue, #29467a); color: #fff; }
+    .mitra-combo-empty { padding: 7px 10px; font-size: 0.8rem; color: var(--muted); }
+    .mitra-jenis-hint { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    .mitra-jenis-hint strong { color: var(--text); }
+  </style>
+
+  <div class="field mitra-combo" id="mitraComboField">
+    <label for="mitra_search">Nama Mitra (kolom Y)</label>
+    <input type="text" id="mitra_search" placeholder="-- ketik utk cari nama mitra --" autocomplete="off">
+    <input type="hidden" name="nama_mitra" id="nama_mitra" value="{{ snapshot.mitra or '' }}">
+    <div class="mitra-combo-list" id="mitraComboList"></div>
+    <div class="mitra-jenis-hint" id="mitraJenisHint"></div>
+  </div>
+
   <div class="field">
     <label for="status_z">Status (kolom Z)</label>
     <select name="status_z" id="status_z" required>
@@ -163,5 +191,122 @@ function onStatusZChange(preserveAa) {
 
 statusZSelect.addEventListener('change', () => onStatusZChange(false));
 onStatusZChange(true); // render awal: pertahankan sub status yang sedang tersimpan
+
+// ── Nama Mitra (kolom Y): combobox pencarian + auto Jenis Pekerjaan (kolom X) ──
+// Daftar mitra (sheet MASTER DATA kolom H, ~500 baris) DIAMBIL VIA FETCH
+// setelah halaman render (bukan ditulis inline ke HTML) supaya load awal
+// halaman tetap ringan -- backend juga sudah cache 10 menit jadi fetch ini
+// murah. Hasil filter yang ditampilkan juga dibatasi (MITRA_MAX_RESULTS)
+// biar list dropdown tidak pernah nge-render ratusan <div> sekaligus.
+const MITRA_MAX_RESULTS = 30;
+const MITRA_NAME_INSOURCE = 'PT.TELKOM AKSES';
+const MITRA_NAME_MANDOR = 'MANDOR';
+let MITRA_OPTIONS = [];
+let mitraActiveIndex = -1;
+
+const mitraSearchInput = document.getElementById('mitra_search');
+const mitraHiddenInput = document.getElementById('nama_mitra');
+const mitraComboList = document.getElementById('mitraComboList');
+const mitraJenisHint = document.getElementById('mitraJenisHint');
+
+// Pratinjau saja (nilai final tetap dihitung ulang & ditulis di server saat
+// simpan) -- biar user langsung lihat kolom X bakal keisi apa sebelum submit.
+function jenisPekerjaanPreview(namaMitra) {
+  const key = (namaMitra || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  if (!key) return '';
+  if (key === MITRA_NAME_INSOURCE) return 'Swakelola_Insource';
+  if (key === MITRA_NAME_MANDOR) return 'Swakelola_Mandor';
+  return 'Mitra';
+}
+
+function updateMitraJenisHint() {
+  const val = mitraHiddenInput.value;
+  const jenis = jenisPekerjaanPreview(val);
+  mitraJenisHint.innerHTML = val
+    ? `Jenis Pekerjaan (kolom X) akan otomatis terisi: <strong>${jenis}</strong>`
+    : '';
+}
+
+function closeMitraList() {
+  mitraComboList.classList.remove('open');
+  mitraComboList.innerHTML = '';
+  mitraActiveIndex = -1;
+}
+
+function selectMitra(name) {
+  mitraHiddenInput.value = name;
+  mitraSearchInput.value = name;
+  updateMitraJenisHint();
+  closeMitraList();
+}
+
+function renderMitraList(query) {
+  const q = query.trim().toLowerCase();
+  const matches = (q ? MITRA_OPTIONS.filter(name => name.toLowerCase().includes(q)) : MITRA_OPTIONS)
+    .slice(0, MITRA_MAX_RESULTS);
+  mitraActiveIndex = -1;
+
+  if (!MITRA_OPTIONS.length) {
+    mitraComboList.innerHTML = '<div class="mitra-combo-empty">Memuat daftar mitra...</div>';
+    mitraComboList.classList.add('open');
+    return;
+  }
+  if (!matches.length) {
+    mitraComboList.innerHTML = '<div class="mitra-combo-empty">Mitra tidak ditemukan.</div>';
+    mitraComboList.classList.add('open');
+    return;
+  }
+  mitraComboList.innerHTML = matches.map(name =>
+    `<div class="mitra-combo-item" data-name="${name.replace(/"/g, '&quot;')}">${name}</div>`
+  ).join('');
+  mitraComboList.classList.add('open');
+}
+
+mitraSearchInput.addEventListener('focus', () => renderMitraList(mitraSearchInput.value));
+mitraSearchInput.addEventListener('input', () => {
+  mitraHiddenInput.value = ''; // ketik ulang = belum ada pilihan valid sampai diklik dari list
+  updateMitraJenisHint();
+  renderMitraList(mitraSearchInput.value);
+});
+mitraSearchInput.addEventListener('keydown', (e) => {
+  const items = Array.from(mitraComboList.querySelectorAll('.mitra-combo-item'));
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    mitraActiveIndex = Math.min(mitraActiveIndex + 1, items.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    mitraActiveIndex = Math.max(mitraActiveIndex - 1, 0);
+  } else if (e.key === 'Enter') {
+    if (mitraActiveIndex >= 0) { e.preventDefault(); selectMitra(items[mitraActiveIndex].dataset.name); }
+    return;
+  } else if (e.key === 'Escape') {
+    closeMitraList();
+    return;
+  } else {
+    return;
+  }
+  items.forEach((el, i) => el.classList.toggle('active', i === mitraActiveIndex));
+  items[mitraActiveIndex].scrollIntoView({ block: 'nearest' });
+});
+mitraComboList.addEventListener('mousedown', (e) => {
+  const item = e.target.closest('.mitra-combo-item[data-name]');
+  if (item) selectMitra(item.dataset.name);
+});
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('mitraComboField').contains(e.target)) closeMitraList();
+});
+
+// Render awal: nilai Nama Mitra yang sudah tersimpan (kalau ada) langsung
+// tampil di kotak teks & preview kolom X, TANPA nunggu fetch selesai.
+mitraSearchInput.value = mitraHiddenInput.value;
+updateMitraJenisHint();
+
+fetch('/api/mitra-options')
+  .then(r => r.json())
+  .then(json => {
+    if (json.ok) MITRA_OPTIONS = json.data || [];
+  })
+  .catch(() => { /* dropdown tetap bisa dipakai manual (isi teks bebas) kalau fetch gagal */ });
 </script>
 {% endblock %}

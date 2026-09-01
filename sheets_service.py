@@ -331,6 +331,77 @@ def get_semesta_worksheet():
     return _semesta_worksheet
 
 
+_master_data_worksheet = None
+
+
+def get_master_data_worksheet():
+    """Sheet 'MASTER DATA' -- tab lain, spreadsheet yang sama. Sumber daftar
+    Nama Mitra (kolom H, ~500 baris) buat dropdown pencarian di update.html."""
+    global _master_data_worksheet
+    if _master_data_worksheet is None:
+        client = get_client()
+        sh = client.open_by_key(config.SPREADSHEET_ID)
+        _master_data_worksheet = sh.worksheet(config.SHEET_NAME_MASTER_DATA)
+    return _master_data_worksheet
+
+
+_mitra_options_cache = {"ts": 0.0, "data": []}
+_mitra_options_lock = threading.Lock()
+_MITRA_OPTIONS_CACHE_TTL_SECONDS = 600  # 10 menit -- daftar mitra jarang berubah
+
+
+def get_mitra_options():
+    """Daftar Nama Mitra unik dari sheet MASTER DATA kolom H, buat dropdown
+    pencarian Nama Mitra (kolom Y) di update.html. Sengaja dibuat SERINGAN
+    mungkin karena bisa ~500 baris dan dipanggil tiap form update dibuka:
+      1. Cuma minta 1 kolom (H) ke Google Sheets API -- BUKAN get_all_values()
+         (whole-sheet) seperti sheet lain -- jadi 1 round-trip kecil saja.
+      2. Hasilnya di-cache 10 menit lintas semua request/user (bukan per-baris),
+         jadi request berikutnya dalam 10 menit itu tidak ke Google sama sekali.
+    """
+    now = time.time()
+    with _mitra_options_lock:
+        cached = _mitra_options_cache["data"]
+        if cached and (now - _mitra_options_cache["ts"]) < _MITRA_OPTIONS_CACHE_TTL_SECONDS:
+            return cached
+
+    ws = get_master_data_worksheet()
+    col = config.COL_MASTER_DATA_MITRA
+    start_row = config.DATA_START_ROW_MASTER_DATA
+    values = ws.get(f"{col}{start_row}:{col}")  # 1 kolom, open-ended ke bawah
+
+    seen = set()
+    options = []
+    for row in values:
+        raw = (row[0] if row else "").strip()
+        if not raw:
+            continue
+        key = raw.upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append(raw)
+    options.sort(key=lambda s: s.lower())
+
+    with _mitra_options_lock:
+        _mitra_options_cache["ts"] = now
+        _mitra_options_cache["data"] = options
+    return options
+
+
+def resolve_jenis_pekerjaan(mitra_name: str) -> str:
+    """Nama Mitra (kolom Y) -> Jenis Pekerjaan (kolom X), diisi OTOMATIS.
+    Dicocokkan case-insensitive & spasi berlebih diabaikan terhadap
+    config.MITRA_JENIS_PEKERJAAN_MAP ('PT.TELKOM AKSES' -> Swakelola_Insource,
+    'MANDOR' -> Swakelola_Mandor); nama mitra lain -> 'Mitra'
+    (config.MITRA_DEFAULT_JENIS_PEKERJAAN)."""
+    key = re.sub(r"\s+", " ", (mitra_name or "").strip()).upper()
+    for name, jenis in config.MITRA_JENIS_PEKERJAAN_MAP.items():
+        if re.sub(r"\s+", " ", name.strip()).upper() == key:
+            return jenis
+    return config.MITRA_DEFAULT_JENIS_PEKERJAAN
+
+
 _pt2_worksheet = None
 
 
@@ -944,6 +1015,7 @@ def get_row_snapshot(row_num: int):
         f"{config.COL_WO_TERBIT}{row_num}",
         f"{config.COL_TARGET_FI}{row_num}",
         f"{config.COL_BH}{row_num}",
+        f"{config.COL_MITRA}{row_num}",
     ]
     extra_refs = [f"{col}{row_num}" for col in config.EXTRA_FIELD_COLUMNS.values()]
     note_col_refs = [f"{m['note_col']}{row_num}" for m in config.STATUS_COLUMN_MAP.values()]
@@ -1020,6 +1092,7 @@ def get_row_snapshot(row_num: int):
         "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
         "target_fi_required": z_val in config.PRE_FINISH_INSTALL_STATUSES,
         "kategori_drop": v(f"{config.COL_BH}{row_num}") or None,
+        "mitra": v(f"{config.COL_MITRA}{row_num}") or None,
         "documents": documents,
     }
 
@@ -1088,7 +1161,8 @@ def validate_extra_field(key: str, raw: str):
 
 def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                    extra_fields: dict = None, target_fi: str = None,
-                   kategori_drop: str = None, when: datetime.date = None):
+                   kategori_drop: str = None, mitra_value: str = None,
+                   when: datetime.date = None):
     """
     Apply one update to a row:
       1. Write Z and AA dropdown values.
@@ -1109,6 +1183,12 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
       6. Kalau z_value ada di config.PROGRESS_DROP_STATUSES dan
          `kategori_drop` diisi, tulis ke kolom BH (validasi wajib-isi
          terpisah lewat validate_kategori_drop(), BUKAN di sini).
+      7. Nama Mitra (kolom Y) -- OPSIONAL sama seperti field tambahan lain
+         (kosong = tidak diubah). Begitu diisi, Jenis Pekerjaan (kolom X)
+         ikut ditulis OTOMATIS lewat resolve_jenis_pekerjaan(): mitra
+         "PT.TELKOM AKSES" -> "Swakelola_Insource", "MANDOR" ->
+         "Swakelola_Mandor", nama mitra lain -> "Mitra". User tidak mengisi
+         kolom X manual dari form ini sama sekali.
     Returns the (date_col, note_col) pair used.
 
     Semua pembacaan nilai lama (note lama, tanggal lama) dan SEMUA penulisan
@@ -1234,6 +1314,14 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     kategori_drop = (kategori_drop or "").strip()
     if z_value in config.PROGRESS_DROP_STATUSES and kategori_drop:
         updates.append({"range": f"{config.COL_BH}{row_num}", "values": [[kategori_drop]]})
+
+    # 7. Nama Mitra (kolom Y) + Jenis Pekerjaan (kolom X, otomatis) --
+    #    kosong = tidak diubah, sama seperti field opsional lain di atas.
+    mitra_value = (mitra_value or "").strip()
+    if mitra_value:
+        updates.append({"range": f"{config.COL_MITRA}{row_num}", "values": [[mitra_value]]})
+        jenis_pekerjaan = resolve_jenis_pekerjaan(mitra_value)
+        updates.append({"range": f"{config.COL_JENIS_PEKERJAAN}{row_num}", "values": [[jenis_pekerjaan]]})
 
     # PENTING: value_input_option="USER_ENTERED" -- default gspread adalah
     # "RAW", yang menyimpan APAPUN yang dikirim sebagai teks literal apa

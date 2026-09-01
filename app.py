@@ -101,6 +101,18 @@ def api_dashboard():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/mitra-options")
+def api_mitra_options():
+    """Daftar Nama Mitra (sheet MASTER DATA kolom H, ~500 baris) buat
+    dropdown pencarian kolom Y di update.html. Di-cache 10 menit di
+    sheets_service, jadi endpoint ini ringan dipanggil berkali-kali."""
+    try:
+        options = sheets_service.get_mitra_options()
+        return jsonify({"ok": True, "data": options})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/row/<int:row_num>")
 def api_row(row_num):
     try:
@@ -147,6 +159,7 @@ def api_row_update(row_num):
     extra_fields = payload.get("extra_fields") or {}
     target_fi = (payload.get("target_fi") or "").strip()
     kategori_drop = (payload.get("kategori_drop") or "").strip()
+    mitra_value = (payload.get("nama_mitra") or "").strip()
 
     if not z_value:
         return jsonify({"ok": False, "error": "Status (kolom Z) wajib dipilih."}), 400
@@ -180,7 +193,7 @@ def api_row_update(row_num):
     try:
         date_col, note_col = sheets_service.update_status(
             row_num, z_value, aa_value, note_text, extra_fields=extra_fields,
-            target_fi=target_fi, kategori_drop=kategori_drop
+            target_fi=target_fi, kategori_drop=kategori_drop, mitra_value=mitra_value,
         )
         return jsonify({"ok": True, "date_col": date_col, "note_col": note_col})
     except Exception as e:
@@ -473,6 +486,7 @@ def do_update(row_num):
     note_text = request.form.get("note_text", "").strip()
     target_fi = request.form.get("target_fi", "").strip()
     kategori_drop = request.form.get("kategori_drop", "").strip()
+    mitra_value = request.form.get("nama_mitra", "").strip()
 
     if not z_value:
         flash("Status (kolom Z) wajib dipilih.", "error")
@@ -518,7 +532,8 @@ def do_update(row_num):
 
     try:
         date_col, note_col = sheets_service.update_status(
-            row_num, z_value, aa_value, note_text, target_fi=target_fi, kategori_drop=kategori_drop
+            row_num, z_value, aa_value, note_text, target_fi=target_fi,
+            kategori_drop=kategori_drop, mitra_value=mitra_value,
         )
         flash(f"Berhasil diupdate ke kolom {note_col} (tanggal di {date_col}).", "success")
     except Exception as e:
