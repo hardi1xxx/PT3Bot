@@ -347,40 +347,66 @@ def get_master_data_worksheet():
 
 _mitra_options_cache = {"ts": 0.0, "data": []}
 _mitra_options_lock = threading.Lock()
+_mitra_options_fetch_lock = threading.Lock()  # single-flight: cegah beberapa user nembak Sheets API bersamaan pas cache cold
 _MITRA_OPTIONS_CACHE_TTL_SECONDS = 600  # 10 menit -- daftar mitra jarang berubah
 
 
 def get_mitra_options():
     """Daftar Nama Mitra unik dari sheet MASTER DATA kolom H, buat dropdown
-    pencarian Nama Mitra (kolom Y) di update.html. Sengaja dibuat SERINGAN
-    mungkin karena bisa ~500 baris dan dipanggil tiap form update dibuka:
+    pencarian Nama Mitra (kolom Y) di update.html & panel Update Status.
+    Sengaja dibuat SERINGAN & SECEPAT mungkin karena bisa ~500 baris dan
+    dipanggil tiap form/panel update dibuka:
       1. Cuma minta 1 kolom (H) ke Google Sheets API -- BUKAN get_all_values()
-         (whole-sheet) seperti sheet lain -- jadi 1 round-trip kecil saja.
-      2. Hasilnya di-cache 10 menit lintas semua request/user (bukan per-baris),
-         jadi request berikutnya dalam 10 menit itu tidak ke Google sama sekali.
+         (whole-sheet) seperti sheet lain.
+      2. Range-nya DIBATASI eksplisit (config.MITRA_ROWS_MAX_SCAN baris),
+         BUKAN open-ended ("H2:H") -- range terbuka membuat Google Sheets
+         API scan sampai baris terakhir GRID sheet itu (bisa ribuan/puluhan
+         ribu baris kosong kalau sheet-nya pernah di-extend), itulah
+         penyebab utama loading "Memuat daftar mitra..." terasa lama.
+      3. Hasilnya di-cache 10 menit lintas semua request/user (bukan
+         per-baris) -- request berikutnya dalam 10 menit itu tidak ke
+         Google sama sekali.
+      4. Kalau lagi cold (belum ke-cache) dan ada BEBERAPA user buka panel
+         bersamaan, cuma 1 yang benar-benar fetch ke Google (single-flight
+         lock, sama pola dgn _cached_get_all_values) -- yang lain nunggu
+         hasilnya, bukan ikut nembak request sendiri-sendiri.
     """
     now = time.time()
-    with _mitra_options_lock:
+
+    def _fresh_cached():
         cached = _mitra_options_cache["data"]
         if cached and (now - _mitra_options_cache["ts"]) < _MITRA_OPTIONS_CACHE_TTL_SECONDS:
             return cached
+        return None
 
-    ws = get_master_data_worksheet()
-    col = config.COL_MASTER_DATA_MITRA
-    start_row = config.DATA_START_ROW_MASTER_DATA
-    values = ws.get(f"{col}{start_row}:{col}")  # 1 kolom, open-ended ke bawah
+    with _mitra_options_lock:
+        hit = _fresh_cached()
+    if hit is not None:
+        return hit
 
-    seen = set()
-    options = []
-    for row in values:
-        raw = (row[0] if row else "").strip()
-        if not raw:
-            continue
-        key = raw.upper()
-        if key in seen:
-            continue
-        seen.add(key)
-        options.append(raw)
+    with _mitra_options_fetch_lock:
+        with _mitra_options_lock:
+            hit = _fresh_cached()
+        if hit is not None:
+            return hit
+
+        ws = get_master_data_worksheet()
+        col = config.COL_MASTER_DATA_MITRA
+        start_row = config.DATA_START_ROW_MASTER_DATA
+        end_row = start_row + config.MITRA_ROWS_MAX_SCAN - 1
+        values = ws.get(f"{col}{start_row}:{col}{end_row}")  # 1 kolom, range DIBATASI (lihat catatan #2 di atas)
+
+        seen = set()
+        options = []
+        for row in values:
+            raw = (row[0] if row else "").strip()
+            if not raw:
+                continue
+            key = raw.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            options.append(raw)
     options.sort(key=lambda s: s.lower())
 
     with _mitra_options_lock:

@@ -65,6 +65,18 @@ COL_BRANCH = "S"   # Branch, dipakai untuk filter checkbox di tabel Rekap Port &
 
 # Kolom tambahan untuk tabel "Detail Lokasi" di bawah chart
 COL_MITRA = "Y"    # Nama Mitra
+COL_JENIS_PEKERJAAN = "X"  # Jenis Pekerjaan -- diisi OTOMATIS dari Nama Mitra (kolom Y), lihat resolve_jenis_pekerjaan()
+
+# Nama Mitra (kolom Y) -> Jenis Pekerjaan (kolom X), diisi otomatis saat
+# update.html menyimpan. 2 nama ini dicocokkan case-insensitive & abaikan
+# spasi berlebih; nama mitra apapun SELAIN 2 ini -> MITRA_DEFAULT_JENIS_PEKERJAAN.
+MITRA_NAME_INSOURCE = "PT.TELKOM AKSES"
+MITRA_NAME_MANDOR = "MANDOR"
+MITRA_JENIS_PEKERJAAN_MAP = {
+    MITRA_NAME_INSOURCE: "Swakelola_Insource",
+    MITRA_NAME_MANDOR: "Swakelola_Mandor",
+}
+MITRA_DEFAULT_JENIS_PEKERJAAN = "Mitra"
 COL_ODP_L = "L"    # ODP
 COL_PORT_M = "M"   # PORT
 COL_BOQ_N = "N"    # BoQ
@@ -376,6 +388,19 @@ STATUS_LOP_GOLIVE = "5. Golive"
 STATUS_LOP_DROP_MOM = "6.3. Drop MOM"
 # Potensi (di ringkasan FBB) = lokasi yang sudah di status ini (siap/berpotensi Golive).
 STATUS_POTENSI = "3.OGP DEPLOY"
+
+# ── Sheet "MASTER DATA" (sumber daftar Nama Mitra utk dropdown di
+# update.html) -- tab TERPISAH dari "Detail PT3", spreadsheet yang sama.
+SHEET_NAME_MASTER_DATA = os.environ.get("SHEET_NAME_MASTER_DATA", "MASTER DATA")
+HEADER_ROW_MASTER_DATA = 1     # asumsi: header di baris 1 -- konfirmasi & ubah kalau beda
+DATA_START_ROW_MASTER_DATA = 2  # asumsi: data mulai baris 2 -- konfirmasi & ubah kalau beda
+COL_MASTER_DATA_MITRA = "H"    # daftar Nama Mitra (~500 baris) buat dropdown pencarian kolom Y
+# Batas ATAS baca kolom H -- range yang dikirim ke Sheets API SELALU
+# dibatasi eksplisit sampai baris ini (BUKAN open-ended "H2:H"), supaya
+# tidak ikut nge-scan sampai baris terakhir grid sheet (bisa jauh lebih
+# besar dari jumlah data mitra beneran) -- naikkan kalau mitra sudah lebih
+# dari ini.
+MITRA_ROWS_MAX_SCAN = 3000
 
 # ── Sheet "TARGET" ───────────────────────────────────────────────────
 SHEET_NAME_TARGET = os.environ.get("SHEET_NAME_TARGET", "TARGET")

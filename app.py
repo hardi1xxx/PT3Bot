@@ -1,6 +1,8 @@
 import json
 import traceback
 import datetime
+import threading
+import logging
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response, session
 from werkzeug.utils import secure_filename
@@ -12,6 +14,25 @@ import auth_service
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
+
+logger = logging.getLogger(__name__)
+
+
+def _prewarm_mitra_options():
+    """Pemanasan cache daftar Nama Mitra (MASTER DATA kolom H) di background
+    begitu proses app ini nyala -- supaya user PERTAMA yang buka panel
+    Update Status/update.html setelah deploy/restart tidak ikut kena
+    latensi fetch pertama ke Google Sheets ("Memuat daftar mitra..." lama).
+    Dijalankan di thread terpisah biar TIDAK menunda startup Flask/gunicorn
+    kalau kredensial/Sheets API lagi lambat atau belum siap; gagal pun tidak
+    apa-apa -- endpoint /api/mitra-options tetap fetch normal saat dipanggil."""
+    try:
+        sheets_service.get_mitra_options()
+    except Exception:
+        logger.exception("Prewarm mitra options gagal (non-fatal, akan di-fetch ulang saat dibutuhkan)")
+
+
+threading.Thread(target=_prewarm_mitra_options, daemon=True).start()
 
 
 # ── Definisi project untuk halaman "preview all project" (index.html) ──

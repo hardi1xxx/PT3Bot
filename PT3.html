@@ -1,0 +1,2534 @@
+{% extends "base.html" %}
+{% block menu_pt3 %}active{% endblock %}
+{% block page_title %}Dashboard PT3{% endblock %}
+{% block page_sub %}Rekap Order, Port & LOP per Batch — status fisik terkini{% endblock %}
+
+{% block content %}
+
+<style>
+  .split-half { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 22px; }
+  @media (max-width: 920px) { .split-half { grid-template-columns: 1fr; } }
+  .split-half > .card { margin-bottom: 0; }
+
+  /* Chart Distribusi Status + Trend Golive (kiri, ditumpuk) berdampingan
+     dengan Kalender Target FI (kanan) -- tinggi kolom kiri & kanan dibuat
+     sama (grid default: align-items stretch), lalu 2 chart di kiri
+     membagi rata sisa tinggi itu supaya proporsinya tidak njomplang. */
+  .split-half-fi { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
+  @media (max-width: 920px) { .split-half-fi { grid-template-columns: 1fr; } }
+  .split-half-fi > .card, .split-half-fi > .fi-left-col { margin-bottom: 0; }
+  .fi-left-col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  .fi-left-col > .card { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .mini-chart-title { font-weight: 800; font-size: 0.95rem; color: var(--text); margin-bottom: 10px; }
+  .golive-trend-gran { display: flex; gap: 4px; }
+  .golive-trend-gran button { padding: 3px 10px; font-size: 0.75rem; border-radius: 6px; }
+  .golive-trend-gran button.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
+  .mini-chart-wrap { position: relative; flex: 1 1 auto; min-height: 140px; }
+
+  /* Legend Distribusi Status: grid rapi 2 kolom biar ringkas & tidak
+     membuat kartu jadi terlalu tinggi / bentrok dgn kartu di bawahnya. */
+  #chartLegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 5px 14px; margin-top: 10px; row-gap: 6px; }
+  #chartLegend span { display: flex; align-items: center; gap: 5px; font-size: 0.72rem; line-height: 1.3; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #chartLegend span strong { color: var(--text); font-weight: 700; }
+  #chartLegend .dot { flex: 0 0 auto; }
+
+  /* Trend Golive: kartu bergradasi biru, teks putih (ikut referensi desain) */
+  .trend-golive-card { background: linear-gradient(160deg, #1c3466 0%, #2c4c8a 55%, #35569c 100%); border-radius: 14px; }
+  .trend-golive-card .mini-chart-title { color: #fff; }
+  .trend-golive-card .mini-chart-title .hint { color: rgba(255,255,255,0.65) !important; }
+  .trend-golive-card .golive-trend-gran button { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.28); }
+  .trend-golive-card .golive-trend-gran button:hover { background: rgba(255,255,255,0.22); }
+  .trend-golive-card .golive-trend-gran button.active { background: #f5b400; color: #1c3466; border-color: #f5b400; }
+
+  .fi-cal-card { display: flex; flex-direction: column; }
+  .fi-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .fi-cal-title { font-weight: 800; font-size: 0.95rem; color: var(--text); }
+  .fi-cal-nav { display: flex; align-items: center; gap: 6px; }
+  .fi-cal-nav button { border: none; background: var(--panel-alt); color: var(--text); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; font-size: 0.85rem; line-height: 1; }
+  .fi-cal-nav button:hover { background: var(--brand-blue, #29467a); color: #fff; }
+  .fi-cal-month-label { font-weight: 700; font-size: 0.82rem; color: var(--muted); min-width: 108px; text-align: center; }
+  .fi-cal-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.7rem; color: var(--muted); margin-bottom: 10px; }
+  .fi-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .fi-cal-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .fi-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; flex: 1 1 auto; align-content: start; }
+  .fi-cal-daylabel { text-align: center; font-size: 0.64rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 0 6px; }
+  .fi-cal-cell { min-height: 52px; border-radius: 8px; background: var(--panel-alt); padding: 4px 5px; font-size: 0.72rem; display: flex; flex-direction: column; gap: 3px; }
+  .fi-cal-cell.fi-outside { opacity: 0.35; }
+  .fi-cal-cell.fi-today { outline: 2px solid var(--brand-blue, #29467a); outline-offset: -2px; }
+  .fi-cal-daynum { font-weight: 700; color: var(--text); }
+  .fi-cal-badges { display: flex; flex-wrap: wrap; gap: 3px; }
+  .fi-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 16px; padding: 0 4px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; color: #fff; cursor: pointer; line-height: 1; }
+  .fi-badge.fi-over { background: #dc2626; }
+  .fi-badge.fi-upcoming { background: var(--brand-blue, #29467a); }
+  .fi-badge.fi-done { background: #16a34a; }
+  .fi-cal-empty { font-size: 0.78rem; color: var(--muted); padding: 10px 2px; }
+  .fi-cal-month-btn { border: 1px solid var(--brand-blue, #29467a); color: var(--brand-blue, #29467a); font-weight: 700; width: 100%; text-align: center; }
+  .fi-cal-month-btn:hover { background: var(--brand-blue, #29467a); color: #fff; }
+  .fi-cal-summary { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.8rem; color: var(--muted); margin: 4px 0 12px; }
+  .fi-cal-summary strong { color: var(--text); }
+
+  /* Tab Rekap Port & LOP: Per Branch (default) / Per Batch */
+  .rekap-tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--border, #2a3550); padding-bottom: 10px; }
+  .rekap-tab-btn { border: 1px solid var(--border, #2a3550); background: var(--panel-alt); color: var(--muted); font-weight: 700; font-size: 0.82rem; padding: 7px 16px; border-radius: 8px; cursor: pointer; }
+  .rekap-tab-btn:hover { color: var(--text); }
+  .rekap-tab-btn.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
+
+  /* Dropdown pencarian Nama Mitra (kolom Y) di panel Update Status --
+     daftar bisa ~500 nama, jadi combobox kecil dgn hasil filter dibatasi
+     (lihat JS), BUKAN <select> berisi 500 <option>. */
+  .mitra-combo { position: relative; }
+  .mitra-combo input[type="text"] { width: 100%; box-sizing: border-box; }
+  .mitra-combo-list {
+    display: none; position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+    max-height: 220px; overflow-y: auto; background: var(--panel, #fff);
+    border: 1px solid var(--border, #2a3550); border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  }
+  .mitra-combo-list.open { display: block; }
+  .mitra-combo-item { padding: 7px 10px; font-size: 0.85rem; cursor: pointer; }
+  .mitra-combo-item:hover, .mitra-combo-item.active { background: var(--brand-blue, #29467a); color: #fff; }
+  .mitra-combo-empty { padding: 7px 10px; font-size: 0.8rem; color: var(--muted); }
+  .mitra-jenis-hint { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+  .mitra-jenis-hint strong { color: var(--text); }
+
+  /* Tombol grouping TSEL: gabungkan baris Regional BANTEN & JAKARTA jadi satu baris */
+  .rekap-tsel-btn { margin-left: auto; border: 1px solid #16a34a; background: var(--panel-alt); color: #16a34a; font-weight: 700; font-size: 0.82rem; padding: 7px 16px; border-radius: 8px; cursor: pointer; }
+  .rekap-tsel-btn:hover { background: rgba(22, 163, 74, 0.1); }
+  .rekap-tsel-btn.active { background: #16a34a; color: #fff; border-color: #16a34a; }
+
+  /* Toggle "Hanya Order Priority" di header filter branch */
+  .priority-filter-toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 0.8rem; font-weight: 700; color: var(--text); padding: 4px 10px 4px 4px; border-radius: 999px; border: 1px solid var(--border, #2a3550); background: var(--panel-alt); }
+  .priority-filter-toggle input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+  .priority-filter-switch { position: relative; width: 32px; height: 18px; border-radius: 999px; background: #cbd5e1; transition: background 0.15s ease; flex: 0 0 auto; }
+  .priority-filter-switch::before { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.15s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+  .priority-filter-toggle input:checked + .priority-filter-switch { background: #dc2626; }
+  .priority-filter-toggle input:checked + .priority-filter-switch::before { transform: translateX(14px); }
+  .priority-filter-toggle #priorityFilterCount { font-size: 0.65rem; padding: 1px 6px; }
+
+  .rb-table { width: 100%; border-collapse: collapse; }
+  .rb-table th, .rb-table td { padding: 7px 10px; text-align: right; font-size: 0.82rem; border-bottom: 1px solid var(--border, #2a3550); white-space: nowrap; }
+  .rb-table thead th { background: var(--brand-blue, #29467a); color: #fff; text-align: center; position: sticky; top: 0; }
+  .rb-table th:first-child, .rb-table td:first-child { text-align: left; }
+  .rb-table tbody tr.rb-regional-row { font-weight: 800; background: var(--panel-alt); }
+  .rb-table tbody tr.rb-regional-row td { border-top: 2px solid var(--brand-blue, #29467a); border-bottom: 2px solid var(--brand-blue, #29467a); }
+  .rb-table tbody tr.rb-branch-row td:first-child { padding-left: 26px; color: var(--muted); font-weight: 400; }
+  .rb-table tbody tr.rb-total-row { font-weight: 800; background: var(--panel-alt); }
+  .rb-table tbody tr.rb-total-row td { border-top: 2px solid var(--brand-blue, #29467a); }
+  .rb-table td.rb-total-col, .rb-table th.rb-total-col { font-weight: 800; }
+</style>
+
+<!-- Stat cards -->
+<div class="stat-grid" id="statGrid">
+  <div class="stat-card">
+    <div class="stat-label">Total Order</div>
+    <div class="stat-value" id="statTotalOrder">–</div>
+    <div class="stat-foot">Jumlah baris terisi (kolom A)</div>
+  </div>
+  <div class="stat-card alt">
+    <div class="stat-label">Total Port</div>
+    <div class="stat-value" id="statTotalPort">–</div>
+    <div class="stat-foot">Jumlah port (kolom AG)</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Lokasi Sedang Berjalan</div>
+    <div class="stat-value" id="statActive">–</div>
+    <div class="stat-foot">Status 01. Perijinan – 05. Finish Instalasi</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">Progress Finish Instalasi</div>
+    <div class="stat-value" id="statProgress">–</div>
+    <div class="stat-foot">% lokasi aktif yang sudah Finish Instalasi</div>
+  </div>
+</div>
+
+<!-- Branch filter (collapsible), mempengaruhi SEMUA bagian di bawah -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="branch-filter-head" id="filterCardHeader" style="cursor:pointer; margin-bottom:0;">
+    <label style="cursor:pointer;">Filter Branch (kolom S) — <span id="filterSummary">memuat...</span></label>
+    <div class="branch-filter-actions">
+      <label class="priority-filter-toggle" id="priorityFilterWrap" onclick="event.stopPropagation();">
+        <input type="checkbox" id="priorityFilterCheckbox">
+        <span class="priority-filter-switch"></span>
+        <span>&#9888; Hanya Order Priority <span class="hint" style="font-weight:400;">(kolom BX)</span></span>
+        <span class="badge" id="priorityFilterCount" style="background:#dc2626;">0</span>
+      </label>
+      <button type="button" class="btn-ghost btn-sm" id="filterToggleBtn">Tampilkan &#9662;</button>
+    </div>
+  </div>
+  <div id="filterCardBody" style="display:none; margin-top:12px;">
+    <div class="branch-filter-actions" style="margin-bottom:8px;">
+      <button type="button" class="btn-ghost btn-sm" id="branchSelectAll">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="branchClearAll">Kosongkan</button>
+    </div>
+    <div class="branch-filter-grid" id="branchFilterGrid">
+      <div class="skeleton">Memuat branch...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Rekap Port & LOP: tab Branch (default) / Batch, biar halaman tidak
+     terlalu panjang ke bawah -->
+<div class="section-title">
+  Rekap Port &amp; LOP
+  <span class="hint" id="rekapTableHint">baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya</span>
+  <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">&#8635; Refresh</button>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="rekap-tabs" id="rekapTabs">
+    <button type="button" class="rekap-tab-btn active" data-rekap-view="branch">Per Branch</button>
+    <button type="button" class="rekap-tab-btn" data-rekap-view="batch">Per Batch</button>
+    <button type="button" class="rekap-tsel-btn" id="tselGroupBtn" title="Gabungkan baris Regional BANTEN &amp; JAKARTA jadi satu baris (TSEL)">Grouping (TSEL)</button>
+  </div>
+  <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
+  <div class="pivot-table-wrap" id="pivotTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
+</div>
+
+<!-- Chart + Trend Golive (kiri) & Kalender Target FI (kolom AK, kanan) -->
+<div class="section-title">Distribusi Status Pekerjaan &amp; Kalender Target FI</div>
+<div class="split-half-fi">
+  <div class="fi-left-col">
+    <div class="card chart-card">
+      <div class="mini-chart-title">Distribusi Status Pekerjaan</div>
+      <div class="mini-chart-wrap"><canvas id="statusChart"></canvas></div>
+      <div class="chart-legend" id="chartLegend"></div>
+    </div>
+
+    <div class="card trend-golive-card">
+      <div class="mini-chart-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+        <span>Trend Golive <span class="hint" style="font-weight:400;">(kolom BD)</span></span>
+        <div class="golive-trend-gran" id="goliveTrendGranButtons">
+          <button type="button" data-gran="year" class="btn-ghost btn-sm">Tahun</button>
+          <button type="button" data-gran="month" class="btn-ghost btn-sm">Bulan</button>
+          <button type="button" data-gran="week" class="btn-ghost btn-sm">Minggu</button>
+          <button type="button" data-gran="day" class="btn-ghost btn-sm">Hari</button>
+        </div>
+      </div>
+      <div class="mini-chart-wrap"><canvas id="goliveTrendChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card fi-cal-card">
+    <div class="fi-cal-head">
+      <div class="fi-cal-title">Kalender Target FI &amp; Golive <span class="hint" style="font-weight:400;">(AK / BD)</span></div>
+      <div class="fi-cal-nav">
+        <button type="button" id="fiCalPrevBtn" title="Bulan sebelumnya">&#8249;</button>
+        <div class="fi-cal-month-label" id="fiCalMonthLabel">–</div>
+        <button type="button" id="fiCalNextBtn" title="Bulan berikutnya">&#8250;</button>
+        <button type="button" class="btn-ghost btn-sm" id="fiCalTodayBtn" style="margin-left:4px;">Hari ini</button>
+      </div>
+    </div>
+    <div class="fi-cal-legend">
+      <span><span class="dot" style="background:#dc2626;"></span>Lewat Target FI, belum Golive</span>
+      <span><span class="dot" style="background:var(--brand-blue,#29467a);"></span>Terjadwal (Target FI)</span>
+      <span><span class="dot" style="background:#16a34a;"></span>Sudah Golive (GOLIVE/UT/REKON/BAST)</span>
+    </div>
+    <button type="button" class="btn-ghost btn-sm fi-cal-month-btn" id="fiCalMonthListBtn" style="align-self:flex-start; margin-bottom:10px;">&#128203; Cek Target Bulan Ini</button>
+    <div class="fi-cal-grid" id="fiCalGrid"><div class="skeleton">Memuat kalender...</div></div>
+  </div>
+</div>
+
+<!-- Detail Lokasi table (di bawah chart) -->
+<div class="section-title">
+  Detail Lokasi Sedang Berjalan
+  <span class="hint">IHLD, Lokasi, Batch, Nama Mitra &amp; kolom L–O (ODP/PORT/BoQ/CPP)</span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="detailTableWrap" style="max-height:420px; overflow-y:auto;">
+    <div class="skeleton">Memuat data...</div>
+  </div>
+</div>
+
+<!-- Kategori Drop (kolom BH) -->
+<div class="section-title">Kategori Drop</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="bh-grid" id="bhGrid"><div class="skeleton">Memuat data...</div></div>
+</div>
+
+<!-- Search + update -->
+<div class="section-title">Lokasi Sedang Berjalan &amp; Update Status</div>
+<div class="split-grid">
+  <div class="card">
+    <label for="q">Cari IHLD / Lokasi IHLD</label>
+    <input type="text" id="q" placeholder="Ketik untuk mencari, atau lihat semua di bawah...">
+    <div id="cellFilterChip" style="margin-top:8px;"></div>
+    <div class="loc-list" id="locList" style="margin-top: 12px;">
+      <div class="skeleton">Memuat lokasi aktif...</div>
+    </div>
+  </div>
+
+  <div class="card" id="updatePanel">
+    <div class="empty-state">Pilih lokasi di sebelah kiri untuk lihat riwayat &amp; update status.</div>
+  </div>
+</div>
+
+<!-- Kategori Drop modal: list of rows -> detail (kolom I..AB) -->
+<div class="modal-overlay" id="bhModalOverlay">
+  <div class="modal-box" id="bhModalBox"></div>
+</div>
+
+<!-- SheetJS (parsing xlsx/xls di browser -- gratis, client-side, dipakai
+     preview BOQ supaya tidak perlu buka Google Sheets/Office Online). -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<!-- BOQ preview modal: PDF pakai iframe native browser, xlsx/xls pakai
+     SheetJS -> tabel HTML (lihat openBoqModal). -->
+<div class="modal-overlay" id="boqModalOverlay">
+  <div class="modal-box" id="boqModalBox" style="max-width:1100px; width:94vw; padding:0; overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--panel-alt);">
+      <strong id="boqModalTitle" style="font-size:0.85rem;">Preview BOQ</strong>
+      <button type="button" class="btn-ghost btn-sm" onclick="closeBoqModal()">Tutup &times;</button>
+    </div>
+    <div id="boqModalBody" style="width:100%; height:75vh; overflow:auto; background:var(--panel, #111);"></div>
+  </div>
+</div>
+
+<!-- Leaflet (peta gratis, OpenStreetMap -- tanpa API key/billing) + plugin
+     KML, dipakai buat preview KML (ganti iframe Drive yang tidak bisa
+     render KML sebagai peta, cuma bisa tampilkan teks XML mentah). -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-kml@1.0.1/L.KML.js"></script>
+
+<!-- KML preview modal: peta Leaflet (bukan lagi iframe Drive -- Drive
+     tidak punya renderer peta untuk KML di iframe preview-nya). -->
+<div class="modal-overlay" id="kmlModalOverlay">
+  <div class="modal-box" id="kmlModalBox" style="max-width:900px; width:92vw; padding:0; overflow:hidden;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--panel-alt);">
+      <strong id="kmlModalTitle" style="font-size:0.85rem;">Preview KML</strong>
+      <button type="button" class="btn-ghost btn-sm" onclick="closeKmlModal()">Tutup &times;</button>
+    </div>
+    <div id="kmlModalMap" style="width:100%; height:70vh; position:relative; background:#0b1220;">
+      <div id="kmlModalMsg" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:0.85rem; padding:16px; text-align:center; pointer-events:none;"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script>
+const STATUS_COLORS = {
+  '01. PERIJINAN': '#e30613',
+  '02. PERSIAPAN': '#d97706',
+  '03. MATDEV': '#29467a',
+  '04. INSTALASI': '#0ea5e9',
+  '05. FINISH INSTALASI': '#16a34a',
+};
+
+let dashboardCache = null;   // { statuses, batches, branches, rows }
+// PENTING: tabel "Golive — [periode]" (Trend Golive) menampilkan "Nama ODP"
+// dari field `r.odp_bo` (kolom BO), BUKAN `r.odp_l` (kolom L, itu dipakai di
+// tempat lain seperti tabel Detail Lokasi). Field `odp_bo` ini harus
+// disediakan oleh backend saat membangun `dashboardCache.rows` -- kalau
+// belum ada di response backend, kolom "Nama ODP" di modal ini akan kosong.
+// Begitu juga filter "Hanya Order Priority" memakai field `r.priority_bx`
+// (kolom BX) -- backend perlu memetakan kolom BX ke field ini juga.
+
+let selectedRow = null;
+let statusChart = null;
+let bhCurrentLabel = null;
+
+// ── Kalender Target FI (kolom AK) ─────────────────────────────────
+const FI_CAL_MONTH_NAMES = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const FI_CAL_DAY_LABELS = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+const today0 = new Date(); today0.setHours(0,0,0,0);
+let fiCalYear = today0.getFullYear();
+let fiCalMonth = today0.getMonth(); // 0-indexed
+let fiCalDayIndex = {}; // iso date -> array of row records, refreshed on every render
+let fiCalCurrentIso = null; // dipakai modal 'kembali'
+
+function fmtNum(n) {
+  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n || 0);
+}
+
+function esc(s) {
+  return (s === null || s === undefined ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ── Aging (WO terbit / kolom D) + progress %/deadline per tahapan ────
+function fmtDateISO(iso) {
+  if (!iso) return '-';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function renderAgingProgress(snapshot) {
+  if (snapshot.progress_stage_label === 'Drop') {
+    return `<div class="badge" style="background:#7f1d1d; margin-bottom:10px; display:inline-block;">Status: Drop — di luar progress tahapan</div>`;
+  }
+  if (!snapshot.wo_terbit) {
+    return `<div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:10px;">WO terbit (kolom D) belum terisi — aging &amp; deadline belum bisa dihitung.</div>`;
+  }
+
+  const pct = snapshot.progress_percent == null ? 0 : Math.round(snapshot.progress_percent);
+  const barColor = snapshot.is_overdue ? '#dc2626' : (pct >= 100 ? '#16a34a' : 'var(--brand-blue, #29467a)');
+  const agingLabel = snapshot.aging_days == null ? '-' : `${fmtNum(snapshot.aging_days)} hari`;
+
+  return `
+    <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; font-size:0.8rem; color:var(--muted); margin-bottom:6px;">
+        <span>WO terbit: <strong style="color:var(--text);">${esc(snapshot.wo_terbit)}</strong></span>
+        <span>Aging: <strong style="color:var(--text);">${agingLabel}</strong></span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
+        <span>Progress — ${esc(snapshot.progress_stage_label || '-')}</span>
+        <span><strong>${pct}%</strong></span>
+      </div>
+      <div style="background:#0002; border-radius:6px; overflow:hidden; height:8px; margin-bottom:6px;">
+        <div style="width:${Math.min(pct,100)}%; height:100%; background:${barColor};"></div>
+      </div>
+      <div style="font-size:0.78rem; color:var(--muted);">
+        Deadline tahap ini: <strong style="color:${snapshot.is_overdue ? '#dc2626' : 'var(--text)'};">${fmtDateISO(snapshot.current_stage_deadline)}</strong>
+        ${snapshot.is_overdue ? ' <span class="badge" style="background:#dc2626;">Lewat deadline</span>' : ''}
+        &nbsp;·&nbsp; Target Golive: ${fmtDateISO(snapshot.final_deadline)}
+        ${snapshot.target_fi ? `<br>Berdasarkan komit Target Finish Instalasi (AK): <strong style="color:var(--text);">${esc(snapshot.target_fi)}</strong>` : '<br>Berdasarkan estimasi WO terbit (belum ada komit di kolom AK)'}
+      </div>
+    </div>
+  `;
+}
+
+// ── Single source of truth: filter raw rows by selected branches ─────
+let priorityOnlyFilter = false;
+function getBranchFilteredRows() {
+  if (!dashboardCache) return [];
+  const selected = new Set(getSelectedBranches());
+  return dashboardCache.rows.filter(r => selected.has(r.branch));
+}
+function getFilteredRows() {
+  const rows = getBranchFilteredRows();
+  if (priorityOnlyFilter) return rows.filter(r => !!r.priority_bx);
+  return rows;
+}
+
+// ── Stat cards ─────────────────────────────────────────────────────
+function refreshStats(filteredRows) {
+  const totalOrder = filteredRows.filter(r => r.has_order).length;
+  const totalPort = filteredRows.reduce((sum, r) => sum + (r.port || 0), 0);
+  const active = filteredRows.filter(r => r.status);
+  const finishCount = active.filter(r => r.status === '05. FINISH INSTALASI').length;
+  const pct = active.length ? Math.round((finishCount / active.length) * 100) : 0;
+
+  document.getElementById('statTotalOrder').textContent = fmtNum(totalOrder);
+  document.getElementById('statTotalPort').textContent = fmtNum(totalPort);
+  document.getElementById('statActive').textContent = fmtNum(active.length);
+  document.getElementById('statProgress').textContent = pct + '%';
+}
+
+// ── Combined Port + LOP pivot table ────────────────────────────────
+function renderCombinedTable(el, portTable, lopTable, statuses) {
+  const lopByBatch = {};
+  lopTable.forEach(r => { lopByBatch[r.batch] = r; });
+
+  let html = '<table class="pivot pivot-combined"><thead>';
+  html += '<tr><th rowspan="2">BATCH</th>';
+  statuses.forEach(s => { html += `<th colspan="2">${esc(s.replace(/^\d+\.\s*/, ''))}</th>`; });
+  html += '<th colspan="2" class="total-col">TOTAL</th></tr>';
+  html += '<tr>';
+  statuses.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th class="total-col">LOP</th><th class="total-col">Port</th>';
+  html += '</tr></thead><tbody>';
+
+  portTable.forEach(portRow => {
+    const lopRow = lopByBatch[portRow.batch] || { values: {}, total: 0 };
+    const isTotal = portRow.batch === 'TOTAL';
+    const batchArg = isTotal ? 'null' : `'${escJs(portRow.batch)}'`;
+    html += `<tr${isTotal ? ' class="grand-total-row"' : ''}><th>${esc(portRow.batch)}</th>`;
+    statuses.forEach(s => {
+      const lopV = lopRow.values[s] || 0;
+      const portV = portRow.values[s] || 0;
+      const clickAttr = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk filter daftar di bawah" onclick="setCellFilter(${batchArg}, '${escJs(s)}')"`;
+      html += `<td ${clickAttr}>${fmtNum(lopV)}</td><td ${clickAttr}>${fmtNum(portV)}</td>`;
+    });
+    if (!isTotal) {
+      const totalClickAttr = `class="total-col pivot-clickable" style="cursor:pointer;" title="Klik untuk filter daftar di bawah" onclick="setCellFilter(${batchArg}, null)"`;
+      html += `<td ${totalClickAttr}>${fmtNum(lopRow.total)}</td><td ${totalClickAttr}>${fmtNum(portRow.total)}</td>`;
+    } else {
+      html += `<td class="total-col">${fmtNum(lopRow.total)}</td><td class="total-col">${fmtNum(portRow.total)}</td>`;
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function escJs(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// ── Rekap Regional & Branch (kolom T & S) per status ──────────────
+// Urutan regional yang diminta: BANTEN, JAKARTA, EASTERN, JABAR -- dicocokkan
+// dengan awalan nama regional asli di sheet (mis. "EASTERN JABOTABEK" tetap
+// cocok dengan "EASTERN"), case-insensitive. Regional yang tidak ada di
+// daftar ini ditaruh di akhir, urut abjad.
+const REGIONAL_ORDER_PREFIXES = ['BANTEN', 'JAKARTA', 'EASTERN', 'JABAR'];
+
+// Tombol "Grouping (TSEL)": saat aktif, semua Regional yang namanya diawali
+// BANTEN atau JAKARTA (termasuk variasi penulisan seperti "Jakarta" vs
+// "JAKARTA" di kolom T) digabung jadi satu baris Regional gabungan.
+// Branch dengan nama sama di dalam regional-regional yang digabung ini
+// dijumlahkan (mis. "SERANG" yang muncul di BANTEN & di JAKARTA).
+const TSEL_MERGE_PREFIXES = [REGIONAL_ORDER_PREFIXES[0], REGIONAL_ORDER_PREFIXES[1]]; // BANTEN, JAKARTA
+const TSEL_GROUP_LABEL = 'BANTEN & JAKARTA (TSEL)';
+let tselGroupingActive = false;
+
+function regionalSortRank(name) {
+  const upper = (name || '').toUpperCase();
+  const idx = REGIONAL_ORDER_PREFIXES.findIndex(p => upper.startsWith(p));
+  return idx === -1 ? REGIONAL_ORDER_PREFIXES.length : idx;
+}
+
+function sortRegionals(names) {
+  return [...names].sort((a, b) => {
+    const rankDiff = regionalSortRank(a) - regionalSortRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    return a.toLowerCase().localeCompare(b.toLowerCase());
+  });
+}
+
+function computeRegionalBranchTable(filteredRows, pivotColumns, groupTsel) {
+  // regional -> branch -> status -> { lop, port }, plus regional-level &
+  // grand totals (Port dari kolom AG, sama field 'port' yang sudah dipakai
+  // tabel "Rekap Port & LOP per Batch").
+  const emptyStatusMap = () => {
+    const m = {};
+    pivotColumns.forEach(s => { m[s] = { lop: 0, port: 0 }; });
+    return m;
+  };
+
+  const regionals = {};
+  const regionalTotals = {};
+  const grandTotal = emptyStatusMap();
+
+  filteredRows.forEach(r => {
+    const key = r.pivot_group;
+    if (!key) return;
+    const regional = r.regional || '(TANPA REGIONAL)';
+    const branch = r.branch || '(TANPA BRANCH)';
+
+    if (!regionals[regional]) {
+      regionals[regional] = {};
+      regionalTotals[regional] = emptyStatusMap();
+    }
+    if (!regionals[regional][branch]) {
+      regionals[regional][branch] = emptyStatusMap();
+    }
+
+    regionals[regional][branch][key].lop += 1;
+    regionals[regional][branch][key].port += (r.port || 0);
+    regionalTotals[regional][key].lop += 1;
+    regionalTotals[regional][key].port += (r.port || 0);
+    grandTotal[key].lop += 1;
+    grandTotal[key].port += (r.port || 0);
+  });
+
+  // Grouping (TSEL): gabungkan semua Regional yang cocok dengan prefix
+  // BANTEN / JAKARTA jadi satu baris Regional bernama TSEL_GROUP_LABEL,
+  // termasuk menjumlahkan Branch dengan nama sama lintas regional asal.
+  let tselSourceRegionals = null;
+  if (groupTsel) {
+    const mergeKeys = Object.keys(regionals).filter(name => {
+      const upper = (name || '').toUpperCase();
+      return TSEL_MERGE_PREFIXES.some(p => upper.startsWith(p));
+    });
+    if (mergeKeys.length > 0) {
+      const mergedBranches = {};
+      const mergedTotals = emptyStatusMap();
+      mergeKeys.forEach(name => {
+        pivotColumns.forEach(s => {
+          mergedTotals[s].lop += regionalTotals[name][s].lop;
+          mergedTotals[s].port += regionalTotals[name][s].port;
+        });
+        Object.keys(regionals[name]).forEach(branch => {
+          if (!mergedBranches[branch]) mergedBranches[branch] = emptyStatusMap();
+          pivotColumns.forEach(s => {
+            mergedBranches[branch][s].lop += regionals[name][branch][s].lop;
+            mergedBranches[branch][s].port += regionals[name][branch][s].port;
+          });
+        });
+        delete regionals[name];
+        delete regionalTotals[name];
+      });
+      regionals[TSEL_GROUP_LABEL] = mergedBranches;
+      regionalTotals[TSEL_GROUP_LABEL] = mergedTotals;
+      tselSourceRegionals = mergeKeys;
+    }
+  }
+
+  const orderedRegionals = sortRegionals(Object.keys(regionals)).map(regional => ({
+    regional,
+    totals: regionalTotals[regional],
+    sourceRegionals: regional === TSEL_GROUP_LABEL ? tselSourceRegionals : null,
+    branches: Object.keys(regionals[regional]).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .map(branch => ({ branch, values: regionals[regional][branch] })),
+  }));
+
+  return { orderedRegionals, grandTotal };
+}
+
+function rbRowTotal(values, pivotColumns) {
+  return pivotColumns.reduce((acc, s) => {
+    acc.lop += values[s].lop;
+    acc.port += values[s].port;
+    return acc;
+  }, { lop: 0, port: 0 });
+}
+
+// Klik angka (LOP atau Port) di tabel Regional & Branch -> filter daftar
+// "Lokasi Sedang Berjalan & Update Status" di bawah, sama seperti klik
+// tabel "Rekap Port & LOP per Batch" -- pakai activeCellFilter yang sama,
+// cuma nambah dimensi regional/branch di samping batch/column.
+function setRegionalCellFilter(regional, branch, column) {
+  if (regional === null && branch === null && column === null) { clearCellFilter(); return; }
+  // Kalau baris yang diklik adalah baris gabungan TSEL, `regional` berupa
+  // array berisi nama-nama Regional asli (mis. ['BANTEN','JAKARTA','Jakarta']).
+  if (Array.isArray(regional)) {
+    activeCellFilter = { regionalList: regional, branch, column };
+  } else {
+    activeCellFilter = { regional, branch, column };
+  }
+  refreshAll();
+  const locCard = document.getElementById('locList');
+  if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderRegionalBranchTable(filteredRows, pivotColumns, groupTsel) {
+  const el = document.getElementById('regionalBranchTableWrap');
+  if (!el) return;
+  const { orderedRegionals, grandTotal } = computeRegionalBranchTable(filteredRows, pivotColumns, groupTsel);
+
+  if (!orderedRegionals.length) {
+    el.innerHTML = '<div class="empty-state">Belum ada data Regional (kolom T) / Branch (kolom S).</div>';
+    return;
+  }
+
+  const shortLabel = s => esc(s.replace(/^\d+\.\s*/, ''));
+
+  let html = '<table class="rb-table pivot-combined"><thead><tr><th rowspan="2">Regional / Branch</th>';
+  pivotColumns.forEach(s => { html += `<th colspan="2">${shortLabel(s)}</th>`; });
+  html += '<th colspan="2" class="rb-total-col">Total</th></tr><tr>';
+  pivotColumns.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th class="rb-total-col">LOP</th><th class="rb-total-col">Port</th></tr></thead><tbody>';
+
+  function cellsHtml(values, regionalArg, branchArg) {
+    let out = '';
+    pivotColumns.forEach(s => {
+      const v = values[s];
+      const clickAttr = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk filter daftar di bawah" onclick="setRegionalCellFilter(${regionalArg}, ${branchArg}, '${escJs(s)}')"`;
+      out += `<td ${clickAttr}>${fmtNum(v.lop)}</td><td ${clickAttr}>${fmtNum(v.port)}</td>`;
+    });
+    const total = rbRowTotal(values, pivotColumns);
+    const totalClickAttr = `class="rb-total-col pivot-clickable" style="cursor:pointer;" title="Klik untuk filter daftar di bawah" onclick="setRegionalCellFilter(${regionalArg}, ${branchArg}, null)"`;
+    out += `<td ${totalClickAttr}>${fmtNum(total.lop)}</td><td ${totalClickAttr}>${fmtNum(total.port)}</td>`;
+    return out;
+  }
+
+  orderedRegionals.forEach(({ regional, totals, branches, sourceRegionals }) => {
+    // Regional gabungan TSEL diklik pakai daftar (array) nama Regional asli
+    // di kolom T, biar filter daftar lokasi di bawah tetap ikut semuanya.
+    const regionalArg = (sourceRegionals && sourceRegionals.length)
+      ? `[${sourceRegionals.map(r => `'${escJs(r)}'`).join(',')}]`
+      : `'${escJs(regional)}'`;
+    html += `<tr class="rb-regional-row"><td>${esc(regional)}</td>${cellsHtml(totals, regionalArg, 'null')}</tr>`;
+
+    branches.forEach(({ branch, values }) => {
+      const branchArg = `'${escJs(branch)}'`;
+      html += `<tr class="rb-branch-row"><td>${esc(branch)}</td>${cellsHtml(values, regionalArg, branchArg)}</tr>`;
+    });
+  });
+
+  html += `<tr class="rb-total-row"><td>TOTAL</td>${cellsHtml(grandTotal, 'null', 'null')}</tr>`;
+  html += '</tbody></table>';
+
+  el.innerHTML = html;
+}
+
+// Klik angka di tabel "Rekap Port & LOP per Batch" -> filter daftar
+// "Lokasi Sedang Berjalan & Update Status" di bawah SAJA (chart, KPI,
+// tabel Detail Lokasi TIDAK ikut berubah -- murni buat mempermudah cari
+// lokasi dari angka yang diklik, termasuk Drop/Drop MOM/Golive yang
+// biasanya tidak masuk daftar itu).
+let activeCellFilter = null;  // { batch: string|null, column: string|null }
+
+function setCellFilter(batch, column) {
+  if (batch === null && column === null) { clearCellFilter(); return; }
+  activeCellFilter = { batch, column };
+  refreshAll();
+  const locCard = document.getElementById('locList');
+  if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function clearCellFilter() {
+  activeCellFilter = null;
+  refreshAll();
+}
+
+function renderCellFilterChip() {
+  const el = document.getElementById('cellFilterChip');
+  if (!el) return;
+  if (!activeCellFilter) { el.innerHTML = ''; return; }
+  const parts = [];
+  if (activeCellFilter.batch) parts.push(`Batch: ${esc(activeCellFilter.batch)}`);
+  if (activeCellFilter.regionalList) parts.push(`Regional: ${esc(activeCellFilter.regionalList.join(' + '))}`);
+  else if (activeCellFilter.regional) parts.push(`Regional: ${esc(activeCellFilter.regional)}`);
+  if (activeCellFilter.branch) parts.push(`Branch: ${esc(activeCellFilter.branch)}`);
+  if (activeCellFilter.column) parts.push(`Status: ${esc(activeCellFilter.column.replace(/^\d+\.\s*/, ''))}`);
+  el.innerHTML = `<span class="badge status">${parts.join(' · ')}
+    <a href="#" onclick="downloadLocListCsv(); return false;" style="margin-left:8px; color:inherit; text-decoration:underline;">Download CSV</a>
+    <a href="#" onclick="clearCellFilter(); return false;" style="margin-left:8px; color:inherit; text-decoration:underline;">Hapus filter</a></span>`;
+}
+
+// Download daftar yang sedang tampil di "Lokasi Sedang Berjalan" (hasil
+// klik angka di tabel "Rekap Port & LOP per Batch" atau "Rekap Regional
+// & Branch per Status") sebagai file CSV.
+function csvEscape(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function downloadLocListCsv() {
+  const rows = getLocListRows(getFilteredRows());
+  const header = ['IHLD', 'Lokasi', 'Batch', 'Regional', 'Branch', 'Status', 'Port'];
+  const lines = [header.map(csvEscape).join(',')];
+  rows.forEach(r => {
+    lines.push([
+      r.ihld || '', r.lokasi || '', r.batch || '', r.regional || '', r.branch || '',
+      r.status_raw || '', r.port || 0,
+    ].map(csvEscape).join(','));
+  });
+  const csvContent = '\uFEFF' + lines.join('\r\n'); // BOM biar Excel baca UTF-8 dengan benar
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const filterParts = [];
+  if (activeCellFilter) {
+    if (activeCellFilter.batch) filterParts.push(activeCellFilter.batch);
+    if (activeCellFilter.regionalList) filterParts.push(activeCellFilter.regionalList.join('_'));
+    else if (activeCellFilter.regional) filterParts.push(activeCellFilter.regional);
+    if (activeCellFilter.branch) filterParts.push(activeCellFilter.branch);
+    if (activeCellFilter.column) filterParts.push(activeCellFilter.column.replace(/^\d+\.\s*/, ''));
+  }
+  const suffix = filterParts.length ? '-' + filterParts.join('-').replace(/[^a-z0-9]+/gi, '_') : '';
+  a.href = url;
+  a.download = `lokasi${suffix}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Daftar untuk "Lokasi Sedang Berjalan & Update Status": kalau ada filter
+// dari klik tabel pivot (Batch, atau Regional/Branch), pakai itu (termasuk
+// GOLIVE/DROP/DROP MOM yang biasanya tidak masuk daftar ini) -- kalau
+// tidak, balik ke perilaku lama (cuma yang statusnya salah satu dari 5
+// status "berjalan").
+function getLocListRows(filteredRows) {
+  if (activeCellFilter) {
+    return filteredRows.filter(r => {
+      if (activeCellFilter.column && r.pivot_group !== activeCellFilter.column) return false;
+      if (activeCellFilter.batch && r.batch !== activeCellFilter.batch) return false;
+      if (activeCellFilter.regionalList && !activeCellFilter.regionalList.includes(r.regional)) return false;
+      if (!activeCellFilter.regionalList && activeCellFilter.regional && r.regional !== activeCellFilter.regional) return false;
+      if (activeCellFilter.branch && r.branch !== activeCellFilter.branch) return false;
+      return true;
+    });
+  }
+  return filteredRows.filter(r => r.status);
+}
+
+// ── Build port/LOP pivot tables from filtered rows ────────────────
+// groupField: 'status' (5 status utama, dipakai chart) atau 'pivot_group'
+// (status utama + GOLIVE/DROP/DROP MOM, dipakai tabel Rekap Port & LOP).
+function computePivotTables(filteredRows, batches, statuses, groupField = 'status') {
+  const pivotPort = {};
+  const pivotLop = {};
+  const ensure = (b) => {
+    if (!pivotPort[b]) {
+      pivotPort[b] = {}; pivotLop[b] = {};
+      statuses.forEach(s => { pivotPort[b][s] = 0; pivotLop[b][s] = 0; });
+    }
+  };
+  batches.forEach(ensure);
+  filteredRows.forEach(r => {
+    const key = r[groupField];
+    if (!key) return;
+    ensure(r.batch);
+    pivotPort[r.batch][key] += (r.port || 0);
+    pivotLop[r.batch][key] += 1;
+  });
+
+  function buildTable(pivot) {
+    const rows = [];
+    const colTotals = {};
+    statuses.forEach(s => { colTotals[s] = 0; });
+    batches.forEach(b => {
+      const values = pivot[b];
+      const total = statuses.reduce((sum, s) => sum + (values[s] || 0), 0);
+      statuses.forEach(s => { colTotals[s] += (values[s] || 0); });
+      rows.push({ batch: b, values, total });
+    });
+    const grandTotal = statuses.reduce((sum, s) => sum + colTotals[s], 0);
+    rows.push({ batch: 'TOTAL', values: colTotals, total: grandTotal });
+    return rows;
+  }
+
+  return { portTable: buildTable(pivotPort), lopTable: buildTable(pivotLop) };
+}
+
+// ── Detail Lokasi table (di bawah chart) ──────────────────────────
+function renderDetailTable(filteredRows) {
+  const el = document.getElementById('detailTableWrap');
+  const rows = filteredRows.filter(r => r.status);
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">Tidak ada lokasi yang sedang berjalan.</div>'; return; }
+
+  let html = '<table class="pivot"><thead><tr>';
+  ['IHLD', 'Lokasi', 'Batch', 'Nama Mitra', 'ODP (L)', 'PORT (M)', 'BoQ (N)', 'CPP (O)', 'Status', ''].forEach((h, i) => {
+    html += `<th${i < 4 ? ' style="text-align:left;"' : ''}>${h}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+  rows.forEach(r => {
+    html += `<tr>
+      <td style="text-align:left;">${esc(r.ihld) || '-'}</td>
+      <td style="text-align:left;">${esc(r.lokasi) || '-'}</td>
+      <td style="text-align:left;">${esc(r.batch) || '-'}</td>
+      <td style="text-align:left;">${esc(r.mitra) || '-'}</td>
+      <td>${esc(r.odp_l) || '-'}</td>
+      <td>${esc(r.port_m) || '-'}</td>
+      <td>${esc(r.boq_n) || '-'}</td>
+      <td>${esc(r.cpp_o) || '-'}</td>
+      <td><span class="badge status">${esc(r.status)}</span></td>
+      <td><button type="button" class="btn-sm" onclick="editFromDetail(${r.row})">Edit</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// Klik "Edit" di tabel Detail Lokasi -> isi panel update (kanan) dengan
+// data baris tsb (dicari ulang lewat IHLD/Lokasi via /api/row/<row>), lalu
+// scroll ke panel supaya langsung terlihat.
+function editFromDetail(rowNum) {
+  openRow(rowNum);
+  document.getElementById('updatePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Filter branch (kolom S) — dropdown + checkbox ─────────────────
+function renderBranchFilter(branches, preserveState) {
+  const el = document.getElementById('branchFilterGrid');
+  if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch (kolom S).</div>'; return; }
+
+  // Kalau ini update data (bukan load awal/refresh halaman), simpan dulu pilihan checkbox
+  // yang sedang aktif supaya filter tidak ikut ter-reset saat grid dirender ulang.
+  let prevChecked = null;
+  if (preserveState) {
+    const existing = document.querySelectorAll('.branch-checkbox');
+    if (existing.length) {
+      prevChecked = new Set(Array.from(document.querySelectorAll('.branch-checkbox:checked')).map(cb => cb.value));
+    }
+  }
+
+  el.innerHTML = branches.map(b => {
+    const isChecked = prevChecked ? prevChecked.has(b) : true;
+    return `
+    <label class="branch-check">
+      <input type="checkbox" class="branch-checkbox" value="${esc(b)}" ${isChecked ? 'checked' : ''}>
+      <span>${esc(b)}</span>
+    </label>
+  `;
+  }).join('');
+  updateBranchDropdownLabel();
+}
+
+function getSelectedBranches() {
+  return Array.from(document.querySelectorAll('.branch-checkbox:checked')).map(cb => cb.value);
+}
+
+function updateBranchDropdownLabel() {
+  const all = document.querySelectorAll('.branch-checkbox');
+  const checked = document.querySelectorAll('.branch-checkbox:checked');
+  const summary = document.getElementById('filterSummary');
+  if (all.length === 0) { summary.textContent = 'tidak ada branch'; return; }
+  if (checked.length === all.length) { summary.textContent = `semua branch dipilih (${all.length})`; }
+  else if (checked.length === 0) { summary.textContent = 'tidak ada branch dipilih'; }
+  else { summary.textContent = `${checked.length} dari ${all.length} branch dipilih`; }
+}
+
+// Refresh everything that depends on the branch filter
+function refreshAll() {
+  if (!dashboardCache) return;
+  const filtered = getFilteredRows();
+  updateBranchDropdownLabel();
+  updatePriorityFilterCount();
+  refreshStats(filtered);
+
+  // Tabel "Rekap Port & LOP per Batch": DROP MOM, DROP, 5 status utama,
+  // GOLIVE (lihat config.PIVOT_COLUMNS di backend) -- beda dari chart di
+  // bawah yang tetap 5 status utama saja.
+  const pivotColumns = dashboardCache.pivot_columns || dashboardCache.statuses;
+  const { portTable, lopTable } = computePivotTables(filtered, dashboardCache.batches, pivotColumns, 'pivot_group');
+  renderCombinedTable(document.getElementById('pivotTableWrap'), portTable, lopTable, pivotColumns);
+  renderRegionalBranchTable(filtered, pivotColumns, tselGroupingActive);
+
+  try {
+    if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
+    const chartPivot = computePivotTables(filtered, dashboardCache.batches, dashboardCache.statuses, 'status');
+    renderChart(chartPivot.lopTable, chartPivot.portTable, dashboardCache.statuses);
+    renderGoliveTrendChart(filtered);
+  } catch (e) {
+    document.querySelector('.chart-card').innerHTML = `<div class="flash error">Grafik tidak bisa dimuat: ${e.message || e}</div>`;
+  }
+
+  renderDetailTable(filtered);
+  renderBH(filtered);
+  renderFiCalendar(filtered);
+  renderCellFilterChip();
+  renderLocList(getLocListRows(filtered), document.getElementById('q').value);
+}
+
+document.getElementById('branchFilterGrid').addEventListener('change', (e) => {
+  if (e.target.classList.contains('branch-checkbox')) refreshAll();
+});
+document.getElementById('branchSelectAll').addEventListener('click', () => {
+  document.querySelectorAll('.branch-checkbox').forEach(cb => { cb.checked = true; });
+  refreshAll();
+});
+document.getElementById('branchClearAll').addEventListener('click', () => {
+  document.querySelectorAll('.branch-checkbox').forEach(cb => { cb.checked = false; });
+  refreshAll();
+});
+
+// ── Filter "Hanya Order Priority" (kolom BX, field `priority_bx`) ────
+// PENTING: field `priority_bx` harus disediakan backend dari kolom BX
+// (isian order priority) saat membangun `dashboardCache.rows` -- sama
+// seperti field lain yang dipetakan dari kolom tertentu (mis. `odp_l`
+// utk kolom L, `target_fi` utk kolom AK). Truthy/isi = order priority.
+function updatePriorityFilterCount() {
+  const countEl = document.getElementById('priorityFilterCount');
+  if (!countEl) return;
+  const count = getBranchFilteredRows().filter(r => !!r.priority_bx).length;
+  countEl.textContent = fmtNum(count);
+}
+document.getElementById('priorityFilterCheckbox').addEventListener('change', (e) => {
+  priorityOnlyFilter = e.target.checked;
+  refreshAll();
+});
+
+// Filter card collapse/expand — hidden by default so it doesn't take up space
+const filterBody = document.getElementById('filterCardBody');
+const filterToggleBtn = document.getElementById('filterToggleBtn');
+function setFilterOpen(open) {
+  filterBody.style.display = open ? 'block' : 'none';
+  filterToggleBtn.innerHTML = open ? 'Sembunyikan &#9652;' : 'Tampilkan &#9662;';
+}
+filterToggleBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setFilterOpen(filterBody.style.display === 'none');
+});
+document.getElementById('filterCardHeader').addEventListener('click', () => {
+  setFilterOpen(filterBody.style.display === 'none');
+});
+setFilterOpen(false);
+
+// ── Tab Rekap Port & LOP: Per Branch (default) / Per Batch ───────────
+const REKAP_HINTS = {
+  branch: 'baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+  batch: 'baris = batch (kolom C) &middot; setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+};
+let rekapView = 'branch';
+function setRekapView(view) {
+  rekapView = view;
+  document.querySelectorAll('.rekap-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.rekapView === view);
+  });
+  document.getElementById('regionalBranchTableWrap').style.display = view === 'branch' ? 'block' : 'none';
+  document.getElementById('pivotTableWrap').style.display = view === 'batch' ? 'block' : 'none';
+  const hint = document.getElementById('rekapTableHint');
+  if (hint) hint.innerHTML = REKAP_HINTS[view];
+}
+document.getElementById('rekapTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.rekap-tab-btn[data-rekap-view]');
+  if (!btn) return;
+  setRekapView(btn.dataset.rekapView);
+});
+setRekapView('branch');
+
+// Tombol "Grouping (TSEL)": toggle gabungkan baris Regional BANTEN & JAKARTA
+document.getElementById('tselGroupBtn').addEventListener('click', () => {
+  tselGroupingActive = !tselGroupingActive;
+  document.getElementById('tselGroupBtn').classList.toggle('active', tselGroupingActive);
+  refreshAll();
+});
+
+// ── Bar chart: distribusi status pekerjaan (jumlah order/LOP + Port per status) ──
+function renderChart(lopTable, portTable, statuses) {
+  const totalLopRow = lopTable.find(r => r.batch === 'TOTAL');
+  const totalPortRow = portTable.find(r => r.batch === 'TOTAL');
+  const labels = statuses.map(s => s.replace(/^\d+\.\s*/, ''));
+  const values = statuses.map(s => (totalLopRow ? totalLopRow.values[s] : 0) || 0);
+  const portValues = statuses.map(s => (totalPortRow ? totalPortRow.values[s] : 0) || 0);
+  const colors = statuses.map(s => STATUS_COLORS[s] || '#94a3b8');
+
+  const ctx = document.getElementById('statusChart').getContext('2d');
+  if (statusChart) statusChart.destroy();
+  statusChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Jumlah LOP', data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 46 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        datalabels: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx2) => ` ${fmtNum(ctx2.raw)} LOP | ${fmtNum(portValues[ctx2.dataIndex])} Port`,
+          },
+        },
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { grid: { display: false } },
+      },
+    },
+  });
+
+  const legend = document.getElementById('chartLegend');
+  legend.innerHTML = statuses.map((s, i) => `
+    <span><span class="dot" style="background:${colors[i]}"></span>${esc(labels[i])}: <strong>${fmtNum(values[i])} LOP | ${fmtNum(portValues[i])} Port</strong></span>
+  `).join('');
+}
+
+// ── Bar chart: trend Golive per bulan (kolom BD / golive_date_iso) ────
+// Dilihat berdasarkan bulan saja (semua tanggal golive di bulan yang
+// sama digabung jadi satu batang). Klik batang -> daftar lokasi di bulan
+// itu, terurut berdasarkan branch. Bisa dilihat per Tahun/Bulan/Minggu/Hari
+// (goliveTrendGranularity) -- klik batang nampilin TABEL (Branch/LOP/Nama
+// ODP/Tanggal Golive) yang bisa didownload sebagai CSV.
+let goliveTrendChart = null;
+let goliveTrendBucketIndex = {};   // key granularitas -> rows[]
+let goliveTrendBucketKeys = [];    // urutan bucket sesuai chart, sinkron dgn index klik
+let goliveTrendGranularity = 'month'; // 'year' | 'month' | 'week' | 'day'
+
+const GOLIVE_TREND_MONTH_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
+// ISO week number (1-53) dari sebuah Date.
+function isoWeekOf(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return { year: d.getUTCFullYear(), week: weekNo };
+}
+
+// "YYYY-MM-DD" -> key bucket sesuai granularitas yang lagi dipilih.
+function goliveTrendBucketKey(isoDate, gran) {
+  const [y, m, d] = isoDate.split('-');
+  if (gran === 'year') return y;
+  if (gran === 'month') return `${y}-${m}`;
+  if (gran === 'day') return `${y}-${m}-${d}`;
+  if (gran === 'week') {
+    const dt = new Date(parseInt(y,10), parseInt(m,10)-1, parseInt(d,10));
+    const { year, week } = isoWeekOf(dt);
+    return `${year}-W${String(week).padStart(2,'0')}`;
+  }
+  return isoDate;
+}
+
+function goliveTrendBucketLabel(key, gran) {
+  if (gran === 'year') return key;
+  if (gran === 'month') {
+    const [y, m] = key.split('-');
+    return `${GOLIVE_TREND_MONTH_SHORT[parseInt(m, 10) - 1]}/${y.slice(2)}`;
+  }
+  if (gran === 'week') {
+    const [y, w] = key.split('-W');
+    return `M${w}/${y.slice(2)}`;
+  }
+  if (gran === 'day') {
+    const [y, m, d] = key.split('-');
+    return `${d}/${m}/${y.slice(2)}`;
+  }
+  return key;
+}
+
+function goliveTrendBucketFullLabel(key, gran) {
+  if (gran === 'year') return `Tahun ${key}`;
+  if (gran === 'month') {
+    const [y, m] = key.split('-');
+    return `${FI_CAL_MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
+  }
+  if (gran === 'week') {
+    const [y, w] = key.split('-W');
+    return `Minggu ke-${parseInt(w,10)} ${y}`;
+  }
+  if (gran === 'day') {
+    const [y, m, d] = key.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  return key;
+}
+
+function renderGoliveTrendChart(filteredRows) {
+  goliveTrendBucketIndex = {};
+  filteredRows.forEach(r => {
+    if (!r.golive_date_iso) return;
+    const key = goliveTrendBucketKey(r.golive_date_iso, goliveTrendGranularity);
+    (goliveTrendBucketIndex[key] = goliveTrendBucketIndex[key] || []).push(r);
+  });
+
+  goliveTrendBucketKeys = Object.keys(goliveTrendBucketIndex).sort(); // kronologis (string sort aman krn zero-padded)
+  const labels = goliveTrendBucketKeys.map(k => goliveTrendBucketLabel(k, goliveTrendGranularity));
+  const values = goliveTrendBucketKeys.map(k => goliveTrendBucketIndex[k].length);
+
+  document.querySelectorAll('#goliveTrendGranButtons button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.gran === goliveTrendGranularity);
+  });
+
+  const canvas = document.getElementById('goliveTrendChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (goliveTrendChart) goliveTrendChart.destroy();
+
+  if (goliveTrendBucketKeys.length === 0) {
+    goliveTrendChart = null;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
+  const trendCanvas = ctx.canvas;
+  const gradient = ctx.createLinearGradient(0, 0, 0, trendCanvas.height || 220);
+  gradient.addColorStop(0, 'rgba(245,180,0,0.35)');
+  gradient.addColorStop(1, 'rgba(245,180,0,0.02)');
+
+  goliveTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Jumlah Golive',
+        data: values,
+        borderColor: '#f5b400',
+        backgroundColor: gradient,
+        pointBackgroundColor: '#f5b400',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        borderWidth: 3,
+        tension: 0.4,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          display: true,
+          align: 'top',
+          anchor: 'end',
+          offset: 6,
+          color: '#fff',
+          font: { weight: 800, size: 11 },
+          formatter: (v) => fmtNum(v),
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx2) => ` ${fmtNum(ctx2.raw)} lokasi Golive`,
+          },
+        },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { precision: 0, color: 'rgba(255,255,255,0.85)' },
+          grid: { color: 'rgba(255,255,255,0.12)' },
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: 'rgba(255,255,255,0.85)' },
+        },
+      },
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        openGoliveTrendBucket(goliveTrendBucketKeys[elements[0].index]);
+      },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
+    },
+  });
+}
+
+document.getElementById('goliveTrendGranButtons').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-gran]');
+  if (!btn) return;
+  goliveTrendGranularity = btn.dataset.gran;
+  renderGoliveTrendChart(getFilteredRows());
+});
+
+function goliveTrendCsvEscape(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function downloadGoliveTrendCsv(bucketKey) {
+  const items = (goliveTrendBucketIndex[bucketKey] || []).slice()
+    .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
+  const header = ['Branch', 'LOP (IHLD)', 'Lokasi', 'Nama ODP', 'Tanggal Golive'];
+  const lines = [header.map(goliveTrendCsvEscape).join(',')];
+  items.forEach(r => {
+    lines.push([r.branch || '', r.ihld || '', r.lokasi || '', r.odp_bo || '', r.golive_date_display || '']
+      .map(goliveTrendCsvEscape).join(','));
+  });
+  const csvContent = '\uFEFF' + lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `golive-${bucketKey}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function openGoliveTrendBucket(bucketKey) {
+  const items = (goliveTrendBucketIndex[bucketKey] || []).slice()
+    .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Golive — ${esc(goliveTrendBucketFullLabel(bucketKey, goliveTrendGranularity))} <span class="badge">${fmtNum(items.length)}</span></div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div style="margin:8px 0 10px;">
+      <button type="button" class="btn-ghost btn-sm" onclick="downloadGoliveTrendCsv('${bucketKey}')">&#8615; Download CSV</button>
+    </div>
+    <div class="pivot-table-wrap" style="max-height:420px; overflow:auto;">
+      <table class="pivot">
+        <thead><tr><th>Branch</th><th>LOP (IHLD)</th><th>Lokasi</th><th>Nama ODP</th><th>Tanggal Golive</th></tr></thead>
+        <tbody id="goliveTrendModalBody">
+          ${items.length ? items.map(r => `
+            <tr class="result-item" data-row="${r.row}" style="cursor:pointer;">
+              <td>${esc(r.branch) || '(Tanpa Branch)'}</td>
+              <td>${esc(r.ihld) || '-'}</td>
+              <td>${esc(r.lokasi) || '-'}</td>
+              <td>${esc(r.odp_bo) || '-'}</td>
+              <td>${esc(r.golive_date_display) || '-'}</td>
+            </tr>
+          `).join('') : `<tr><td colspan="5"><div class="empty-state">Tidak ada lokasi Golive di periode ini.</div></td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  const body = document.getElementById('goliveTrendModalBody');
+  if (body) {
+    body.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) {
+        closeBhModal();
+        editFromDetail(parseInt(item.dataset.row, 10));
+      }
+    });
+  }
+  document.getElementById('bhModalOverlay').classList.add('open');
+}
+
+// ── Kalender Target FI (kolom AK) & Golive (kolom BD) ─────────────
+// Tanggal yang dipakai per baris (cal_date_iso) sudah ditentukan di
+// backend (get_dashboard_data): kalau status fisik (kolom Z) sudah salah
+// satu dari 06.GOLIVE/07.UT/09.REKON/10.BAST, pakai tanggal Golive
+// (kolom BD); kalau belum, pakai Target FI (kolom AK). cal_date_source
+// bilang tanggal mana yang lagi dipakai ("golive" atau "target_fi").
+function fiCalClassify(row) {
+  if (row.cal_date_source === 'golive') return 'done';
+  if (row.cal_date_iso < today0.toISOString().slice(0, 10)) return 'over';
+  return 'upcoming';
+}
+
+function renderFiCalendar(filteredRows) {
+  const monthLabel = document.getElementById('fiCalMonthLabel');
+  if (monthLabel) monthLabel.textContent = `${FI_CAL_MONTH_NAMES[fiCalMonth]} ${fiCalYear}`;
+
+  // Index semua baris yang punya tanggal kalender (cal_date_iso) berdasarkan
+  // tanggal, supaya bisa dipakai lintas bulan (navigasi prev/next tanpa
+  // fetch ulang).
+  fiCalDayIndex = {};
+  filteredRows.forEach(r => {
+    if (!r.cal_date_iso) return;
+    (fiCalDayIndex[r.cal_date_iso] = fiCalDayIndex[r.cal_date_iso] || []).push(r);
+  });
+
+  const grid = document.getElementById('fiCalGrid');
+  if (!grid) return;
+
+  const firstOfMonth = new Date(fiCalYear, fiCalMonth, 1);
+  const startOffset = firstOfMonth.getDay(); // 0=Minggu
+  const gridStart = new Date(fiCalYear, fiCalMonth, 1 - startOffset);
+  const todayIso = today0.toISOString().slice(0, 10);
+
+  let html = FI_CAL_DAY_LABELS.map(l => `<div class="fi-cal-daylabel">${l}</div>`).join('');
+
+  for (let i = 0; i < 42; i++) {
+    const cellDate = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+    const iso = cellDate.toISOString().slice(0, 10);
+    const isOutside = cellDate.getMonth() !== fiCalMonth;
+    const isToday = iso === todayIso;
+    const items = fiCalDayIndex[iso] || [];
+
+    const counts = { over: 0, upcoming: 0, done: 0 };
+    items.forEach(r => { counts[fiCalClassify(r)]++; });
+
+    const badges = ['over', 'upcoming', 'done']
+      .filter(k => counts[k] > 0)
+      .map(k => `<span class="fi-badge fi-${k}" data-fi-iso="${iso}" title="Klik untuk lihat daftar">${counts[k]}</span>`)
+      .join('');
+
+    html += `
+      <div class="fi-cal-cell${isOutside ? ' fi-outside' : ''}${isToday ? ' fi-today' : ''}">
+        <div class="fi-cal-daynum">${cellDate.getDate()}</div>
+        <div class="fi-cal-badges">${badges}</div>
+      </div>
+    `;
+  }
+
+  grid.innerHTML = html;
+}
+
+function fiCalShift(delta) {
+  fiCalMonth += delta;
+  if (fiCalMonth < 0) { fiCalMonth = 11; fiCalYear--; }
+  else if (fiCalMonth > 11) { fiCalMonth = 0; fiCalYear++; }
+  renderFiCalendar(getFilteredRows());
+}
+
+document.getElementById('fiCalPrevBtn').addEventListener('click', () => fiCalShift(-1));
+document.getElementById('fiCalNextBtn').addEventListener('click', () => fiCalShift(1));
+document.getElementById('fiCalTodayBtn').addEventListener('click', () => {
+  fiCalYear = today0.getFullYear();
+  fiCalMonth = today0.getMonth();
+  renderFiCalendar(getFilteredRows());
+});
+
+document.getElementById('fiCalGrid').addEventListener('click', (e) => {
+  const badge = e.target.closest('.fi-badge');
+  if (!badge) return;
+  openFiCalDay(badge.dataset.fiIso);
+});
+
+function fiCalFmtDate(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function openFiCalDay(iso) {
+  fiCalCurrentIso = iso;
+  const items = fiCalDayIndex[iso] || [];
+  const totalPort = items.reduce((sum, r) => sum + (r.port || 0), 0);
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Target FI / Golive — ${fiCalFmtDate(iso)} <span class="badge">${fmtNum(items.length)} LOP</span> <span class="badge">${fmtNum(totalPort)} Port</span></div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="loc-list" style="margin-top:10px;" id="fiCalModalList">
+      ${items.length ? items.map(r => `
+        <div class="result-item" data-row="${r.row}">
+          <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
+          <div class="meta">
+            <span class="badge">${esc(r.batch) || '-'}</span>
+            <span class="badge">${fmtNum(r.port)} Port</span>
+            ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
+            <span class="badge">${r.cal_date_source === 'golive' ? 'Golive' : 'Target FI'}: ${esc(r.cal_date_display) || '-'}</span>
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state">Tidak ada lokasi dengan Target FI/Golive di tanggal ini.</div>'}
+    </div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  const list = document.getElementById('fiCalModalList');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) {
+        closeBhModal();
+        editFromDetail(parseInt(item.dataset.row, 10));
+      }
+    });
+  }
+  document.getElementById('bhModalOverlay').classList.add('open');
+}
+
+// ── Cek Target Bulan Ini: list semua lokasi dgn Target FI/Golive pada
+// bulan yang lagi di-view di kalender (fiCalYear/fiCalMonth) ─────────
+function openFiCalMonthList() {
+  const monthPrefix = `${fiCalYear}-${String(fiCalMonth + 1).padStart(2, '0')}`;
+  const items = Object.keys(fiCalDayIndex)
+    .filter(iso => iso.startsWith(monthPrefix))
+    .sort()
+    .flatMap(iso => fiCalDayIndex[iso])
+    // Hanya 5 status utama tahapan pekerjaan (01. PERIJINAN s/d 05. FINISH
+    // INSTALASI) -- exclude lokasi yang sudah Drop atau di luar tahapan ini.
+    .filter(r => Object.prototype.hasOwnProperty.call(STATUS_COLORS, r.status));
+
+  const totalPort = items.reduce((sum, r) => sum + (r.port || 0), 0);
+  const monthName = `${FI_CAL_MONTH_NAMES[fiCalMonth]} ${fiCalYear}`;
+  const isCurrentMonth = fiCalYear === today0.getFullYear() && fiCalMonth === today0.getMonth();
+
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Target FI / Golive — ${esc(monthName)}${isCurrentMonth ? ' <span class="badge" style="background:var(--brand-blue,#29467a);">Bulan ini</span>' : ''}</div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="fi-cal-summary">
+      <span>Total lokasi: <strong>${fmtNum(items.length)} LOP</strong></span>
+      <span>Total Port: <strong>${fmtNum(totalPort)} Port</strong></span>
+    </div>
+    <div class="loc-list" style="max-height:420px; overflow:auto;" id="fiCalMonthModalList">
+      ${items.length ? items.map(r => `
+        <div class="result-item" data-row="${r.row}">
+          <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
+          <div class="meta">
+            <span class="badge">${esc(r.batch) || '-'}</span>
+            <span class="badge">${fmtNum(r.port)} Port</span>
+            ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
+            <span class="badge">${r.cal_date_source === 'golive' ? 'Golive' : 'Target FI'}: ${esc(r.cal_date_display) || '-'}</span>
+          </div>
+        </div>
+      `).join('') : `<div class="empty-state">Tidak ada lokasi dengan Target FI/Golive di bulan ${esc(monthName)}.</div>`}
+    </div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  const list = document.getElementById('fiCalMonthModalList');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) {
+        closeBhModal();
+        editFromDetail(parseInt(item.dataset.row, 10));
+      }
+    });
+  }
+  document.getElementById('bhModalOverlay').classList.add('open');
+}
+
+document.getElementById('fiCalMonthListBtn').addEventListener('click', openFiCalMonthList);
+
+// ── Kategori Drop (kolom BH): card -> list -> detail (kolom I..AB) ───
+function computeBhTable(filteredRows) {
+  const counter = {};
+  const rowsByLabel = {};
+  filteredRows.forEach(r => {
+    if (!r.bh) return;
+    counter[r.bh] = (counter[r.bh] || 0) + 1;
+    (rowsByLabel[r.bh] = rowsByLabel[r.bh] || []).push({
+      row: r.row, ihld: r.ihld, lokasi: r.lokasi, batch: r.batch, status_z: r.status_raw,
+    });
+  });
+  return Object.keys(counter).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(label => ({ label, count: counter[label], rows: rowsByLabel[label] }));
+}
+
+function renderBH(filteredRows) {
+  const bhTable = computeBhTable(filteredRows);
+  dashboardCache.bh_table = bhTable; // cache for modal lookups
+  const el = document.getElementById('bhGrid');
+  if (!bhTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data kategori drop.</div>'; return; }
+  el.innerHTML = bhTable.map((item, i) => `
+    <div class="bh-chip" data-bh-index="${i}" title="Klik untuk lihat daftar">
+      <span>${esc(item.label)}</span><span class="bh-count">${fmtNum(item.count)}</span>
+    </div>
+  `).join('');
+}
+
+document.getElementById('bhGrid').addEventListener('click', (e) => {
+  const chip = e.target.closest('.bh-chip');
+  if (!chip || !dashboardCache) return;
+  const item = dashboardCache.bh_table[parseInt(chip.dataset.bhIndex, 10)];
+  if (item) openBhCategory(item.label);
+});
+
+function openBhCategory(label) {
+  bhCurrentLabel = label;
+  const item = (dashboardCache.bh_table || []).find(x => x.label === label);
+  const rows = item ? item.rows : [];
+
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">${esc(label)} <span class="badge">${fmtNum(rows.length)}</span></div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div class="loc-list" style="margin-top:10px;" id="bhModalList">
+      ${rows.length ? rows.map(r => `
+        <div class="result-item" data-row="${r.row}">
+          <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
+          <div class="meta">
+            <span class="badge">${esc(r.batch) || '-'}</span>
+            ${r.status_z ? `<span class="badge status">${esc(r.status_z)}</span>` : ''}
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state">Tidak ada data untuk kategori ini.</div>'}
+    </div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  const list = document.getElementById('bhModalList');
+  if (list) {
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (item) openBhRowDetail(parseInt(item.dataset.row, 10));
+    });
+  }
+  document.getElementById('bhModalOverlay').classList.add('open');
+}
+
+async function openBhRowDetail(rowNum) {
+  const modalBox = document.getElementById('bhModalBox');
+  modalBox.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Detail Baris #${rowNum}</div>
+      <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <a href="#" class="modal-back" id="bhBackLink">&larr; Kembali ke daftar</a>
+    <div class="skeleton">Memuat detail (kolom I s/d AB)...</div>
+  `;
+  document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
+  document.getElementById('bhBackLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (bhCurrentLabel) openBhCategory(bhCurrentLabel);
+  });
+
+  try {
+    const res = await fetch(`/api/row/${rowNum}/detail`);
+    const json = await res.json();
+    const body = document.querySelector('#bhModalBox');
+    if (!json.ok) {
+      body.insertAdjacentHTML('beforeend', `<div class="flash error">${esc(json.error)}</div>`);
+      return;
+    }
+    const table = `
+      <table class="detail-table">
+        ${json.fields.map(f => `<tr><th>${esc(f.header)}</th><td>${esc(f.value) || '-'}</td></tr>`).join('')}
+      </table>
+    `;
+    body.querySelector('.skeleton').outerHTML = table;
+  } catch (e) {
+    modalBox.insertAdjacentHTML('beforeend', `<div class="flash error">Gagal memuat detail: ${esc(e)}</div>`);
+  }
+}
+
+function closeBhModal() {
+  document.getElementById('bhModalOverlay').classList.remove('open');
+}
+document.getElementById('bhModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'bhModalOverlay') closeBhModal();
+});
+
+// ── KML preview modal (peta Leaflet + OpenStreetMap -- gratis, tanpa API
+// key/billing). Ganti pendekatan iframe Drive lama: Drive TIDAK bisa
+// render KML jadi peta interaktif di iframe preview-nya (cuma "No preview
+// available" atau nampilin teks XML mentah), jadi kita render sendiri di
+// browser pakai plugin leaflet-kml, ambil isi filenya lewat proxy
+// /kml-content/<file_id> (same-origin -- tidak kena CORS, file juga tidak
+// perlu dibikin publik di Drive).
+let kmlLeafletMap = null;
+let kmlLeafletLayer = null;
+
+function ensureKmlMap() {
+  if (kmlLeafletMap) return kmlLeafletMap;
+  kmlLeafletMap = L.map('kmlModalMap').setView([-6.2, 106.8], 5); // default: Indonesia, nanti di-fit ke data KML
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(kmlLeafletMap);
+  return kmlLeafletMap;
+}
+
+function setKmlModalMsg(text) {
+  const el = document.getElementById('kmlModalMsg');
+  if (el) el.textContent = text || '';
+}
+
+async function openKmlModal(name, fileId) {
+  document.getElementById('kmlModalTitle').textContent = name || 'Preview KML';
+  document.getElementById('kmlModalOverlay').classList.add('open');
+  setKmlModalMsg('');
+
+  const isKmz = (name || '').toLowerCase().endsWith('.kmz');
+  const map = ensureKmlMap();
+  setTimeout(() => map.invalidateSize(), 50); // modal baru kebuka -- ukuran container belum final saat ini
+
+  if (kmlLeafletLayer) { map.removeLayer(kmlLeafletLayer); kmlLeafletLayer = null; }
+
+  if (isKmz) {
+    // Plugin leaflet-kml yang dipakai di sini cuma baca .kml mentah,
+    // belum support .kmz (file terkompresi) -- daripada nampilin peta
+    // kosong/salah, arahkan ke tombol "Buka" untuk download saja.
+    setKmlModalMsg('Preview peta langsung belum didukung untuk file .kmz. Silakan pakai tombol "Buka" di daftar KML untuk download filenya.');
+    return;
+  }
+
+  setKmlModalMsg('Memuat peta...');
+  try {
+    const res = await fetch(`/kml-content/${fileId}`);
+    if (!res.ok) throw new Error('Server gagal ambil file dari Drive (status ' + res.status + ')');
+    const kmlText = await res.text();
+    const kmlDom = new DOMParser().parseFromString(kmlText, 'text/xml');
+    kmlLeafletLayer = new L.KML(kmlDom);
+    map.addLayer(kmlLeafletLayer);
+    const bounds = kmlLeafletLayer.getBounds();
+    if (bounds && bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [24, 24] });
+      setKmlModalMsg('');
+    } else {
+      setKmlModalMsg('File KML terbaca, tapi tidak ada koordinat yang bisa ditampilkan.');
+    }
+  } catch (e) {
+    setKmlModalMsg('Gagal menampilkan peta: ' + e.message);
+  }
+}
+function closeKmlModal() {
+  document.getElementById('kmlModalOverlay').classList.remove('open');
+}
+document.getElementById('kmlModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'kmlModalOverlay') closeKmlModal();
+});
+
+// ── Lokasi sedang berjalan ─────────────────────────────────────────
+function renderLocList(locations, filterText) {
+  const el = document.getElementById('locList');
+  const q = (filterText || '').trim().toLowerCase();
+  const filtered = q
+    ? locations.filter(r => (r.ihld + ' ' + r.lokasi).toLowerCase().includes(q))
+    : locations;
+
+  if (!filtered.length) { el.innerHTML = '<div class="empty-state">Tidak ada lokasi ditemukan.</div>'; return; }
+
+  el.innerHTML = filtered.map(r => `
+    <div class="result-item ${r.row === selectedRow ? 'selected' : ''}" onclick="openRow(${r.row})">
+      ${r.priority_bx ? `<div class="badge priority-order" style="background:#fef2f2; color:#b91c1c; border:1px solid #fca5a5; font-weight:800; letter-spacing:0.02em; margin-bottom:4px; display:inline-block;">&#9888; ${esc(r.priority_bx)}</div>` : ''}
+      <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
+      <div class="meta">
+        <span class="badge">${esc(r.batch)}</span>
+        <span class="badge status">${esc(r.status)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadDashboard() {
+  // Jika dashboardCache sudah pernah terisi sebelumnya, artinya ini pemanggilan ulang
+  // (klik tombol Refresh / update data) bukan load awal saat halaman dibuka -> pertahankan filter.
+  const isUpdate = dashboardCache !== null;
+  document.getElementById('pivotTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
+  try {
+    const res = await fetch('/api/dashboard');
+    const json = await res.json();
+    if (!json.ok) {
+      document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">${esc(json.error)}</div>`;
+      document.getElementById('locList').innerHTML = '';
+      return;
+    }
+    dashboardCache = json.data;   // { statuses, batches, branches, rows }
+    renderBranchFilter(dashboardCache.branches, isUpdate);
+    refreshAll();
+  } catch (e) {
+    document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
+  }
+}
+
+document.getElementById('q').addEventListener('input', (e) => {
+  if (dashboardCache) renderLocList(getLocListRows(getFilteredRows()), e.target.value);
+});
+
+let currentExtraValues = {};
+let currentExtraFieldsByStatus = {};
+let currentExtraFieldMeta = {};
+let currentPreFinishInstallStatuses = [];
+let currentTargetFiHasExisting = false;
+let currentDocuments = {};
+let currentDocumentTypesByStatus = {};
+let currentProgressStages = [];
+let currentDocumentKeysHidden = [];
+let currentDocumentUploadRequired = true;
+let currentAaOptionsAll = [];       // semua Sub Status (AA) apa adanya -- fallback kalau Status tidak ada di grup
+let currentKmlVisibleStatuses = [];
+let currentKmlFiles = null;   // null = belum selesai dimuat (lazy, lihat loadKmlFiles)
+let currentKmlRowNum = null;  // dipakai buat cek respons yang telat nyampe bukan buat baris yang lagi dibuka
+let currentBoqFiles = null;   // sama pola dengan currentKmlFiles -- BOQ tampil di SEMUA status, jadi tidak perlu "visible statuses"
+let currentBoqRowNum = null;
+let currentStatusAaGroups = {};     // Status Z -> daftar Sub Status (AA) terurut (config.STATUS_AA_GROUPS)
+let currentProgressDropStatuses = []; // Status Z yang dianggap Drop (config.PROGRESS_DROP_STATUSES)
+let currentKategoriDropOptions = [];  // pilihan Kategori Drop (kolom BH)
+
+// ── Nama Mitra (kolom Y): combobox pencarian + auto Jenis Pekerjaan (kolom X) ──
+// Daftar mitra (sheet MASTER DATA kolom H, ~500 baris) di-fetch SEKALI saja
+// per page-load (di-cache di variabel ini, dipakai ulang tiap panel Update
+// Status dibuka) -- backend juga sudah cache 10 menit jadi request awal ini
+// murah. Hasil filter yang ditampilkan dibatasi (MITRA_MAX_RESULTS) biar
+// dropdown tidak pernah nge-render ratusan baris sekaligus.
+const MITRA_MAX_RESULTS = 30;
+const MITRA_NAME_INSOURCE = 'PT.TELKOM AKSES';
+const MITRA_NAME_MANDOR = 'MANDOR';
+let MITRA_OPTIONS = [];
+let mitraOptionsFetched = false;
+let mitraOptionsLoadedCallbacks = [];  // dipanggil sekali begitu fetch selesai -- dipakai buat auto-refresh dropdown yg lagi kebuka
+
+function fetchMitraOptionsOnce(onLoaded) {
+  if (onLoaded) mitraOptionsLoadedCallbacks.push(onLoaded);
+  if (mitraOptionsFetched) return;
+  mitraOptionsFetched = true;
+  fetch('/api/mitra-options')
+    .then(r => r.json())
+    .then(json => { if (json.ok) MITRA_OPTIONS = json.data || []; })
+    .catch(() => { mitraOptionsFetched = false; }) // gagal -> boleh coba lagi lain kali panel dibuka
+    .finally(() => {
+      const callbacks = mitraOptionsLoadedCallbacks;
+      mitraOptionsLoadedCallbacks = [];
+      callbacks.forEach(cb => cb());
+    });
+}
+
+// Pratinjau saja (nilai final dihitung ulang & ditulis di server saat
+// simpan) -- biar user langsung lihat kolom X bakal keisi apa sebelum submit.
+function jenisPekerjaanPreview(namaMitra) {
+  const key = (namaMitra || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  if (!key) return '';
+  if (key === MITRA_NAME_INSOURCE) return 'Swakelola_Insource';
+  if (key === MITRA_NAME_MANDOR) return 'Swakelola_Mandor';
+  return 'Mitra';
+}
+
+// Dipanggil ulang tiap panel Update Status dirender (innerHTML diganti tiap
+// openRow(), jadi elemen & listener lama otomatis lenyap -- perlu dipasang
+// ulang di sini setiap kali).
+function initMitraCombo() {
+  const searchInput = document.getElementById('mitra_search');
+  const hiddenInput = document.getElementById('nama_mitra');
+  const listEl = document.getElementById('mitraComboList');
+  const hintEl = document.getElementById('mitraJenisHint');
+  if (!searchInput || !hiddenInput || !listEl || !hintEl) return;
+
+  let activeIndex = -1;
+
+  function updateHint() {
+    const val = hiddenInput.value;
+    const jenis = jenisPekerjaanPreview(val);
+    hintEl.innerHTML = val
+      ? `Jenis Pekerjaan (kolom X) akan otomatis terisi: <strong>${jenis}</strong>`
+      : '';
+  }
+
+  function closeList() {
+    listEl.classList.remove('open');
+    listEl.innerHTML = '';
+    activeIndex = -1;
+  }
+
+  function selectMitra(name) {
+    hiddenInput.value = name;
+    searchInput.value = name;
+    updateHint();
+    closeList();
+  }
+
+  function renderList(query) {
+    const q = query.trim().toLowerCase();
+    const matches = (q ? MITRA_OPTIONS.filter(n => n.toLowerCase().includes(q)) : MITRA_OPTIONS)
+      .slice(0, MITRA_MAX_RESULTS);
+    activeIndex = -1;
+
+    if (!MITRA_OPTIONS.length) {
+      listEl.innerHTML = '<div class="mitra-combo-empty">Memuat daftar mitra...</div>';
+      listEl.classList.add('open');
+      return;
+    }
+    if (!matches.length) {
+      listEl.innerHTML = '<div class="mitra-combo-empty">Mitra tidak ditemukan.</div>';
+      listEl.classList.add('open');
+      return;
+    }
+    listEl.innerHTML = matches.map(name =>
+      `<div class="mitra-combo-item" data-name="${name.replace(/"/g, '&quot;')}">${esc(name)}</div>`
+    ).join('');
+    listEl.classList.add('open');
+  }
+
+  searchInput.addEventListener('focus', () => renderList(searchInput.value));
+  searchInput.addEventListener('input', () => {
+    hiddenInput.value = ''; // ketik ulang = belum ada pilihan valid sampai diklik dari list
+    updateHint();
+    renderList(searchInput.value);
+  });
+  searchInput.addEventListener('keydown', (e) => {
+    const items = Array.from(listEl.querySelectorAll('.mitra-combo-item'));
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, items.length - 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); }
+    else if (e.key === 'Enter') {
+      if (activeIndex >= 0) { e.preventDefault(); selectMitra(items[activeIndex].dataset.name); }
+      return;
+    } else if (e.key === 'Escape') { closeList(); return; }
+    else return;
+    items.forEach((el, i) => el.classList.toggle('active', i === activeIndex));
+    items[activeIndex].scrollIntoView({ block: 'nearest' });
+  });
+  listEl.addEventListener('mousedown', (e) => {
+    const item = e.target.closest('.mitra-combo-item[data-name]');
+    if (item) selectMitra(item.dataset.name);
+  });
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById('mitraComboField')?.contains(e.target)) closeList();
+  });
+
+  // Render awal: nilai yang sudah tersimpan langsung tampil, tanpa nunggu fetch.
+  searchInput.value = hiddenInput.value;
+  updateHint();
+  // Begitu daftar mitra selesai dimuat, refresh dropdown OTOMATIS kalau
+  // masih kebuka (mis. user lagi lihat "Memuat daftar mitra...") -- user
+  // tidak perlu ketik ulang buat lihat hasilnya.
+  fetchMitraOptionsOnce(() => {
+    if (listEl.classList.contains('open')) renderList(searchInput.value);
+  });
+}
+
+// Sub Status (AA) difilter sesuai Status (Z) yang dipilih (config.STATUS_AA_GROUPS)
+// -- Status yang tidak ada grupnya (mis. "0.1 SURVEI") -> tampil semua opsi.
+function renderPanelAaOptions(statusZ, selectedAa) {
+  const sel = document.getElementById('status_aa');
+  if (!sel) return;
+  const group = currentStatusAaGroups[statusZ];
+  const options = group || currentAaOptionsAll;
+  const placeholder = group ? '-- pilih sub status --' : '-- tidak diubah --';
+  sel.innerHTML = `<option value="">${placeholder}</option>` +
+    options.map(o => `<option value="${o}" ${o === selectedAa ? 'selected' : ''}>${o}</option>`).join('');
+}
+
+// Target Finish Instalasi (AK): disembunyikan total begitu Status dipilih
+// DROP / Finish Instalasi / Golive / dst -- cuma relevan untuk status
+// SEBELUM Finish Instalasi (currentPreFinishInstallStatuses).
+function toggleTargetFiField(statusZ) {
+  const field = document.getElementById('targetFiField');
+  if (!field) return;
+  const relevant = currentPreFinishInstallStatuses.includes(statusZ);
+  field.style.display = relevant ? '' : 'none';
+  if (!relevant) {
+    // Kosongkan biar tidak ada tanggal lama nyangkut kekirim -- Drop/Finish
+    // Instalasi/Golive dst menghapus atau mengabaikan field ini (backend
+    // juga sudah jaga-jaga hal yang sama, ini cuma biar UI-nya jujur).
+    const input = document.getElementById('target_fi');
+    if (input) input.value = '';
+  }
+}
+
+// Kategori Drop (BH): cuma muncul & wajib begitu Status dipilih Drop.
+function toggleKategoriDropField(statusZ) {
+  const field = document.getElementById('kategoriDropField');
+  const sel = document.getElementById('kategori_drop');
+  if (!field || !sel) return;
+  const isDrop = currentProgressDropStatuses.includes(statusZ);
+  field.style.display = isDrop ? '' : 'none';
+  if (!isDrop) sel.value = '';
+}
+
+// Dipanggil tiap Status (Z) berubah (termasuk render pertama kali panel
+// dibuka) -- satu tempat buat semua efek samping perubahan Status.
+function onPanelStatusZChange(rowNum, statusZ, preserveAa, initialAa) {
+  renderPanelAaOptions(statusZ, preserveAa ? (initialAa || '') : '');
+  toggleTargetFiField(statusZ);
+  toggleKategoriDropField(statusZ);
+  refreshTargetFiHint(statusZ);
+  renderExtraFields(statusZ);
+  renderDocumentsSection(rowNum, statusZ);
+  renderKmlSection(rowNum, statusZ);
+  renderBoqSection(rowNum);
+}
+
+async function openRow(rowNum) {
+  selectedRow = rowNum;
+  if (dashboardCache) renderLocList(getLocListRows(getFilteredRows()), document.getElementById('q').value);
+
+  const panel = document.getElementById('updatePanel');
+  panel.innerHTML = '<div class="skeleton">Memuat baris...</div>';
+
+  try {
+    const res = await fetch(`/api/row/${rowNum}`);
+    const json = await res.json();
+    if (!json.ok) { panel.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+
+    const { snapshot, label, z_options, aa_options, status_aa_groups, progress_drop_statuses, kategori_drop_options, extra_fields_by_status, extra_field_meta, pre_finish_install_statuses, document_types_by_status, progress_stages, document_keys_hidden, document_upload_required } = json;
+    currentExtraValues = snapshot.extra_fields || {};
+    currentExtraFieldsByStatus = extra_fields_by_status || {};
+    currentExtraFieldMeta = extra_field_meta || {};
+    currentPreFinishInstallStatuses = pre_finish_install_statuses || [];
+    currentTargetFiHasExisting = !!snapshot.target_fi;
+    currentDocuments = snapshot.documents || {};
+    currentDocumentTypesByStatus = document_types_by_status || {};
+    currentProgressStages = progress_stages || [];
+    currentDocumentKeysHidden = document_keys_hidden || [];
+    currentDocumentUploadRequired = document_upload_required !== false;
+    currentAaOptionsAll = aa_options || [];
+    currentStatusAaGroups = status_aa_groups || {};
+    currentProgressDropStatuses = progress_drop_statuses || [];
+    currentKategoriDropOptions = kategori_drop_options || [];
+    currentKmlVisibleStatuses = json.kml_visible_statuses || [];
+
+    panel.innerHTML = `
+      <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:8px;">Baris #${rowNum} — ${esc(label.ihld)} · ${esc(label.lokasi)}</div>
+      <div style="margin-bottom: 10px;">
+        <span class="badge status">Status saat ini: ${esc(snapshot.status_z) || '-'}</span>
+        <span class="badge">Sub: ${esc(snapshot.status_aa) || '-'}</span>
+      </div>
+      ${renderAgingProgress(snapshot)}
+      ${snapshot.last_note ? `
+        <label>Keterangan sebelumnya</label>
+        <div class="note-preview" style="border-color:var(--brand-blue); color:var(--text); margin-bottom:10px;">${esc(snapshot.last_note)}</div>
+      ` : ''}
+      ${snapshot.note_preview ? `
+        <label>Riwayat keterangan lengkap (terbaru di atas)</label>
+        <div class="note-preview">${esc(snapshot.note_preview)}</div>
+      ` : ''}
+      <div class="field mitra-combo" id="mitraComboField" style="margin-top:14px;">
+        <label for="mitra_search">Nama Mitra (kolom Y)</label>
+        <input type="text" id="mitra_search" placeholder="-- ketik utk cari nama mitra --" autocomplete="off">
+        <input type="hidden" id="nama_mitra" value="${esc(snapshot.mitra || '')}">
+        <div class="mitra-combo-list" id="mitraComboList"></div>
+        <div class="mitra-jenis-hint" id="mitraJenisHint"></div>
+      </div>
+      <div class="field" style="margin-top:14px;">
+        <label for="status_z">Status (kolom Z)</label>
+        <select id="status_z" onchange="onPanelStatusZChange(${rowNum}, this.value, false);">
+          <option value="">-- pilih status --</option>
+          ${z_options.map(o => `<option value="${o}" ${o === snapshot.status_z ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label for="status_aa">Sub Status (kolom AA)</label>
+        <select id="status_aa"></select>
+      </div>
+      <div class="field" id="targetFiField">
+        <label for="target_fi">Target Finish Instalasi (kolom AK) <span id="targetFiHint"></span></label>
+        <input type="date" id="target_fi" min="${new Date().toISOString().slice(0,10)}" value="${snapshot.target_fi_iso || ''}">
+      </div>
+      <div class="field" id="kategoriDropField" style="display:none;">
+        <label for="kategori_drop">Kategori Drop (kolom BH) <span style="color:#dc2626;">*wajib dipilih</span></label>
+        <select id="kategori_drop">
+          <option value="">-- pilih kategori drop --</option>
+          ${currentKategoriDropOptions.map(o => `<option value="${o}" ${o === snapshot.kategori_drop ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Dokumen LOP</label>
+        <div id="documentsContainer"></div>
+      </div>
+      <div class="field">
+        <label>KML Lokasi <span style="color:var(--muted); font-weight:400;">(opsional)</span></label>
+        <div id="kmlContainer"></div>
+      </div>
+      <div class="field">
+        <label>BOQ <span style="color:var(--muted); font-weight:400;">(opsional, .pdf/.xlsx/.xls)</span></label>
+        <div id="boqContainer"></div>
+      </div>
+      <div id="extraFieldsContainer"></div>
+      <div class="field">
+        <label for="note_text">Keterangan update</label>
+        <textarea id="note_text" placeholder="cth: penarikan kabel selesai 80%..."></textarea>
+      </div>
+      <div id="updateMsg"></div>
+      <button onclick="saveUpdate(${rowNum})">Simpan Update</button>
+      &nbsp; <a href="#" onclick="document.getElementById('q').focus(); return false;">&larr; Cari lagi</a>
+    `;
+    onPanelStatusZChange(rowNum, snapshot.status_z, true, snapshot.status_aa);
+    initMitraCombo();
+
+    // KML SENGAJA di-load terpisah/lazy setelah panel utama tampil (bukan
+    // ikut Promise.all di atas) -- supaya buka panel tidak ikut nunggu
+    // request ke Drive (opsional & kadang lebih lambat dari Sheets).
+    currentKmlFiles = null;
+    currentKmlRowNum = rowNum;
+    loadKmlFiles(rowNum);
+
+    // BOQ sama pola lazy-nya dengan KML di atas.
+    currentBoqFiles = null;
+    currentBoqRowNum = rowNum;
+    loadBoqFiles(rowNum);
+  } catch (e) {
+    panel.innerHTML = `<div class="flash error">Gagal memuat baris: ${e}</div>`;
+  }
+}
+
+// Field tambahan (BL-BQ) muncul tergantung status yang DIPILIH (bukan
+// status tersimpan) — jadi ganti dropdown Status langsung mengganti field
+// yang tampil. Selalu di-prefill dari nilai yang sudah ada di sheet,
+// supaya (mis.) Jumlah ODP/Port yang sudah diisi saat Finish Instalasi
+// otomatis kelihatan lagi saat status diganti ke Golive.
+// ── Dokumen LOP (upload/revisi ke Google Drive) ───────────────────────
+// Cari index tahap (di currentProgressStages) yang cocok dengan sebuah
+// nilai status Z -- mirror dari _find_progress_stage_index() di backend
+// (sheets_service.py), supaya urutan "sebelum/pas/setelah" konsisten
+// dengan cara progress % dihitung. Return -1 kalau tidak match (status
+// kosong, Drop, atau di luar sequence progress).
+function findProgressStageIndex(statusZ) {
+  for (let i = 0; i < currentProgressStages.length; i++) {
+    const stage = currentProgressStages[i];
+    if (stage.z_values && stage.z_values.includes(statusZ)) return i;
+  }
+  return -1;
+}
+
+// Mode tampilan 1 dokumen berdasarkan status Z yang SEDANG DIPILIH (bukan
+// cuma status tersimpan) dibanding required_status dokumen itu:
+//   'hidden' -> status yang dipilih masih SEBELUM required_status (belum relevan)
+//   'upload' -> status yang dipilih PERSIS required_status (saatnya upload)
+//   'view'   -> status yang dipilih SUDAH LEWAT required_status (cuma lihat file)
+function getDocumentMode(doc, statusZ) {
+  const requiredIdx = findProgressStageIndex(doc.required_status);
+  const currentIdx = findProgressStageIndex(statusZ);
+  if (currentIdx === -1 || requiredIdx === -1) return 'hidden';
+  if (currentIdx < requiredIdx) return 'hidden';
+  if (currentIdx === requiredIdx) return 'upload';
+  return 'view';
+}
+
+function renderDocumentsSection(rowNum, currentStatusZ) {
+  const container = document.getElementById('documentsContainer');
+  if (!container) return;
+
+  const entries = Object.entries(currentDocuments).filter(([key]) => !currentDocumentKeysHidden.includes(key));
+
+  container.innerHTML = entries.map(([key, doc]) => {
+    const mode = getDocumentMode(doc, currentStatusZ);
+    if (mode === 'hidden') return '';
+
+    const isReallyRequired = mode === 'upload' && currentDocumentUploadRequired;
+    const fileBlock = doc.url
+      ? `<div style="font-size:0.8rem; margin:4px 0;"><a href="${esc(doc.url)}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>`
+      : `<div style="font-size:0.8rem; color:${isReallyRequired ? '#dc2626' : 'var(--muted)'}; margin:4px 0;">${isReallyRequired ? 'Belum diupload — wajib untuk status ini' : 'Belum diupload'}</div>`;
+    const logBlock = doc.log ? `<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">${esc(doc.log)}</div>` : '';
+
+    const uploadControls = mode === 'upload' ? `
+        <input type="file" id="docfile_${key}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+        <input type="text" id="docnote_${key}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%; margin-bottom:4px;">
+        <button type="button" class="btn-ghost btn-sm" onclick="uploadDocument(${rowNum}, '${key}')">Upload${doc.url ? ' / Revisi' : ''}</button>
+        <div id="docmsg_${key}"></div>
+      ` : '';
+
+    return `
+      <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:0.85rem;">
+          <strong>${esc(doc.label)}</strong>
+          <span style="font-size:0.72rem; color:var(--muted);">${currentDocumentUploadRequired ? `wajib saat ${esc(doc.required_status)}` : 'opsional sementara'}</span>
+        </div>
+        ${fileBlock}
+        ${logBlock}
+        ${uploadControls}
+      </div>
+    `;
+  }).join('') || '<div class="sub" style="color:var(--muted); font-size:0.8rem;">Tidak ada dokumen yang relevan untuk status ini.</div>';
+}
+
+async function uploadDocument(rowNum, docKey) {
+  const fileInput = document.getElementById(`docfile_${docKey}`);
+  const noteInput = document.getElementById(`docnote_${docKey}`);
+  const msg = document.getElementById(`docmsg_${docKey}`);
+  const file = fileInput.files[0];
+
+  if (!file) { msg.innerHTML = '<div class="flash error">Pilih file dulu.</div>'; return; }
+
+  const isRevision = !!(currentDocuments[docKey] && currentDocuments[docKey].url);
+  if (isRevision && !noteInput.value.trim()) {
+    msg.innerHTML = '<div class="flash error">Catatan revisi wajib diisi (apa yang diubah/dihapus/ditambah).</div>';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('note', noteInput.value.trim());
+
+  msg.innerHTML = '<div class="skeleton">Mengupload...</div>';
+  try {
+    const res = await fetch(`/api/row/${rowNum}/document/${docKey}`, { method: 'POST', body: formData });
+    const json = await res.json();
+    if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+    msg.innerHTML = '<div class="flash success">Tersimpan.</div>';
+    openRow(rowNum);
+  } catch (e) {
+    msg.innerHTML = `<div class="flash error">Gagal upload: ${e}</div>`;
+  }
+}
+
+// ── KML per-LOP (opsional, terpisah dari Dokumen LOP di atas) ─────────
+// fmtKmlDate: Drive createdTime formatnya ISO ("2026-08-26T10:00:00.000Z")
+// -- cukup ambil bagian tanggalnya saja, dibalik ke DD/MM/YYYY.
+function fmtKmlDate(iso) {
+  if (!iso) return '-';
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function renderKmlSection(rowNum, statusZ) {
+  const container = document.getElementById('kmlContainer');
+  if (!container) return;
+
+  const showUpload = currentKmlVisibleStatuses.includes(statusZ);
+
+  const uploadBlock = showUpload ? `
+    <div style="margin-bottom:10px;">
+      <input type="file" id="kmlfile" accept=".kml,.kmz" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+      <button type="button" class="btn-ghost btn-sm" onclick="uploadKmlFile(${rowNum})">Upload KML</button>
+      <div id="kmlUploadMsg"></div>
+    </div>
+  ` : '';
+
+  let listBlock;
+  if (currentKmlFiles === null) {
+    listBlock = '<div class="skeleton">Memuat daftar KML...</div>';
+  } else if (!currentKmlFiles.length) {
+    listBlock = '<div class="sub" style="color:var(--muted); font-size:0.8rem;">Belum ada KML yang diupload.</div>';
+  } else {
+    listBlock = currentKmlFiles.map(f => `
+      <div class="card" style="background:var(--panel-alt); padding:8px 10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div style="font-size:0.8rem;">
+          <div>${esc(f.name)}</div>
+          <div style="color:var(--muted); font-size:0.7rem;">Diupload ${fmtKmlDate(f.created)}</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button type="button" class="btn-ghost btn-sm" onclick="openKmlModal('${esc(f.name).replace(/'/g, "\\'")}', '${f.id}')">Preview</button>
+          <a href="${f.url}" target="_blank" rel="noopener" class="btn-ghost btn-sm" style="text-decoration:none;">Buka &#8599;</a>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  container.innerHTML = uploadBlock + listBlock;
+}
+
+// Dipanggil terpisah/lazy dari openRow() (lihat komentar di sana) --
+// bukan bagian dari fetch utama /api/row/<row_num>, supaya panel utama
+// tidak ikut nunggu request ke Drive.
+async function loadKmlFiles(rowNum) {
+  try {
+    const res = await fetch(`/api/row/${rowNum}/kml`);
+    const json = await res.json();
+    if (rowNum !== currentKmlRowNum) return; // user sudah pindah baris lain sebelum respons ini nyampe
+    currentKmlFiles = json.ok ? (json.files || []) : [];
+    renderKmlSection(rowNum, document.getElementById('status_z')?.value || '');
+  } catch (e) {
+    if (rowNum !== currentKmlRowNum) return;
+    currentKmlFiles = [];
+    renderKmlSection(rowNum, document.getElementById('status_z')?.value || '');
+  }
+}
+
+async function uploadKmlFile(rowNum) {
+  const fileInput = document.getElementById('kmlfile');
+  const msg = document.getElementById('kmlUploadMsg');
+  const file = fileInput.files[0];
+  if (!file) { msg.innerHTML = '<div class="flash error">Pilih file KML dulu.</div>'; return; }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  msg.innerHTML = '<div class="skeleton">Mengupload...</div>';
+  try {
+    const res = await fetch(`/api/row/${rowNum}/kml`, { method: 'POST', body: formData });
+    const json = await res.json();
+    if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+    msg.innerHTML = '<div class="flash success">Tersimpan.</div>';
+    fileInput.value = '';
+    loadKmlFiles(rowNum); // refresh list tanpa perlu buka ulang seluruh panel
+  } catch (e) {
+    msg.innerHTML = `<div class="flash error">Gagal upload: ${e}</div>`;
+  }
+}
+
+// ── BOQ per-LOP (opsional, sama pola dengan KML di atas -- bedanya tombol
+// upload SELALU tampil, tidak difilter per status Z) ───────────────────
+function renderBoqSection(rowNum) {
+  const container = document.getElementById('boqContainer');
+  if (!container) return;
+
+  const uploadBlock = `
+    <div style="margin-bottom:10px;">
+      <input type="file" id="boqfile" accept=".pdf,.xlsx,.xls" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+      <button type="button" class="btn-ghost btn-sm" onclick="uploadBoqFile(${rowNum})">Upload BOQ</button>
+      <div id="boqUploadMsg"></div>
+    </div>
+  `;
+
+  let listBlock;
+  if (currentBoqFiles === null) {
+    listBlock = '<div class="skeleton">Memuat daftar BOQ...</div>';
+  } else if (!currentBoqFiles.length) {
+    listBlock = '<div class="sub" style="color:var(--muted); font-size:0.8rem;">Belum ada BOQ yang diupload.</div>';
+  } else {
+    listBlock = currentBoqFiles.map(f => `
+      <div class="card" style="background:var(--panel-alt); padding:8px 10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div style="font-size:0.8rem;">
+          <div>${esc(f.name)}</div>
+          <div style="color:var(--muted); font-size:0.7rem;">Diupload ${fmtKmlDate(f.created)}</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button type="button" class="btn-ghost btn-sm" onclick="openBoqModal('${esc(f.name).replace(/'/g, "\\'")}', '${f.id}')">Preview</button>
+          <a href="${f.url}" target="_blank" rel="noopener" class="btn-ghost btn-sm" style="text-decoration:none;">Buka &#8599;</a>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  container.innerHTML = uploadBlock + listBlock;
+}
+
+// Dipanggil terpisah/lazy dari openRow() -- sama alasannya dengan
+// loadKmlFiles (tidak ikut nunggu request ke Drive di panel utama).
+async function loadBoqFiles(rowNum) {
+  try {
+    const res = await fetch(`/api/row/${rowNum}/boq`);
+    const json = await res.json();
+    if (rowNum !== currentBoqRowNum) return; // user sudah pindah baris lain sebelum respons ini nyampe
+    currentBoqFiles = json.ok ? (json.files || []) : [];
+    renderBoqSection(rowNum);
+  } catch (e) {
+    if (rowNum !== currentBoqRowNum) return;
+    currentBoqFiles = [];
+    renderBoqSection(rowNum);
+  }
+}
+
+async function uploadBoqFile(rowNum) {
+  const fileInput = document.getElementById('boqfile');
+  const msg = document.getElementById('boqUploadMsg');
+  const file = fileInput.files[0];
+  if (!file) { msg.innerHTML = '<div class="flash error">Pilih file BOQ dulu.</div>'; return; }
+  if (!/\.(pdf|xlsx|xls)$/i.test(file.name)) {
+    msg.innerHTML = '<div class="flash error">File harus berformat .pdf, .xlsx, atau .xls.</div>';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  msg.innerHTML = '<div class="skeleton">Mengupload...</div>';
+  try {
+    const res = await fetch(`/api/row/${rowNum}/boq`, { method: 'POST', body: formData });
+    const json = await res.json();
+    if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+    msg.innerHTML = '<div class="flash success">Tersimpan.</div>';
+    fileInput.value = '';
+    loadBoqFiles(rowNum); // refresh list tanpa perlu buka ulang seluruh panel
+  } catch (e) {
+    msg.innerHTML = `<div class="flash error">Gagal upload: ${e}</div>`;
+  }
+}
+
+// ── BOQ preview modal ──────────────────────────────────────────────
+// PDF: dirender NATIF oleh browser lewat <iframe> (gratis, tidak perlu
+// library apapun -- semua browser modern punya PDF viewer bawaan).
+// xlsx/xls: diparse di WEB WORKER (thread terpisah dari halaman utama,
+// masih 100% client-side & gratis -- BUKAN Google Sheets/Office Online).
+// Sebelumnya parsing dijalankan langsung di main thread -> untuk file
+// besar ini MEMBLOKIR seluruh halaman termasuk tombol "Tutup" (JS di
+// browser cuma 1 thread, jadi selama parsing jalan, klik apapun baru
+// diproses SETELAH parsing selesai). Dipindah ke Worker supaya halaman
+// tetap responsif berapa pun lama parsing-nya. Jumlah baris yang
+// ditampilkan juga dibatasi (BOQ_PREVIEW_ROW_CAP) -- merender tabel HTML
+// puluhan ribu baris sendiri bisa bikin BROWSER lag walau parsing-nya
+// sudah kelar, jadi ini masalah terpisah dari soal thread-blocking di atas.
+const BOQ_PREVIEW_ROW_CAP = 800;
+let boqWorker = null;
+let boqWorkerRequestId = 0; // dipakai buang respons "nyasar" kalau modal dibuka-tutup-buka cepat / ganti file sebelum sheet sebelumnya kelar diparse
+
+function getBoqWorker() {
+  if (boqWorker) return boqWorker;
+  const src = `
+    importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+    let wb = null;
+    const ROW_CAP = ${BOQ_PREVIEW_ROW_CAP};
+    const COL_CAP = 100;
+    // Filter KHUSUS PREVIEW (tidak berlaku untuk "Buka"/download raw file
+    // di /boq-content -- itu tetap file asli utuh tanpa filter apapun):
+    //   - data ditampilkan mulai dari baris 6 (cell A6), semua kolom dari A
+    //   - baris dengan kolom G kosong DIBUANG dari preview
+    const PREVIEW_START_ROW = 5;  // baris 6 (0-indexed)
+    const COL_G = 6;              // kolom G (0-indexed: A=0 ... G=6)
+    function sendSheet(reqId, idx) {
+      const ws = wb.Sheets[wb.SheetNames[idx]];
+      let rows = [];
+      let colsTruncated = false;
+      if (ws['!ref']) {
+        const full = XLSX.utils.decode_range(ws['!ref']);
+        if (full.e.r >= PREVIEW_START_ROW) {
+          const range = { s: { r: PREVIEW_START_ROW, c: full.s.c }, e: { r: full.e.r, c: full.e.c } };
+          if (range.e.c - range.s.c + 1 > COL_CAP) {
+            colsTruncated = true;
+            range.e.c = range.s.c + COL_CAP - 1;
+          }
+          const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', range: range });
+          const gOffset = COL_G - range.s.c; // indeks kolom G RELATIF terhadap kolom awal range (biasanya A -> offset = 6)
+          rows = allRows.filter(r => {
+            const g = r[gOffset];
+            return g !== '' && g !== undefined && g !== null;
+          });
+        }
+        // full.e.r < PREVIEW_START_ROW -> sheet ini lebih pendek dari baris 6, tidak ada yang bisa ditampilkan (rows tetap [])
+      }
+      postMessage({ reqId, type: 'sheet', index: idx, rows, colsTruncated });
+    }
+    onmessage = function(e) {
+      const msg = e.data;
+      try {
+        if (msg.type === 'parse') {
+          // sheetRows: HENTIKAN pembacaan tiap sheet begitu sampai baris
+          // ke-ROW_CAP -- baris sisanya (bisa jutaan kalau "used range"
+          // sheet-nya ke-inflate gara-gara formatting lama) TIDAK PERNAH
+          // diproses sama sekali. Beda dari sebelumnya (baca semua baris
+          // dulu baru dipotong belakangan) -- itu penyebab hang/"Page
+          // Unresponsive"-nya, bukan soal worker/thread.
+          wb = XLSX.read(msg.buffer, { type: 'array', sheetRows: ROW_CAP });
+          postMessage({ reqId: msg.reqId, type: 'parsed', sheetNames: wb.SheetNames });
+          sendSheet(msg.reqId, 0);
+        } else if (msg.type === 'getSheet') {
+          sendSheet(msg.reqId, msg.index);
+        }
+      } catch (err) {
+        postMessage({ reqId: msg.reqId, type: 'error', message: String(err) });
+      }
+    };
+  `;
+  boqWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'application/javascript' })));
+  return boqWorker;
+}
+
+function setBoqModalContent(html) {
+  document.getElementById('boqModalBody').innerHTML = html;
+}
+
+function renderBoqSheetTable(rows, colsTruncated) {
+  const container = document.getElementById('boqSheetContainer');
+  if (!container) return;
+  if (!rows.length) { container.innerHTML = '<div class="sub" style="color:var(--muted);">Sheet ini kosong.</div>'; return; }
+  const table = document.createElement('table');
+  table.id = 'boqSheetTable';
+  const tbody = document.createElement('tbody');
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    row.forEach(cell => {
+      const td = document.createElement('td');
+      td.textContent = cell === null || cell === undefined ? '' : String(cell);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.innerHTML = '';
+  // Total baris ASLI sengaja TIDAK ditampilkan -- menghitungnya butuh
+  // parsing seluruh sheet (termasuk baris kosong yang ke-inflate), yang
+  // justru masalah performa yang mau dihindari. Catatan ini fixed,
+  // ditampilkan selalu (bukan cuma kalau "melebihi cap") demi kesederhanaan.
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:0.72rem; color:var(--muted); margin-bottom:6px;';
+  note.textContent = `Preview: mulai dari baris 6 (A6), baris dengan kolom G kosong disembunyikan. Dibatasi ${BOQ_PREVIEW_ROW_CAP.toLocaleString('id-ID')} baris pertama${colsTruncated ? ' & 100 kolom pertama' : ''} (demi performa). File asli (tombol "Buka") tidak difilter.`;
+  container.appendChild(note);
+  container.appendChild(table);
+}
+
+async function openBoqModal(name, fileId) {
+  document.getElementById('boqModalTitle').textContent = name || 'Preview BOQ';
+  document.getElementById('boqModalOverlay').classList.add('open');
+
+  const lower = (name || '').toLowerCase();
+  const contentUrl = `/boq-content/${fileId}?name=${encodeURIComponent(name)}`;
+  const myReqId = ++boqWorkerRequestId; // request ID sendiri -- kalau user buka file lain sebelum ini kelar, respons lama diabaikan (lihat pengecekan di bawah)
+
+  if (lower.endsWith('.pdf')) {
+    setBoqModalContent(`<iframe src="${contentUrl}" style="width:100%; height:100%; border:0; display:block;"></iframe>`);
+    return;
+  }
+
+  if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+    setBoqModalContent('<div style="padding:16px; color:#94a3b8; font-size:0.85rem;">Mengambil file...</div>');
+    try {
+      const res = await fetch(contentUrl);
+      if (!res.ok) throw new Error('Server gagal ambil file dari Drive (status ' + res.status + ')');
+      const buf = await res.arrayBuffer();
+      if (myReqId !== boqWorkerRequestId) return; // user sudah buka file lain sementara fetch ini jalan
+
+      setBoqModalContent('<div style="padding:16px; color:#94a3b8; font-size:0.85rem;">Memproses spreadsheet (tetap bisa ditutup selagi diproses)...</div>');
+      const worker = getBoqWorker();
+      worker.onmessage = (e) => {
+        const msg = e.data;
+        if (msg.reqId !== myReqId) return; // respons nyasar dari request sebelumnya, abaikan
+        if (msg.type === 'error') {
+          setBoqModalContent(`<div style="padding:16px; color:#f87171; font-size:0.85rem;">Gagal memproses file: ${esc(msg.message)}</div>`);
+          return;
+        }
+        if (msg.type === 'parsed') {
+          const tabs = msg.sheetNames.map((sn, i) => `<button type="button" class="btn-ghost btn-sm boq-sheet-tab" data-sheet="${i}" style="margin:0 4px 8px 0;">${esc(sn)}</button>`).join('');
+          setBoqModalContent(`
+            <div style="padding:12px; height:100%; overflow:auto; box-sizing:border-box;">
+              ${msg.sheetNames.length > 1 ? `<div style="margin-bottom:6px;">${tabs}</div>` : ''}
+              <div id="boqSheetContainer" style="font-size:0.78rem;">
+                <div class="skeleton">Memuat data sheet...</div>
+              </div>
+            </div>
+            <style>#boqSheetTable{border-collapse:collapse;} #boqSheetTable td{border:1px solid var(--panel-alt,#333); padding:3px 6px; white-space:nowrap;}</style>
+          `);
+          document.querySelectorAll('.boq-sheet-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+              document.getElementById('boqSheetContainer').innerHTML = '<div class="skeleton">Memuat data sheet...</div>';
+              worker.postMessage({ reqId: myReqId, type: 'getSheet', index: parseInt(btn.dataset.sheet, 10) });
+            });
+          });
+          return;
+        }
+        if (msg.type === 'sheet') {
+          renderBoqSheetTable(msg.rows, msg.colsTruncated);
+        }
+      };
+      worker.postMessage({ reqId: myReqId, type: 'parse', buffer: buf }, [buf]); // transferable -- zero-copy ke worker, lebih cepat untuk file besar
+    } catch (e) {
+      if (myReqId !== boqWorkerRequestId) return;
+      setBoqModalContent(`<div style="padding:16px; color:#f87171; font-size:0.85rem;">Gagal menampilkan file: ${esc(e.message)}</div>`);
+    }
+    return;
+  }
+
+  setBoqModalContent('<div style="padding:16px; color:#94a3b8; font-size:0.85rem;">Format file tidak didukung untuk preview. Silakan pakai tombol "Buka".</div>');
+}
+
+function closeBoqModal() {
+  document.getElementById('boqModalOverlay').classList.remove('open');
+  boqWorkerRequestId++; // apapun yang masih diproses worker/fetch dianggap basi, respons yang nyampe belakangan diabaikan
+  setBoqModalContent('');
+}
+document.getElementById('boqModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'boqModalOverlay') closeBoqModal();
+});
+
+
+
+// Target Finish Instalasi (kolom AK) wajib diisi selama status yang DIPILIH
+// masih sebelum Finish Instalasi -- kecuali kolom AK sudah ada isi lama
+// (boleh dibiarkan). Dicek ulang tiap dropdown Status diganti.
+function refreshTargetFiHint(statusZ) {
+  const hint = document.getElementById('targetFiHint');
+  if (!hint) return;
+  const required = currentPreFinishInstallStatuses.includes(statusZ);
+  if (!required) {
+    hint.innerHTML = `<span style="color:var(--muted); font-weight:400;">(opsional di tahap ini)</span>`;
+  } else if (currentTargetFiHasExisting) {
+    hint.innerHTML = `<span style="color:var(--muted); font-weight:400;">*wajib ada isinya (boleh biarkan tanggal lama)</span>`;
+  } else {
+    hint.innerHTML = `<span style="color:#dc2626;">*wajib diisi</span>`;
+  }
+}
+
+function renderExtraFields(statusZ) {
+  const container = document.getElementById('extraFieldsContainer');
+  if (!container) return;
+  const keys = currentExtraFieldsByStatus[statusZ] || [];
+  if (!keys.length) { container.innerHTML = ''; return; }
+
+  container.innerHTML = `
+    <div class="card" style="background:var(--panel-alt); margin: 4px 0 14px; padding: 12px;">
+      <div style="font-size:0.78rem; font-weight:700; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.03em;">
+        Data tambahan untuk ${esc(statusZ)}
+      </div>
+      ${keys.map(key => {
+        const meta = currentExtraFieldMeta[key] || {};
+        const value = currentExtraValues[key] || '';
+        const inputType = meta.type === 'number' ? 'text' : (meta.type === 'currency' ? 'text' : 'text');
+        return `
+          <div class="field">
+            <label for="extra_${key}">${esc(meta.label || key)}${meta.type === 'currency' ? ' (Rp)' : ''} <span style="color:var(--muted); font-weight:400;">(opsional)</span></label>
+            <input type="${inputType}" id="extra_${key}" class="extra-field-input" data-key="${key}"
+                   placeholder="${esc(meta.placeholder || '')}" value="${esc(value)}">
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+async function saveUpdate(rowNum) {
+  const status_z = document.getElementById('status_z').value;
+  const status_aa = document.getElementById('status_aa').value;
+  const note_text = document.getElementById('note_text').value;
+  const target_fi = document.getElementById('target_fi').value;
+  const kategoriDropEl = document.getElementById('kategori_drop');
+  const kategori_drop = kategoriDropEl ? kategoriDropEl.value : '';
+  const mitraEl = document.getElementById('nama_mitra');
+  const nama_mitra = mitraEl ? mitraEl.value : '';
+  const msg = document.getElementById('updateMsg');
+
+  if (!status_z) { msg.innerHTML = '<div class="flash error">Status (kolom Z) wajib dipilih.</div>'; return; }
+  if (!note_text.trim()) { msg.innerHTML = '<div class="flash error">Keterangan tidak boleh kosong.</div>'; return; }
+  if (target_fi && target_fi < new Date().toISOString().slice(0,10)) {
+    msg.innerHTML = '<div class="flash error">Tanggal Target Finish Instalasi tidak boleh tanggal yang sudah lewat.</div>';
+    return;
+  }
+  if (currentPreFinishInstallStatuses.includes(status_z) && !target_fi && !currentTargetFiHasExisting) {
+    msg.innerHTML = '<div class="flash error">Target Finish Instalasi (kolom AK) wajib diisi untuk status sebelum Finish Instalasi.</div>';
+    return;
+  }
+  if (currentProgressDropStatuses.includes(status_z) && !kategori_drop) {
+    msg.innerHTML = '<div class="flash error">Kategori Drop (kolom BH) wajib dipilih untuk status Drop.</div>';
+    return;
+  }
+  const requiredDocKeys = currentDocumentUploadRequired ? (currentDocumentTypesByStatus[status_z] || []) : [];
+  const missingDocs = requiredDocKeys
+    .filter(key => !(currentDocuments[key] && currentDocuments[key].url))
+    .map(key => currentDocuments[key] ? currentDocuments[key].label : key);
+  if (missingDocs.length) {
+    msg.innerHTML = `<div class="flash error">Dokumen wajib belum diupload: ${missingDocs.map(esc).join(', ')}.</div>`;
+    return;
+  }
+
+  const extra_fields = {};
+  document.querySelectorAll('.extra-field-input').forEach(input => {
+    extra_fields[input.dataset.key] = input.value;
+  });
+
+  msg.innerHTML = '<div class="skeleton">Menyimpan...</div>';
+  try {
+    const res = await fetch(`/api/row/${rowNum}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status_z, status_aa, note_text, extra_fields, target_fi, kategori_drop, nama_mitra }),
+    });
+    const json = await res.json();
+    if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
+    msg.innerHTML = `<div class="flash success">Tersimpan ke kolom ${json.note_col} (tanggal di ${json.date_col}).</div>`;
+    loadDashboard();
+    openRow(rowNum);
+  } catch (e) {
+    msg.innerHTML = `<div class="flash error">Gagal menyimpan: ${e}</div>`;
+  }
+}
+
+loadDashboard();
+
+// Kalau datang dari notifikasi di halaman lain (?openRow=123), langsung
+// buka panel update untuk baris itu dan scroll ke sana.
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const openRowParam = params.get('openRow');
+  if (!openRowParam) return;
+  const rowNum = parseInt(openRowParam, 10);
+  if (!rowNum) return;
+  openRow(rowNum);
+  setTimeout(() => {
+    const panelEl = document.getElementById('updatePanel');
+    if (panelEl) panelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 300);
+})();
+</script>
+{% endblock %}

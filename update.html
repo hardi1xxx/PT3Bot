@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block menu_pt3 %}active{% endblock %}
+{% block page_title %}Update Status — Baris #{{ row }}{% endblock %}
+{% block page_sub %}Update status &amp; keterangan tanpa buka Google Sheet{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:640px; margin:0 auto 16px;">
+  <div class="sub" style="color:var(--muted); font-size:0.85rem;">Baris #{{ row }}</div>
+  <div style="margin: 8px 0 10px;">
+    <span class="badge status">Status saat ini: {{ snapshot.status_z or '-' }}</span>
+    <span class="badge">Sub: {{ snapshot.status_aa or '-' }}</span>
+  </div>
+  {% if snapshot.progress_stage_label == 'Drop' %}
+    <div class="badge" style="background:#7f1d1d; margin-bottom:10px; display:inline-block;">Status: Drop — di luar progress tahapan</div>
+  {% elif not snapshot.wo_terbit %}
+    <div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:10px;">WO terbit (kolom D) belum terisi — aging &amp; deadline belum bisa dihitung.</div>
+  {% else %}
+    <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:10px;">
+      <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; font-size:0.85rem; color:var(--muted); margin-bottom:6px;">
+        <span>WO terbit: <strong style="color:var(--text);">{{ snapshot.wo_terbit }}</strong></span>
+        <span>Aging: <strong style="color:var(--text);">{{ snapshot.aging_days if snapshot.aging_days is not none else '-' }} hari</strong></span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
+        <span>Progress — {{ snapshot.progress_stage_label or '-' }}</span>
+        <span><strong>{{ snapshot.progress_percent | round | int if snapshot.progress_percent is not none else 0 }}%</strong></span>
+      </div>
+      <div style="background:#0002; border-radius:6px; overflow:hidden; height:8px; margin-bottom:6px;">
+        <div style="width:{{ [snapshot.progress_percent or 0, 100] | min }}%; height:100%; background:{{ '#dc2626' if snapshot.is_overdue else '#16a34a' if (snapshot.progress_percent or 0) >= 100 else 'var(--brand-blue, #29467a)' }};"></div>
+      </div>
+      <div style="font-size:0.8rem; color:var(--muted);">
+        Deadline tahap ini:
+        <strong style="color: {{ '#dc2626' if snapshot.is_overdue else 'var(--text)' }};">{{ snapshot.current_stage_deadline }}</strong>
+        {% if snapshot.is_overdue %}<span class="badge" style="background:#dc2626;">Lewat deadline</span>{% endif %}
+        &nbsp;·&nbsp; Target Golive: {{ snapshot.final_deadline }}
+      </div>
+    </div>
+  {% endif %}
+  {% if snapshot.note_preview %}
+    <label>Riwayat keterangan (terbaru di atas)</label>
+    <div class="note-preview">{{ snapshot.note_preview }}</div>
+  {% endif %}
+</div>
+
+<form method="post" class="card" style="max-width:640px; margin:0 auto;" enctype="multipart/form-data">
+  <style>
+    /* Dropdown pencarian Nama Mitra (kolom Y) -- daftar bisa ~500 nama,
+       jadi dibuat combobox kecil dgn hasil filter dibatasi (lihat JS),
+       BUKAN <select> berisi 500 <option> yang bikin render awal berat. */
+    .mitra-combo { position: relative; }
+    .mitra-combo input[type="text"] { width: 100%; box-sizing: border-box; }
+    .mitra-combo-list {
+      display: none; position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+      max-height: 220px; overflow-y: auto; background: var(--panel, #fff);
+      border: 1px solid var(--border, #2a3550); border-radius: 8px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+    }
+    .mitra-combo-list.open { display: block; }
+    .mitra-combo-item { padding: 7px 10px; font-size: 0.85rem; cursor: pointer; }
+    .mitra-combo-item:hover, .mitra-combo-item.active { background: var(--brand-blue, #29467a); color: #fff; }
+    .mitra-combo-empty { padding: 7px 10px; font-size: 0.8rem; color: var(--muted); }
+    .mitra-jenis-hint { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    .mitra-jenis-hint strong { color: var(--text); }
+  </style>
+
+  <div class="field mitra-combo" id="mitraComboField">
+    <label for="mitra_search">Nama Mitra (kolom Y)</label>
+    <input type="text" id="mitra_search" placeholder="-- ketik utk cari nama mitra --" autocomplete="off">
+    <input type="hidden" name="nama_mitra" id="nama_mitra" value="{{ snapshot.mitra or '' }}">
+    <div class="mitra-combo-list" id="mitraComboList"></div>
+    <div class="mitra-jenis-hint" id="mitraJenisHint"></div>
+  </div>
+
+  <div class="field">
+    <label for="status_z">Status (kolom Z)</label>
+    <select name="status_z" id="status_z" required>
+      <option value="">-- pilih status --</option>
+      {% for opt in z_options %}
+        <option value="{{ opt }}" {% if opt == snapshot.status_z %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="status_aa">Sub Status (kolom AA)</label>
+    <select name="status_aa" id="status_aa">
+      <option value="">-- tidak diubah --</option>
+    </select>
+  </div>
+
+  <div class="field" id="targetFiField">
+    <label for="target_fi">
+      Target Finish Instalasi (kolom AK)
+      <span id="targetFiHint" style="color:#dc2626;">*wajib diisi (boleh biarkan tanggal lama)</span>
+    </label>
+    <input type="date" name="target_fi" id="target_fi" min="{{ today_iso }}" value="{{ snapshot.target_fi_iso or '' }}">
+  </div>
+
+  <div class="field" id="kategoriDropField" style="display:none;">
+    <label for="kategori_drop">Kategori Drop (kolom BH) <span style="color:#dc2626;">*wajib dipilih</span></label>
+    <select name="kategori_drop" id="kategori_drop">
+      <option value="">-- pilih kategori drop --</option>
+      {% for opt in kategori_drop_options %}
+        <option value="{{ opt }}" {% if opt == snapshot.kategori_drop %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Dokumen LOP</label>
+    {% for doc_key, doc in snapshot.documents.items() %}
+      {% set mode = document_modes.get(doc_key, 'hidden') %}
+      {% if mode != 'hidden' %}
+      <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
+          <strong>{{ doc.label }}</strong>
+          <span style="font-size:0.72rem; color:var(--muted);">{{ 'wajib saat ' + doc.required_status if document_upload_required else 'opsional sementara' }}</span>
+        </div>
+        {% if doc.url %}
+          <div style="font-size:0.8rem; margin:4px 0;"><a href="{{ doc.url }}" target="_blank" rel="noopener">Lihat file saat ini &#8599;</a></div>
+        {% else %}
+          <div style="font-size:0.8rem; color:{{ '#dc2626' if mode == 'upload' else 'var(--muted)' }}; margin:4px 0;">Belum diupload</div>
+        {% endif %}
+        {% if doc.log %}<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">{{ doc.log }}</div>{% endif %}
+        {% if mode == 'upload' %}
+          <input type="file" name="doc_{{ doc_key }}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
+          <input type="text" name="doc_note_{{ doc_key }}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%;">
+        {% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="field">
+    <label for="note_text">Keterangan update</label>
+    <textarea name="note_text" id="note_text" placeholder="cth: penarikan kabel selesai 80%..." required></textarea>
+  </div>
+  <button type="submit">Simpan Update</button>
+  &nbsp; <a href="/pt3">&larr; Kembali ke dashboard</a>
+</form>
+
+<script>
+// Data dari backend (config.py) -- single source of truth, jangan hardcode di sini.
+const AA_OPTIONS_ALL = {{ aa_options | tojson }};
+const STATUS_AA_GROUPS = {{ status_aa_groups | tojson }};
+const PRE_FINISH_INSTALL_STATUSES = {{ pre_finish_install_statuses | tojson }};
+const PROGRESS_DROP_STATUSES = {{ progress_drop_statuses | tojson }};
+const CURRENT_STATUS_AA = {{ (snapshot.status_aa or '') | tojson }};
+
+const statusZSelect = document.getElementById('status_z');
+const statusAaSelect = document.getElementById('status_aa');
+const targetFiField = document.getElementById('targetFiField');
+const targetFiInput = document.getElementById('target_fi');
+const targetFiHint = document.getElementById('targetFiHint');
+const kategoriDropField = document.getElementById('kategoriDropField');
+const kategoriDropSelect = document.getElementById('kategori_drop');
+
+// Sub Status (AA): difilter sesuai Status (Z) yang lagi dipilih, urut
+// sesuai tahapan kerja (config.STATUS_AA_GROUPS). Z yang tidak ada
+// kelompoknya (mis. "0.1 SURVEI") -> tampil semua opsi apa adanya.
+function renderAaOptions(zValue, selectedAa) {
+  const options = STATUS_AA_GROUPS[zValue] || AA_OPTIONS_ALL;
+  const placeholder = STATUS_AA_GROUPS[zValue] ? '-- pilih sub status --' : '-- tidak diubah --';
+  statusAaSelect.innerHTML = `<option value="">${placeholder}</option>` +
+    options.map(opt => `<option value="${opt}" ${opt === selectedAa ? 'selected' : ''}>${opt}</option>`).join('');
+}
+
+// Target Finish Instalasi (AK): disembunyikan total begitu Status dipilih
+// DROP / Finish Instalasi / Golive / dst -- cuma relevan untuk status
+// SEBELUM Finish Instalasi (config.PRE_FINISH_INSTALL_STATUSES).
+function toggleTargetFi(zValue) {
+  const relevant = PRE_FINISH_INSTALL_STATUSES.includes(zValue);
+  targetFiField.style.display = relevant ? '' : 'none';
+  targetFiInput.required = false; // wajib-isi divalidasi di server (boleh nilai lama), bukan lewat HTML required
+  if (!relevant) { targetFiHint.textContent = ''; targetFiInput.value = ''; } // kosongkan biar tidak ada tanggal lama nyangkut kekirim (Drop/Finish Instalasi/Golive dst mengabaikan/menghapus field ini)
+  else targetFiHint.textContent = '*wajib diisi (boleh biarkan tanggal lama)';
+}
+
+// Kategori Drop (BH): cuma muncul & wajib begitu Status dipilih Drop.
+function toggleKategoriDrop(zValue) {
+  const isDrop = PROGRESS_DROP_STATUSES.includes(zValue);
+  kategoriDropField.style.display = isDrop ? '' : 'none';
+  kategoriDropSelect.required = isDrop;
+  if (!isDrop) kategoriDropSelect.value = '';
+}
+
+function onStatusZChange(preserveAa) {
+  const zValue = statusZSelect.value;
+  renderAaOptions(zValue, preserveAa ? CURRENT_STATUS_AA : '');
+  toggleTargetFi(zValue);
+  toggleKategoriDrop(zValue);
+}
+
+statusZSelect.addEventListener('change', () => onStatusZChange(false));
+onStatusZChange(true); // render awal: pertahankan sub status yang sedang tersimpan
+
+// ── Nama Mitra (kolom Y): combobox pencarian + auto Jenis Pekerjaan (kolom X) ──
+// Daftar mitra (sheet MASTER DATA kolom H, ~500 baris) DIAMBIL VIA FETCH
+// setelah halaman render (bukan ditulis inline ke HTML) supaya load awal
+// halaman tetap ringan -- backend juga sudah cache 10 menit jadi fetch ini
+// murah. Hasil filter yang ditampilkan juga dibatasi (MITRA_MAX_RESULTS)
+// biar list dropdown tidak pernah nge-render ratusan <div> sekaligus.
+const MITRA_MAX_RESULTS = 30;
+const MITRA_NAME_INSOURCE = 'PT.TELKOM AKSES';
+const MITRA_NAME_MANDOR = 'MANDOR';
+let MITRA_OPTIONS = [];
+let mitraActiveIndex = -1;
+
+const mitraSearchInput = document.getElementById('mitra_search');
+const mitraHiddenInput = document.getElementById('nama_mitra');
+const mitraComboList = document.getElementById('mitraComboList');
+const mitraJenisHint = document.getElementById('mitraJenisHint');
+
+// Pratinjau saja (nilai final tetap dihitung ulang & ditulis di server saat
+// simpan) -- biar user langsung lihat kolom X bakal keisi apa sebelum submit.
+function jenisPekerjaanPreview(namaMitra) {
+  const key = (namaMitra || '').trim().replace(/\s+/g, ' ').toUpperCase();
+  if (!key) return '';
+  if (key === MITRA_NAME_INSOURCE) return 'Swakelola_Insource';
+  if (key === MITRA_NAME_MANDOR) return 'Swakelola_Mandor';
+  return 'Mitra';
+}
+
+function updateMitraJenisHint() {
+  const val = mitraHiddenInput.value;
+  const jenis = jenisPekerjaanPreview(val);
+  mitraJenisHint.innerHTML = val
+    ? `Jenis Pekerjaan (kolom X) akan otomatis terisi: <strong>${jenis}</strong>`
+    : '';
+}
+
+function closeMitraList() {
+  mitraComboList.classList.remove('open');
+  mitraComboList.innerHTML = '';
+  mitraActiveIndex = -1;
+}
+
+function selectMitra(name) {
+  mitraHiddenInput.value = name;
+  mitraSearchInput.value = name;
+  updateMitraJenisHint();
+  closeMitraList();
+}
+
+function renderMitraList(query) {
+  const q = query.trim().toLowerCase();
+  const matches = (q ? MITRA_OPTIONS.filter(name => name.toLowerCase().includes(q)) : MITRA_OPTIONS)
+    .slice(0, MITRA_MAX_RESULTS);
+  mitraActiveIndex = -1;
+
+  if (!MITRA_OPTIONS.length) {
+    mitraComboList.innerHTML = '<div class="mitra-combo-empty">Memuat daftar mitra...</div>';
+    mitraComboList.classList.add('open');
+    return;
+  }
+  if (!matches.length) {
+    mitraComboList.innerHTML = '<div class="mitra-combo-empty">Mitra tidak ditemukan.</div>';
+    mitraComboList.classList.add('open');
+    return;
+  }
+  mitraComboList.innerHTML = matches.map(name =>
+    `<div class="mitra-combo-item" data-name="${name.replace(/"/g, '&quot;')}">${name}</div>`
+  ).join('');
+  mitraComboList.classList.add('open');
+}
+
+mitraSearchInput.addEventListener('focus', () => renderMitraList(mitraSearchInput.value));
+mitraSearchInput.addEventListener('input', () => {
+  mitraHiddenInput.value = ''; // ketik ulang = belum ada pilihan valid sampai diklik dari list
+  updateMitraJenisHint();
+  renderMitraList(mitraSearchInput.value);
+});
+mitraSearchInput.addEventListener('keydown', (e) => {
+  const items = Array.from(mitraComboList.querySelectorAll('.mitra-combo-item'));
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    mitraActiveIndex = Math.min(mitraActiveIndex + 1, items.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    mitraActiveIndex = Math.max(mitraActiveIndex - 1, 0);
+  } else if (e.key === 'Enter') {
+    if (mitraActiveIndex >= 0) { e.preventDefault(); selectMitra(items[mitraActiveIndex].dataset.name); }
+    return;
+  } else if (e.key === 'Escape') {
+    closeMitraList();
+    return;
+  } else {
+    return;
+  }
+  items.forEach((el, i) => el.classList.toggle('active', i === mitraActiveIndex));
+  items[mitraActiveIndex].scrollIntoView({ block: 'nearest' });
+});
+mitraComboList.addEventListener('mousedown', (e) => {
+  const item = e.target.closest('.mitra-combo-item[data-name]');
+  if (item) selectMitra(item.dataset.name);
+});
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('mitraComboField').contains(e.target)) closeMitraList();
+});
+
+// Render awal: nilai Nama Mitra yang sudah tersimpan (kalau ada) langsung
+// tampil di kotak teks & preview kolom X, TANPA nunggu fetch selesai.
+mitraSearchInput.value = mitraHiddenInput.value;
+updateMitraJenisHint();
+
+fetch('/api/mitra-options')
+  .then(r => r.json())
+  .then(json => {
+    if (json.ok) MITRA_OPTIONS = json.data || [];
+    // Kalau dropdown masih kebuka (mis. user lagi lihat "Memuat daftar
+    // mitra...") -- refresh OTOMATIS, user tidak perlu ketik ulang.
+    if (mitraComboList.classList.contains('open')) renderMitraList(mitraSearchInput.value);
+  })
+  .catch(() => { /* dropdown tetap bisa dipakai manual (isi teks bebas) kalau fetch gagal */ });
+</script>
+{% endblock %}
