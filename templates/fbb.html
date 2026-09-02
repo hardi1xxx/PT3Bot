@@ -22,10 +22,10 @@
   .fbb-detail-table { border-collapse:collapse; width:100%; font-size:0.85rem; }
   .fbb-detail-table th, .fbb-detail-table td { border:1px solid var(--border, #e2e8f0); padding:7px 10px; text-align:left; vertical-align:top; }
   .fbb-detail-table th { background:#f8fafc; width:160px; white-space:nowrap; }
-  .dashboard-grid { align-items:stretch; }
-  .dashboard-grid .chart-card { display:flex; flex-direction:column; height:100%; }
-  .dashboard-grid .chart-card canvas { flex:1 1 auto; max-height:420px; }
-  .fbb-scurve-block { margin-top:16px; }
+  .dashboard-grid { align-items:flex-start; }
+  .dashboard-grid .tables-col { display:flex; flex-direction:column; gap:16px; }
+  .dashboard-grid .chart-card canvas { max-height:300px; }
+  .fbb-scurve-block { margin-top:0; }
 </style>
 
 <div class="stat-grid">
@@ -358,7 +358,18 @@ function renderStatusChart(filteredRows) {
 // Mengikuti filter Program yang sedang dicentang di atas; target diambil
 // dari totals_by_program (agregat semua regional, sesuai sheet TARGET yang
 // tidak punya kolom regional) via /api/fbb-summary yang sudah dimuat.
+//
+// PENTING: baik Target maupun Realisasi dihitung KUMULATIF sejak awal tahun
+// (1 Jan) s/d akhir tiap bulan (atau s/d tanggal acuan untuk bulan berjalan)
+// — persis logika kolom "YTD"/"Target s/d <bulan>" pada tabel Ringkasan di
+// atas — supaya titik terakhir kurva selalu sama persis dengan sel TOTAL
+// "Target s/d <bulan>" dan "YTD <bulan>" pada tabel.
 let fbbSCurveChart = null;
+
+function fbbMonthEndUTC(year, month1to12) {
+  // Hari terakhir bulan tsb (month1to12: 1=Jan ... 12=Des)
+  return new Date(Date.UTC(year, month1to12, 0));
+}
 
 function renderSCurve() {
   const canvas = document.getElementById('fbbSCurveChart');
@@ -384,27 +395,44 @@ function renderSCurve() {
   const tml = fbbSummaryCache.target_month_labels || {};
   const monthLabels = monthKeys.map(m => tml[m] || `Bulan ${m}`);
 
-  // Target per bulan = jumlah target program terpilih (sheet TARGET).
-  const targetPerMonth = monthKeys.map(m => programs.reduce((sum, p) => {
-    const pm = (fbbSummaryCache.totals_by_program || {})[p];
-    const v = pm && pm.target_by_month ? (pm.target_by_month[m] || 0) : 0;
-    return sum + v;
-  }, 0));
+  const refDate = fbbParseDate(fbbSummaryCache.reference_date);
+  const jan1 = refDate ? new Date(Date.UTC(refDate.getUTCFullYear(), 0, 1)) : null;
+  const refMonth = refDate ? refDate.getUTCMonth() + 1 : null;
 
-  // Realisasi per bulan = jumlah Final Port baris ber-status 5.GOLIVE,
-  // program terpilih, dengan bulan Tgl Golive == bulan tsb (sheet Semesta).
+  // Target kumulatif per bulan = jumlah target bulanan program terpilih,
+  // dijumlahkan berjalan dari bulan target pertama s/d bulan tsb (sheet
+  // TARGET memang baru mulai terisi dari bulan pertama yang tampil, jadi
+  // tidak ada target tersembunyi sebelum itu). Titik terakhir = persis
+  // sel "Target s/d <bulan>" pada tabel Ringkasan.
+  let runT = 0;
+  const cumTarget = monthKeys.map(m => {
+    const monthTotal = programs.reduce((sum, p) => {
+      const pm = (fbbSummaryCache.totals_by_program || {})[p];
+      const v = pm && pm.target_by_month ? (pm.target_by_month[m] || 0) : 0;
+      return sum + v;
+    }, 0);
+    runT += monthTotal;
+    return runT;
+  });
+
+  // Realisasi kumulatif per bulan = total Final Port baris ber-status
+  // 5.GOLIVE, program terpilih, dengan Tgl Golive di antara 1 Jan s/d akhir
+  // bulan tsb (atau s/d tanggal acuan untuk bulan yang sedang berjalan) —
+  // persis logika kolom "YTD <bulan>" pada tabel. Ini BUKAN sekadar
+  // penjumlahan realisasi bulan-per-bulan dari bulan target pertama saja,
+  // supaya realisasi sebelum bulan target pertama pun tetap terhitung.
   const progSet = new Set(programs);
-  const realPerMonth = monthKeys.map(m => fbbCache.rows.reduce((sum, r) => {
-    if (!progSet.has(r.program)) return sum;
-    if (!fbbIsGolive(r.status_lop)) return sum;
-    const d = fbbParseDate(r.tgl_golive);
-    if (!d || (d.getUTCMonth() + 1) !== m) return sum;
-    return sum + (r.final_port || 0);
-  }, 0));
-
-  let runT = 0, runR = 0;
-  const cumTarget = targetPerMonth.map(v => (runT += v));
-  const cumReal = realPerMonth.map(v => (runR += v));
+  const cumReal = monthKeys.map(m => {
+    if (!refDate) return 0;
+    const cutoff = (refMonth !== null && m === refMonth) ? refDate : fbbMonthEndUTC(refDate.getUTCFullYear(), m);
+    return fbbCache.rows.reduce((sum, r) => {
+      if (!progSet.has(r.program)) return sum;
+      if (!fbbIsGolive(r.status_lop)) return sum;
+      const d = fbbParseDate(r.tgl_golive);
+      if (!fbbDateBetween(d, jan1, cutoff)) return sum;
+      return sum + (r.final_port || 0);
+    }, 0);
+  });
 
   if (fbbSCurveChart) fbbSCurveChart.destroy();
   const ctx = canvas.getContext('2d');
@@ -428,7 +456,7 @@ function renderSCurve() {
   const lastTarget = cumTarget[cumTarget.length - 1] || 0;
   const lastReal = cumReal[cumReal.length - 1] || 0;
   const pct = lastTarget ? Math.round((lastReal / lastTarget) * 1000) / 10 : 0;
-  hintEl.textContent = `Realisasi s/d ${monthLabels[monthLabels.length - 1]}: ${fmtNumF(lastReal)} dari target ${fmtNumF(lastTarget)} port (${fmtPctF(pct)}) — program: ${programs.join(', ')}.`;
+  hintEl.textContent = `Realisasi s/d ${monthLabels[monthLabels.length - 1]}: ${fmtNumF(lastReal)} dari target ${fmtNumF(lastTarget)} port (${fmtPctF(pct)}) — program: ${programs.join(', ')}. Nilai ini sama dengan sel "YTD" & "Target s/d" pada baris TOTAL tabel Ringkasan di atas (untuk program yang dipilih).`;
 }
 
 // ── Tabel Ringkasan Pencapaian (DOD/MTD/Potensi/ACH/YTD/Outlook/GAP) ──
