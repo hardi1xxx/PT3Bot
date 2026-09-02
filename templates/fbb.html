@@ -14,6 +14,18 @@
   .fbb-download-btn:disabled { background:#94a3b8; cursor:not-allowed; }
   td.fbb-drill { cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
   td.fbb-drill:hover { background:#eff6ff; }
+  tr.fbb-list-row { cursor:pointer; }
+  tr.fbb-list-row:hover { background:#eff6ff; }
+  #fbbSearchInput { flex:1; min-width:260px; padding:8px 10px; border:1px solid var(--border, #e2e8f0); border-radius:8px; font-size:0.85rem; }
+  #fbbSearchBtn { background:#29467a; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:0.85rem; font-weight:600; cursor:pointer; }
+  #fbbSearchBtn:hover { background:#1e3560; }
+  .fbb-detail-table { border-collapse:collapse; width:100%; font-size:0.85rem; }
+  .fbb-detail-table th, .fbb-detail-table td { border:1px solid var(--border, #e2e8f0); padding:7px 10px; text-align:left; vertical-align:top; }
+  .fbb-detail-table th { background:#f8fafc; width:160px; white-space:nowrap; }
+  .dashboard-grid { align-items:stretch; }
+  .dashboard-grid .chart-card { display:flex; flex-direction:column; height:100%; }
+  .dashboard-grid .chart-card canvas { flex:1 1 auto; max-height:420px; }
+  .fbb-scurve-block { margin-top:16px; }
 </style>
 
 <div class="stat-grid">
@@ -78,6 +90,16 @@
   Ringkasan Pencapaian per Regional &amp; Program
   <span class="hint">satuan PORT · status tercapai = "5. Golive"</span>
 </div>
+
+<!-- Pencarian IHLD / Lokasi (real-time dari data yang sudah termuat) -->
+<div class="card" id="fbbSearchCard" style="margin-bottom:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+  <label for="fbbSearchInput" style="margin:0;">Cari IHLD / Lokasi</label>
+  <input type="text" id="fbbSearchInput" placeholder="mis. 13034337,13034338,xxx (pisahkan dengan koma, min. 3 karakter tiap kata kunci)">
+  <button type="button" id="fbbSearchBtn">&#128269; Cari</button>
+  <button type="button" id="fbbSearchClearBtn" class="btn-ghost">Bersihkan</button>
+  <span class="sub" id="fbbSearchHint" style="width:100%;"></span>
+</div>
+
 <div class="card" style="margin-bottom:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
   <label for="fbbRefDate" style="margin:0;">Tanggal acuan (DOD/MTD/YTD dihitung s/d tanggal ini)</label>
   <input type="date" id="fbbRefDate" style="width:auto; margin:0;">
@@ -105,12 +127,27 @@
   <div class="modal-box" id="fbbListModalBox" style="max-width:1000px;"></div>
 </div>
 
+<!-- Modal: detail lengkap 1 baris/lokasi (dibuka dari klik baris pada daftar hasil) -->
+<div class="modal-overlay" id="fbbDetailModalOverlay">
+  <div class="modal-box" id="fbbDetailModalBox" style="max-width:640px;"></div>
+</div>
+
 <div class="dashboard-grid">
   <div class="tables-col">
     <div>
       <div class="section-title">Order &amp; Port per Regional &times; Program</div>
       <div class="card">
         <div class="pivot-table-wrap"><table class="pivot pivot-combined" id="fbbRegionalTable"></table></div>
+      </div>
+    </div>
+    <div class="fbb-scurve-block">
+      <div class="section-title">
+        Kurva S &mdash; Target vs Realisasi Port (Kumulatif)
+        <span class="hint">target: sheet TARGET · realisasi: sheet Semesta, status "5.GOLIVE"</span>
+      </div>
+      <div class="card chart-card">
+        <canvas id="fbbSCurveChart" height="220"></canvas>
+        <p class="sub" id="fbbSCurveHint" style="margin:10px 2px 0;"></p>
       </div>
     </div>
   </div>
@@ -235,6 +272,7 @@ function refreshFbb() {
 
   renderRegionalTable(filtered);
   renderStatusChart(filtered);
+  renderSCurve();
 }
 
 function renderRegionalTable(filteredRows) {
@@ -312,6 +350,85 @@ function renderStatusChart(filteredRows) {
   document.getElementById('fbbStatusLegend').innerHTML = labels.map((l, i) => `
     <span><span class="dot" style="background:${colors[i]}"></span>${escF(l)}: <strong>${fmtNumF(values[i])}</strong> (${total ? Math.round(values[i] / total * 100) : 0}%)</span>
   `).join('');
+}
+
+// ── Kurva S: Target (sheet TARGET: Program-kol B, Bulan-kol C, Port-kol D)
+// vs Realisasi (sheet Semesta: Program-kol B, Tgl Golive-kol L → diambil
+// bulannya, Final Port-kol J, difilter Status LOP-kol I = "5.GOLIVE").
+// Mengikuti filter Program yang sedang dicentang di atas; target diambil
+// dari totals_by_program (agregat semua regional, sesuai sheet TARGET yang
+// tidak punya kolom regional) via /api/fbb-summary yang sudah dimuat.
+let fbbSCurveChart = null;
+
+function renderSCurve() {
+  const canvas = document.getElementById('fbbSCurveChart');
+  const hintEl = document.getElementById('fbbSCurveHint');
+  if (!canvas || !hintEl) return;
+  if (!fbbCache || !fbbSummaryCache) return;
+
+  const programs = Array.from(document.querySelectorAll('.fbb-program-checkbox:checked')).map(cb => cb.value);
+  if (!programs.length) {
+    if (fbbSCurveChart) { fbbSCurveChart.destroy(); fbbSCurveChart = null; }
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    hintEl.textContent = 'Pilih minimal satu Program pada filter di atas untuk menampilkan kurva.';
+    return;
+  }
+
+  const grandTb = (fbbSummaryCache.grand_total || {}).target_by_month || {};
+  const monthKeys = Object.keys(grandTb).map(Number).sort((a, b) => a - b);
+  if (!monthKeys.length) {
+    if (fbbSCurveChart) { fbbSCurveChart.destroy(); fbbSCurveChart = null; }
+    hintEl.textContent = 'Data target bulanan (sheet TARGET) tidak tersedia.';
+    return;
+  }
+  const tml = fbbSummaryCache.target_month_labels || {};
+  const monthLabels = monthKeys.map(m => tml[m] || `Bulan ${m}`);
+
+  // Target per bulan = jumlah target program terpilih (sheet TARGET).
+  const targetPerMonth = monthKeys.map(m => programs.reduce((sum, p) => {
+    const pm = (fbbSummaryCache.totals_by_program || {})[p];
+    const v = pm && pm.target_by_month ? (pm.target_by_month[m] || 0) : 0;
+    return sum + v;
+  }, 0));
+
+  // Realisasi per bulan = jumlah Final Port baris ber-status 5.GOLIVE,
+  // program terpilih, dengan bulan Tgl Golive == bulan tsb (sheet Semesta).
+  const progSet = new Set(programs);
+  const realPerMonth = monthKeys.map(m => fbbCache.rows.reduce((sum, r) => {
+    if (!progSet.has(r.program)) return sum;
+    if (!fbbIsGolive(r.status_lop)) return sum;
+    const d = fbbParseDate(r.tgl_golive);
+    if (!d || (d.getUTCMonth() + 1) !== m) return sum;
+    return sum + (r.final_port || 0);
+  }, 0));
+
+  let runT = 0, runR = 0;
+  const cumTarget = targetPerMonth.map(v => (runT += v));
+  const cumReal = realPerMonth.map(v => (runR += v));
+
+  if (fbbSCurveChart) fbbSCurveChart.destroy();
+  const ctx = canvas.getContext('2d');
+  fbbSCurveChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: monthLabels,
+      datasets: [
+        { label: 'Target (Kumulatif)', data: cumTarget, borderColor: '#29467a', backgroundColor: '#29467a22', fill: true, tension: 0.3, pointRadius: 3 },
+        { label: 'Realisasi (Kumulatif)', data: cumReal, borderColor: '#16a34a', backgroundColor: '#16a34a22', fill: true, tension: 0.3, pointRadius: 3 },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmtNumF(v) } } },
+    },
+  });
+
+  const lastTarget = cumTarget[cumTarget.length - 1] || 0;
+  const lastReal = cumReal[cumReal.length - 1] || 0;
+  const pct = lastTarget ? Math.round((lastReal / lastTarget) * 1000) / 10 : 0;
+  hintEl.textContent = `Realisasi s/d ${monthLabels[monthLabels.length - 1]}: ${fmtNumF(lastReal)} dari target ${fmtNumF(lastTarget)} port (${fmtPctF(pct)}) — program: ${programs.join(', ')}.`;
 }
 
 // ── Tabel Ringkasan Pencapaian (DOD/MTD/Potensi/ACH/YTD/Outlook/GAP) ──
@@ -460,8 +577,13 @@ function fbbDownloadCSV(rows, title, cols) {
   URL.revokeObjectURL(url);
 }
 
+// Baris terakhir yang sedang ditampilkan di modal daftar — dipakai untuk
+// membuka modal detail saat salah satu baris/lokasi diklik.
+let fbbCurrentListRows = [];
+
 function fbbOpenFilteredList(title, rows) {
   rows = rows || [];
+  fbbCurrentListRows = rows;
   const capped = rows.slice(0, FBB_LIST_DISPLAY_CAP);
   const modalBox = document.getElementById('fbbListModalBox');
   modalBox.innerHTML = `
@@ -473,11 +595,12 @@ function fbbOpenFilteredList(title, rows) {
       <button class="fbb-download-btn" id="fbbListDownloadBtn" ${rows.length ? '' : 'disabled'}>&#11015; Download CSV (${fmtNumF(rows.length)} baris)</button>
     </div>
     ${rows.length ? `
+      <p class="sub" style="margin:0 2px 8px;">Klik salah satu baris untuk lihat detail lengkap lokasi tersebut.</p>
       <div style="overflow:auto; max-height:58vh; border:1px solid var(--border, #e2e8f0); border-radius:8px;">
         <table class="fbb-list-table">
           <thead><tr><th>No</th>${FBB_LIST_COLS.map(c => `<th>${escF(c.label)}</th>`).join('')}</tr></thead>
           <tbody>
-            ${capped.map((r, i) => `<tr><td>${i + 1}</td>${FBB_LIST_COLS.map(c => `<td>${escF(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
+            ${capped.map((r, i) => `<tr class="fbb-list-row" data-row-idx="${i}"><td>${i + 1}</td>${FBB_LIST_COLS.map(c => `<td>${escF(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
           </tbody>
         </table>
       </div>
@@ -495,6 +618,42 @@ function fbbCloseListModal() {
 }
 document.getElementById('fbbListModalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'fbbListModalOverlay') fbbCloseListModal();
+});
+
+// Klik baris pada daftar hasil (drill-down maupun hasil pencarian) untuk
+// membuka frame/modal baru berisi semua informasi baris tersebut.
+document.getElementById('fbbListModalBox').addEventListener('click', (e) => {
+  const tr = e.target.closest('.fbb-list-row');
+  if (!tr) return;
+  const idx = Number(tr.dataset.rowIdx);
+  const row = fbbCurrentListRows[idx];
+  if (row) fbbOpenDetailModal(row);
+});
+
+function fbbOpenDetailModal(row) {
+  const box = document.getElementById('fbbDetailModalBox');
+  box.innerHTML = `
+    <div class="modal-header">
+      <div class="modal-title">Detail Lokasi &mdash; ${escF(row.lokasi || row.ihld || '-')}</div>
+      <button class="btn-ghost modal-close" id="fbbDetailModalCloseBtn">Tutup &#10005;</button>
+    </div>
+    <div style="overflow:auto; max-height:64vh; margin-top:10px; border:1px solid var(--border, #e2e8f0); border-radius:8px;">
+      <table class="fbb-detail-table">
+        <tbody>
+          ${FBB_LIST_COLS.map(c => `<tr><th>${escF(c.label)}</th><td>${escF(row[c.key]) || '-'}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  document.getElementById('fbbDetailModalCloseBtn').addEventListener('click', fbbCloseDetailModal);
+  document.getElementById('fbbDetailModalOverlay').classList.add('open');
+}
+
+function fbbCloseDetailModal() {
+  document.getElementById('fbbDetailModalOverlay').classList.remove('open');
+}
+document.getElementById('fbbDetailModalOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'fbbDetailModalOverlay') fbbCloseDetailModal();
 });
 
 // ── Filter baris Semesta untuk drill-down, meniru persis rumus backend:
@@ -564,6 +723,47 @@ document.getElementById('fbbSummaryTableWrap').addEventListener('click', (e) => 
   fbbOpenFilteredList(label, rows);
 });
 
+// ── Pencarian real-time berdasarkan IHLD / Nama Lokasi ──
+// Minimal 3 karakter per kata kunci; beberapa kata kunci bisa dipisah koma,
+// contoh: 13034337,13034338,xxx — akan mencocokkan salah satu (OR) pada
+// kolom IHLD maupun Nama Lokasi.
+function fbbSetSearchHint(msg, isError) {
+  const hint = document.getElementById('fbbSearchHint');
+  hint.textContent = msg;
+  hint.style.color = isError ? '#dc2626' : '#16a34a';
+}
+
+function fbbDoSearch() {
+  const raw = document.getElementById('fbbSearchInput').value || '';
+  const terms = raw.split(',').map(s => s.trim()).filter(Boolean);
+  if (!terms.length) { fbbSetSearchHint('Masukkan minimal 1 kata kunci (IHLD/Lokasi).', true); return; }
+  const tooShort = terms.filter(t => t.length < 3);
+  if (tooShort.length) {
+    fbbSetSearchHint(`Kata kunci "${tooShort.join('", "')}" minimal 3 huruf/angka.`, true);
+    return;
+  }
+  if (!fbbCache || !fbbCache.rows) { fbbSetSearchHint('Data belum termuat, coba lagi sebentar.', true); return; }
+
+  const lowerTerms = terms.map(t => t.toLowerCase());
+  const rows = fbbCache.rows.filter(r => {
+    const ihld = String(r.ihld || '').toLowerCase();
+    const lokasi = String(r.lokasi || '').toLowerCase();
+    return lowerTerms.some(t => ihld.includes(t) || lokasi.includes(t));
+  });
+
+  fbbSetSearchHint(`${fmtNumF(rows.length)} baris ditemukan untuk ${terms.length} kata kunci.`, rows.length === 0);
+  fbbOpenFilteredList(`Hasil Pencarian IHLD/Lokasi: ${terms.join(', ')}`, rows);
+}
+
+document.getElementById('fbbSearchBtn').addEventListener('click', fbbDoSearch);
+document.getElementById('fbbSearchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); fbbDoSearch(); }
+});
+document.getElementById('fbbSearchClearBtn').addEventListener('click', () => {
+  document.getElementById('fbbSearchInput').value = '';
+  document.getElementById('fbbSearchHint').textContent = '';
+});
+
 document.getElementById('fbbExportSemestaBtn').addEventListener('click', () => {
   if (!fbbCache || !fbbCache.rows || !fbbCache.rows.length) return;
   fbbDownloadCSV(fbbCache.rows, 'lengkap', FBB_LIST_COLS);
@@ -579,6 +779,7 @@ async function loadFbbSummary(dateStr) {
     if (!json.ok) { wrap.innerHTML = `<div class="flash error">${escF(json.error)}</div>`; return; }
     fbbSummaryCache = json.data;
     renderSummaryTable(fbbSummaryCache);
+    renderSCurve();
   } catch (e) {
     wrap.innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
   }
