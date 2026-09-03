@@ -22,10 +22,14 @@
   .fbb-detail-table { border-collapse:collapse; width:100%; font-size:0.85rem; }
   .fbb-detail-table th, .fbb-detail-table td { border:1px solid var(--border, #e2e8f0); padding:7px 10px; text-align:left; vertical-align:top; }
   .fbb-detail-table th { background:#f8fafc; width:160px; white-space:nowrap; }
-  .dashboard-grid { align-items:flex-start; }
+  .dashboard-grid { align-items:stretch; }
   .dashboard-grid .tables-col { display:flex; flex-direction:column; gap:16px; }
-  .dashboard-grid .chart-card canvas { max-height:300px; }
-  .fbb-scurve-block { margin-top:0; }
+  .dashboard-grid .chart-card { display:flex; flex-direction:column; height:100%; }
+  .dashboard-grid .chart-card canvas { flex:0 0 auto; max-height:320px; }
+  .dashboard-grid .chart-legend { margin-top:auto; padding-top:12px; }
+  .fbb-scurve-block { margin-top:0; display:flex; flex-direction:column; flex:1; }
+  .fbb-scurve-block .card { flex:1; display:flex; flex-direction:column; }
+  .fbb-scurve-block .card canvas { flex:1 1 auto; min-height:260px; }
 </style>
 
 <div class="stat-grid">
@@ -355,15 +359,16 @@ function renderStatusChart(filteredRows) {
 // ── Kurva S: Target (sheet TARGET: Program-kol B, Bulan-kol C, Port-kol D)
 // vs Realisasi (sheet Semesta: Program-kol B, Tgl Golive-kol L → diambil
 // bulannya, Final Port-kol J, difilter Status LOP-kol I = "5.GOLIVE").
-// Mengikuti filter Program yang sedang dicentang di atas; target diambil
-// dari totals_by_program (agregat semua regional, sesuai sheet TARGET yang
-// tidak punya kolom regional) via /api/fbb-summary yang sudah dimuat.
+//
+// Kurva ini SELALU menampilkan ketiga kelompok sekaligus — PT2, PT3, dan
+// TOTAL (PT2+PT3) — terlepas dari centang Filter Program di bagian atas
+// halaman (filter itu hanya untuk tabel/donut, bukan untuk Kurva S ini).
 //
 // PENTING: baik Target maupun Realisasi dihitung KUMULATIF sejak awal tahun
 // (1 Jan) s/d akhir tiap bulan (atau s/d tanggal acuan untuk bulan berjalan)
 // — persis logika kolom "YTD"/"Target s/d <bulan>" pada tabel Ringkasan di
-// atas — supaya titik terakhir kurva selalu sama persis dengan sel TOTAL
-// "Target s/d <bulan>" dan "YTD <bulan>" pada tabel.
+// atas — supaya titik terakhir kurva TOTAL selalu sama persis dengan sel
+// "Target s/d <bulan>" dan "YTD <bulan>" pada baris TOTAL tabel Ringkasan.
 let fbbSCurveChart = null;
 
 function fbbMonthEndUTC(year, month1to12) {
@@ -371,19 +376,15 @@ function fbbMonthEndUTC(year, month1to12) {
   return new Date(Date.UTC(year, month1to12, 0));
 }
 
+// Warna tetap per kelompok, dipakai konsisten untuk garis Target (solid)
+// maupun Realisasi (putus-putus) dari kelompok yang sama.
+const FBB_SCURVE_COLORS = { PT2: '#2563eb', PT3: '#d97706', TOTAL: '#16a34a' };
+
 function renderSCurve() {
   const canvas = document.getElementById('fbbSCurveChart');
   const hintEl = document.getElementById('fbbSCurveHint');
   if (!canvas || !hintEl) return;
   if (!fbbCache || !fbbSummaryCache) return;
-
-  const programs = Array.from(document.querySelectorAll('.fbb-program-checkbox:checked')).map(cb => cb.value);
-  if (!programs.length) {
-    if (fbbSCurveChart) { fbbSCurveChart.destroy(); fbbSCurveChart = null; }
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-    hintEl.textContent = 'Pilih minimal satu Program pada filter di atas untuk menampilkan kurva.';
-    return;
-  }
 
   const grandTb = (fbbSummaryCache.grand_total || {}).target_by_month || {};
   const monthKeys = Object.keys(grandTb).map(Number).sort((a, b) => a - b);
@@ -399,65 +400,87 @@ function renderSCurve() {
   const jan1 = refDate ? new Date(Date.UTC(refDate.getUTCFullYear(), 0, 1)) : null;
   const refMonth = refDate ? refDate.getUTCMonth() + 1 : null;
 
-  // Target kumulatif per bulan = jumlah target bulanan program terpilih,
-  // dijumlahkan berjalan dari bulan target pertama s/d bulan tsb (sheet
-  // TARGET memang baru mulai terisi dari bulan pertama yang tampil, jadi
-  // tidak ada target tersembunyi sebelum itu). Titik terakhir = persis
-  // sel "Target s/d <bulan>" pada tabel Ringkasan.
-  let runT = 0;
-  const cumTarget = monthKeys.map(m => {
-    const monthTotal = programs.reduce((sum, p) => {
-      const pm = (fbbSummaryCache.totals_by_program || {})[p];
-      const v = pm && pm.target_by_month ? (pm.target_by_month[m] || 0) : 0;
-      return sum + v;
-    }, 0);
-    runT += monthTotal;
-    return runT;
-  });
+  // Target kumulatif per bulan untuk satu program: dijumlahkan berjalan dari
+  // bulan target pertama s/d bulan tsb. Untuk 'TOTAL' pakai grand_total
+  // (agregat backend) langsung supaya persis sama dengan sel "Target s/d"
+  // pada baris TOTAL tabel Ringkasan — bukan sekadar hasil penjumlahan
+  // manual PT2+PT3 di sisi klien.
+  function cumulativeTargetFor(programKeyOrNull) {
+    let run = 0;
+    return monthKeys.map(m => {
+      let monthTotal;
+      if (programKeyOrNull === null) {
+        monthTotal = grandTb[m] || 0;
+      } else {
+        const pm = (fbbSummaryCache.totals_by_program || {})[programKeyOrNull];
+        monthTotal = pm && pm.target_by_month ? (pm.target_by_month[m] || 0) : 0;
+      }
+      run += monthTotal;
+      return run;
+    });
+  }
 
-  // Realisasi kumulatif per bulan = total Final Port baris ber-status
-  // 5.GOLIVE, program terpilih, dengan Tgl Golive di antara 1 Jan s/d akhir
-  // bulan tsb (atau s/d tanggal acuan untuk bulan yang sedang berjalan) —
-  // persis logika kolom "YTD <bulan>" pada tabel. Ini BUKAN sekadar
-  // penjumlahan realisasi bulan-per-bulan dari bulan target pertama saja,
-  // supaya realisasi sebelum bulan target pertama pun tetap terhitung.
-  const progSet = new Set(programs);
-  const cumReal = monthKeys.map(m => {
-    if (!refDate) return 0;
-    const cutoff = (refMonth !== null && m === refMonth) ? refDate : fbbMonthEndUTC(refDate.getUTCFullYear(), m);
-    return fbbCache.rows.reduce((sum, r) => {
-      if (!progSet.has(r.program)) return sum;
-      if (!fbbIsGolive(r.status_lop)) return sum;
-      const d = fbbParseDate(r.tgl_golive);
-      if (!fbbDateBetween(d, jan1, cutoff)) return sum;
-      return sum + (r.final_port || 0);
-    }, 0);
+  // Realisasi kumulatif per bulan untuk satu program (atau null = semua
+  // program/TOTAL): total Final Port baris ber-status 5.GOLIVE dengan Tgl
+  // Golive di antara 1 Jan s/d akhir bulan tsb (atau s/d tanggal acuan
+  // untuk bulan yang sedang berjalan) — persis logika kolom "YTD <bulan>".
+  function cumulativeRealFor(programKeyOrNull) {
+    return monthKeys.map(m => {
+      if (!refDate) return 0;
+      const cutoff = (refMonth !== null && m === refMonth) ? refDate : fbbMonthEndUTC(refDate.getUTCFullYear(), m);
+      return fbbCache.rows.reduce((sum, r) => {
+        if (programKeyOrNull !== null && r.program !== programKeyOrNull) return sum;
+        if (!fbbIsGolive(r.status_lop)) return sum;
+        const d = fbbParseDate(r.tgl_golive);
+        if (!fbbDateBetween(d, jan1, cutoff)) return sum;
+        return sum + (r.final_port || 0);
+      }, 0);
+    });
+  }
+
+  // Kelompok yang ditampilkan: tiap program yang benar-benar ada di data
+  // (biasanya PT2 & PT3), ditambah TOTAL gabungan semuanya.
+  const programKeys = (fbbCache.programs || []).slice();
+  const groups = programKeys.map(p => ({ key: p, label: p, program: p }))
+    .concat([{ key: 'TOTAL', label: 'TOTAL (PT2+PT3)', program: null }]);
+
+  const datasets = [];
+  const summaryParts = [];
+  groups.forEach(g => {
+    const color = FBB_SCURVE_COLORS[g.key] || '#64748b';
+    const cumTarget = cumulativeTargetFor(g.program);
+    const cumReal = cumulativeRealFor(g.program);
+    datasets.push({
+      label: `${g.label} — Target`, data: cumTarget, borderColor: color,
+      borderWidth: g.key === 'TOTAL' ? 3 : 2, borderDash: [], fill: false, tension: 0.3, pointRadius: 3,
+    });
+    datasets.push({
+      label: `${g.label} — Realisasi`, data: cumReal, borderColor: color,
+      borderWidth: g.key === 'TOTAL' ? 3 : 2, borderDash: [6, 4], fill: false, tension: 0.3, pointRadius: 3,
+    });
+    const lastT = cumTarget[cumTarget.length - 1] || 0;
+    const lastR = cumReal[cumReal.length - 1] || 0;
+    const pct = lastT ? Math.round((lastR / lastT) * 1000) / 10 : 0;
+    summaryParts.push(`${g.label}: ${fmtNumF(lastR)}/${fmtNumF(lastT)} (${fmtPctF(pct)})`);
   });
 
   if (fbbSCurveChart) fbbSCurveChart.destroy();
   const ctx = canvas.getContext('2d');
   fbbSCurveChart = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: monthLabels,
-      datasets: [
-        { label: 'Target (Kumulatif)', data: cumTarget, borderColor: '#29467a', backgroundColor: '#29467a22', fill: true, tension: 0.3, pointRadius: 3 },
-        { label: 'Realisasi (Kumulatif)', data: cumReal, borderColor: '#16a34a', backgroundColor: '#16a34a22', fill: true, tension: 0.3, pointRadius: 3 },
-      ],
-    },
+    data: { labels: monthLabels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { position: 'bottom' } },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 18, font: { size: 11 } } } },
       scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmtNumF(v) } } },
     },
   });
 
-  const lastTarget = cumTarget[cumTarget.length - 1] || 0;
-  const lastReal = cumReal[cumReal.length - 1] || 0;
-  const pct = lastTarget ? Math.round((lastReal / lastTarget) * 1000) / 10 : 0;
-  hintEl.textContent = `Realisasi s/d ${monthLabels[monthLabels.length - 1]}: ${fmtNumF(lastReal)} dari target ${fmtNumF(lastTarget)} port (${fmtPctF(pct)}) — program: ${programs.join(', ')}. Nilai ini sama dengan sel "YTD" & "Target s/d" pada baris TOTAL tabel Ringkasan di atas (untuk program yang dipilih).`;
+  hintEl.textContent = `Realisasi/Target s/d ${monthLabels[monthLabels.length - 1]} (garis solid = Target, putus-putus = Realisasi) — ${summaryParts.join(' · ')}.`;
 }
+
+
 
 // ── Tabel Ringkasan Pencapaian (DOD/MTD/Potensi/ACH/YTD/Outlook/GAP) ──
 function drillTd(value, regionalKey, programKey, metric, label) {
