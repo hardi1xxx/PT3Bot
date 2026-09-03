@@ -522,7 +522,11 @@ function computeRegionalBranchTable(filteredRows, pivotColumns, groupTsel) {
 
   filteredRows.forEach(r => {
     const key = r.pivot_group;
-    if (!key) return;
+    // Lewati baris yang statusnya di luar daftar kolom yang diminta -- penting
+    // utk tab "Progress" yang cuma mengirim 5 status utama (tanpa DROP MOM/
+    // DROP/GOLIVE), supaya baris ber-status itu tidak nyoba ditulis ke key
+    // yang tidak ada di emptyStatusMap().
+    if (!key || !pivotColumns.includes(key)) return;
     const regional = r.regional || '(TANPA REGIONAL)';
     const branch = r.branch || '(TANPA BRANCH)';
 
