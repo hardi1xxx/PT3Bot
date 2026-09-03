@@ -57,10 +57,12 @@
   .fi-cal-cell.fi-today { outline: 2px solid var(--brand-blue, #29467a); outline-offset: -2px; }
   .fi-cal-daynum { font-weight: 700; color: var(--text); }
   .fi-cal-badges { display: flex; flex-wrap: wrap; gap: 3px; }
-  .fi-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 16px; padding: 0 4px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; color: #fff; cursor: pointer; line-height: 1; }
+  .fi-badge { display: inline-flex; align-items: center; gap: 3px; min-width: 17px; height: 16px; padding: 0 5px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; color: #fff; cursor: pointer; line-height: 1; white-space: nowrap; }
   .fi-badge.fi-over { background: #dc2626; }
   .fi-badge.fi-upcoming { background: var(--brand-blue, #29467a); }
   .fi-badge.fi-done { background: #16a34a; }
+  .fi-badge-port { font-weight: 600; opacity: 0.85; }
+  .fi-badge-port::before { content: '\00b7'; margin-right: 3px; }
   .fi-cal-empty { font-size: 0.78rem; color: var(--muted); padding: 10px 2px; }
   .fi-cal-month-btn { border: 1px solid var(--brand-blue, #29467a); color: var(--brand-blue, #29467a); font-weight: 700; width: 100%; text-align: center; }
   .fi-cal-month-btn:hover { background: var(--brand-blue, #29467a); color: #fff; }
@@ -242,6 +244,7 @@
       <span><span class="dot" style="background:#dc2626;"></span>Lewat Target FI, belum Golive</span>
       <span><span class="dot" style="background:var(--brand-blue,#29467a);"></span>Terjadwal (Target FI)</span>
       <span><span class="dot" style="background:#16a34a;"></span>Sudah Golive (GOLIVE/UT/REKON/BAST)</span>
+      <span style="color:var(--muted);">Angka di badge: jumlah LOP &middot; jumlah Port</span>
     </div>
     <button type="button" class="btn-ghost btn-sm fi-cal-month-btn" id="fiCalMonthListBtn" style="align-self:flex-start; margin-bottom:10px;">&#128203; Cek Target Bulan Ini</button>
     <div class="fi-cal-grid" id="fiCalGrid"><div class="skeleton">Memuat kalender...</div></div>
@@ -1385,12 +1388,16 @@ function renderFiCalendar(filteredRows) {
     const isToday = iso === todayIso;
     const items = fiCalDayIndex[iso] || [];
 
-    const counts = { over: 0, upcoming: 0, done: 0 };
-    items.forEach(r => { counts[fiCalClassify(r)]++; });
+    const counts = { over: { n: 0, port: 0 }, upcoming: { n: 0, port: 0 }, done: { n: 0, port: 0 } };
+    items.forEach(r => {
+      const k = fiCalClassify(r);
+      counts[k].n++;
+      counts[k].port += (r.port || 0);
+    });
 
     const badges = ['over', 'upcoming', 'done']
-      .filter(k => counts[k] > 0)
-      .map(k => `<span class="fi-badge fi-${k}" data-fi-iso="${iso}" title="Klik untuk lihat daftar">${counts[k]}</span>`)
+      .filter(k => counts[k].n > 0)
+      .map(k => `<span class="fi-badge fi-${k}" data-fi-iso="${iso}" title="Klik untuk lihat daftar (${fmtNum(counts[k].n)} LOP, ${fmtNum(counts[k].port)} Port)">${fmtNum(counts[k].n)}<span class="fi-badge-port">${fmtNum(counts[k].port)}p</span></span>`)
       .join('');
 
     html += `
