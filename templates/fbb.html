@@ -446,10 +446,12 @@ function renderSCurve() {
 
   const datasets = [];
   const summaryParts = [];
+  let totalRealMax = 0;
   groups.forEach(g => {
     const color = FBB_SCURVE_COLORS[g.key] || '#64748b';
     const cumTarget = cumulativeTargetFor(g.program);
     const cumReal = cumulativeRealFor(g.program);
+    if (g.key === 'TOTAL') totalRealMax = Math.max(...cumReal, 0);
     datasets.push({
       label: `${g.label} — Target`, data: cumTarget, borderColor: color,
       borderWidth: g.key === 'TOTAL' ? 3 : 2, borderDash: [], fill: false, tension: 0.3, pointRadius: 3,
@@ -464,6 +466,16 @@ function renderSCurve() {
     summaryParts.push(`${g.label}: ${fmtNumF(lastR)}/${fmtNumF(lastT)} (${fmtPctF(pct)})`);
   });
 
+  // Jaring pengaman diagnostik: kalau ada baris ber-status 5.GOLIVE di data
+  // tapi Realisasi TOTAL tetap kebaca 0 (mis. fbbCache belum siap saat
+  // render ini dipanggil, atau kolom Tgl Golive kosong/format aneh di
+  // banyak baris), tampilkan peringatan yang jelas alih-alih diam-diam
+  // menampilkan kurva Realisasi 0 yang menyesatkan.
+  const totalGoliveRows = fbbCache.rows.filter(r => fbbIsGolive(r.status_lop)).length;
+  if (totalGoliveRows > 0 && totalRealMax === 0) {
+    console.warn('[Kurva S] Ada', totalGoliveRows, 'baris berstatus 5.GOLIVE tapi Realisasi terhitung 0 — kemungkinan kolom Tgl Golive kosong/format tidak dikenali, atau data belum sepenuhnya termuat saat kurva dirender. Coba klik "Update Data".');
+  }
+
   if (fbbSCurveChart) fbbSCurveChart.destroy();
   const ctx = canvas.getContext('2d');
   fbbSCurveChart = new Chart(ctx, {
@@ -477,7 +489,10 @@ function renderSCurve() {
     },
   });
 
-  hintEl.textContent = `Realisasi/Target s/d ${monthLabels[monthLabels.length - 1]} (garis solid = Target, putus-putus = Realisasi) — ${summaryParts.join(' · ')}.`;
+  hintEl.textContent = `Realisasi/Target s/d ${monthLabels[monthLabels.length - 1]} (garis solid = Target, putus-putus = Realisasi) — ${summaryParts.join(' · ')}.`
+    + (totalGoliveRows > 0 && totalRealMax === 0
+      ? ' ⚠️ Peringatan: terdeteksi baris berstatus 5.GOLIVE tapi Realisasi terhitung 0 — coba klik "Update Data" di atas untuk memuat ulang.'
+      : '');
 }
 
 
@@ -845,8 +860,7 @@ document.getElementById('fbbRefDateApply').addEventListener('click', () => {
 // Filter Program & Regional yang sedang aktif tetap dipertahankan (lihat renderCheckGrid/loadFbb).
 document.getElementById('fbbUpdateDataBtn').addEventListener('click', () => {
   const val = document.getElementById('fbbRefDate').value;
-  loadFbb();
-  loadFbbSummary(val || null);
+  Promise.allSettled([loadFbb(), loadFbbSummary(val || null)]).then(() => renderSCurve());
 });
 
 // ── Buat Laporan: buka halaman laporan baru di tab baru, bawa filter aktif ──
@@ -893,7 +907,14 @@ async function loadFbb() {
   }
 }
 
-loadFbb();
-loadFbbSummary(document.getElementById('fbbRefDate').value);
+// ── Jaring pengaman: /api/fbb-data (ribuan baris) & /api/fbb-summary (ringkas)
+// dimuat paralel dan bisa selesai di urutan mana saja. renderSCurve() sudah
+// dipanggil di kedua alur (refreshFbb & loadFbbSummary), tapi kalau salah
+// satu selesai lebih dulu saat cache yang lain belum siap, panggilan itu akan
+// diam-diam dilewati (early-return). Promise.allSettled di sini memastikan
+// ADA render final setelah KEDUA sumber data benar-benar siap, apa pun
+// urutan selesainya — masing-masing loader tetap hanya dipanggil sekali.
+Promise.allSettled([loadFbb(), loadFbbSummary(document.getElementById('fbbRefDate').value)])
+  .then(() => renderSCurve());
 </script>
 {% endblock %}

@@ -166,6 +166,25 @@
   </div>
 </div>
 
+<!-- Batch filter (collapsible), mempengaruhi SEMUA bagian di bawah -->
+<div class="card" style="margin-bottom:14px;">
+  <div class="branch-filter-head" id="filterCardHeaderBatch" style="cursor:pointer; margin-bottom:0;">
+    <label style="cursor:pointer;">Filter Batch (kolom C) — <span id="filterSummaryBatch">memuat...</span></label>
+    <div class="branch-filter-actions">
+      <button type="button" class="btn-ghost btn-sm" id="filterToggleBtnBatch">Tampilkan &#9662;</button>
+    </div>
+  </div>
+  <div id="filterCardBodyBatch" style="display:none; margin-top:12px;">
+    <div class="branch-filter-actions" style="margin-bottom:8px;">
+      <button type="button" class="btn-ghost btn-sm" id="batchSelectAll">Pilih Semua</button>
+      <button type="button" class="btn-ghost btn-sm" id="batchClearAll">Kosongkan</button>
+    </div>
+    <div class="branch-filter-grid" id="batchFilterGrid">
+      <div class="skeleton">Memuat batch...</div>
+    </div>
+  </div>
+</div>
+
 <!-- Rekap Port & LOP: tab Branch (default) / Batch, biar halaman tidak
      terlalu panjang ke bawah -->
 <div class="section-title">
@@ -386,12 +405,13 @@ function renderAgingProgress(snapshot) {
   `;
 }
 
-// ── Single source of truth: filter raw rows by selected branches ─────
+// ── Single source of truth: filter raw rows by selected branches & batch ──
 let priorityOnlyFilter = false;
 function getBranchFilteredRows() {
   if (!dashboardCache) return [];
-  const selected = new Set(getSelectedBranches());
-  return dashboardCache.rows.filter(r => selected.has(r.branch));
+  const selectedBranches = new Set(getSelectedBranches());
+  const selectedBatches = new Set(getSelectedBatches());
+  return dashboardCache.rows.filter(r => selectedBranches.has(r.branch) && selectedBatches.has(r.batch));
 }
 function getFilteredRows() {
   const rows = getBranchFilteredRows();
@@ -852,11 +872,53 @@ function updateBranchDropdownLabel() {
   else { summary.textContent = `${checked.length} dari ${all.length} branch dipilih`; }
 }
 
-// Refresh everything that depends on the branch filter
+// ── Filter batch (kolom C) — checkbox grid, sama pola dgn filter branch ──
+function renderBatchFilter(batches, preserveState) {
+  const el = document.getElementById('batchFilterGrid');
+  if (!batches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data batch (kolom C).</div>'; return; }
+
+  // Sama seperti filter branch: pertahankan pilihan checkbox yang sedang aktif
+  // saat data di-refresh, supaya filter tidak ikut ter-reset.
+  let prevChecked = null;
+  if (preserveState) {
+    const existing = document.querySelectorAll('.batch-checkbox');
+    if (existing.length) {
+      prevChecked = new Set(Array.from(document.querySelectorAll('.batch-checkbox:checked')).map(cb => cb.value));
+    }
+  }
+
+  el.innerHTML = batches.map(b => {
+    const isChecked = prevChecked ? prevChecked.has(b) : true;
+    return `
+    <label class="branch-check">
+      <input type="checkbox" class="batch-checkbox" value="${esc(b)}" ${isChecked ? 'checked' : ''}>
+      <span>${esc(b)}</span>
+    </label>
+  `;
+  }).join('');
+  updateBatchDropdownLabel();
+}
+
+function getSelectedBatches() {
+  return Array.from(document.querySelectorAll('.batch-checkbox:checked')).map(cb => cb.value);
+}
+
+function updateBatchDropdownLabel() {
+  const all = document.querySelectorAll('.batch-checkbox');
+  const checked = document.querySelectorAll('.batch-checkbox:checked');
+  const summary = document.getElementById('filterSummaryBatch');
+  if (all.length === 0) { summary.textContent = 'tidak ada batch'; return; }
+  if (checked.length === all.length) { summary.textContent = `semua batch dipilih (${all.length})`; }
+  else if (checked.length === 0) { summary.textContent = 'tidak ada batch dipilih'; }
+  else { summary.textContent = `${checked.length} dari ${all.length} batch dipilih`; }
+}
+
+// Refresh everything that depends on the branch/batch filter
 function refreshAll() {
   if (!dashboardCache) return;
   const filtered = getFilteredRows();
   updateBranchDropdownLabel();
+  updateBatchDropdownLabel();
   updatePriorityFilterCount();
   refreshStats(filtered);
 
@@ -896,6 +958,18 @@ document.getElementById('branchClearAll').addEventListener('click', () => {
   refreshAll();
 });
 
+document.getElementById('batchFilterGrid').addEventListener('change', (e) => {
+  if (e.target.classList.contains('batch-checkbox')) refreshAll();
+});
+document.getElementById('batchSelectAll').addEventListener('click', () => {
+  document.querySelectorAll('.batch-checkbox').forEach(cb => { cb.checked = true; });
+  refreshAll();
+});
+document.getElementById('batchClearAll').addEventListener('click', () => {
+  document.querySelectorAll('.batch-checkbox').forEach(cb => { cb.checked = false; });
+  refreshAll();
+});
+
 // ── Filter "Hanya Order Priority" (kolom BX, field `priority_bx`) ────
 // PENTING: field `priority_bx` harus disediakan backend dari kolom BX
 // (isian order priority) saat membangun `dashboardCache.rows` -- sama
@@ -927,6 +1001,22 @@ document.getElementById('filterCardHeader').addEventListener('click', () => {
   setFilterOpen(filterBody.style.display === 'none');
 });
 setFilterOpen(false);
+
+// Batch filter card collapse/expand — sama pola dgn filter card branch
+const filterBodyBatch = document.getElementById('filterCardBodyBatch');
+const filterToggleBtnBatch = document.getElementById('filterToggleBtnBatch');
+function setFilterOpenBatch(open) {
+  filterBodyBatch.style.display = open ? 'block' : 'none';
+  filterToggleBtnBatch.innerHTML = open ? 'Sembunyikan &#9652;' : 'Tampilkan &#9662;';
+}
+filterToggleBtnBatch.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setFilterOpenBatch(filterBodyBatch.style.display === 'none');
+});
+document.getElementById('filterCardHeaderBatch').addEventListener('click', () => {
+  setFilterOpenBatch(filterBodyBatch.style.display === 'none');
+});
+setFilterOpenBatch(false);
 
 // ── Tab Rekap Port & LOP: Per Branch (default) / Per Batch ───────────
 const REKAP_HINTS = {
@@ -1639,6 +1729,7 @@ async function loadDashboard() {
     }
     dashboardCache = json.data;   // { statuses, batches, branches, rows }
     renderBranchFilter(dashboardCache.branches, isUpdate);
+    renderBatchFilter(dashboardCache.batches, isUpdate);
     refreshAll();
   } catch (e) {
     document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;
