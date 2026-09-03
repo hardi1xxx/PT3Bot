@@ -196,10 +196,12 @@
   <div class="rekap-tabs" id="rekapTabs">
     <button type="button" class="rekap-tab-btn active" data-rekap-view="branch">Per Branch</button>
     <button type="button" class="rekap-tab-btn" data-rekap-view="batch">Per Batch</button>
+    <button type="button" class="rekap-tab-btn" data-rekap-view="progress">Progress</button>
     <button type="button" class="rekap-tsel-btn" id="tselGroupBtn" title="Gabungkan baris Regional BANTEN &amp; JAKARTA jadi satu baris (TSEL)">Grouping (TSEL)</button>
   </div>
   <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="pivotTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
+  <div class="pivot-table-wrap" id="progressTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Chart + Trend Golive (kiri) & Kalender Target FI (kolom AK, kanan) -->
@@ -610,8 +612,8 @@ function setRegionalCellFilter(regional, branch, column) {
   if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function renderRegionalBranchTable(filteredRows, pivotColumns, groupTsel) {
-  const el = document.getElementById('regionalBranchTableWrap');
+function renderRegionalBranchTable(filteredRows, pivotColumns, groupTsel, wrapElId) {
+  const el = document.getElementById(wrapElId || 'regionalBranchTableWrap');
   if (!el) return;
   const { orderedRegionals, grandTotal } = computeRegionalBranchTable(filteredRows, pivotColumns, groupTsel);
 
@@ -930,6 +932,10 @@ function refreshAll() {
   renderCombinedTable(document.getElementById('pivotTableWrap'), portTable, lopTable, pivotColumns);
   renderRegionalBranchTable(filtered, pivotColumns, tselGroupingActive);
 
+  // Tab "Progress": sama tabel Regional/Branch tapi cuma 5 status utama
+  // (kolom Z: PERIJINAN..FINISH INSTALASI) -- tanpa DROP MOM, DROP, GOLIVE.
+  renderRegionalBranchTable(filtered, dashboardCache.statuses, tselGroupingActive, 'progressTableWrap');
+
   try {
     if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
     const chartPivot = computePivotTables(filtered, dashboardCache.batches, dashboardCache.statuses, 'status');
@@ -1022,6 +1028,7 @@ setFilterOpenBatch(false);
 const REKAP_HINTS = {
   branch: 'baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya',
   batch: 'baris = batch (kolom C) &middot; setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+  progress: 'baris = Regional (kolom T) &amp; Branch (kolom S) &middot; hanya 5 tahapan progress (PERIJINAN&ndash;FINISH INSTALASI), tanpa DROP MOM/DROP/GOLIVE &middot; klik angka untuk lihat &amp; download daftar lokasinya',
 };
 let rekapView = 'branch';
 function setRekapView(view) {
@@ -1031,6 +1038,7 @@ function setRekapView(view) {
   });
   document.getElementById('regionalBranchTableWrap').style.display = view === 'branch' ? 'block' : 'none';
   document.getElementById('pivotTableWrap').style.display = view === 'batch' ? 'block' : 'none';
+  document.getElementById('progressTableWrap').style.display = view === 'progress' ? 'block' : 'none';
   const hint = document.getElementById('rekapTableHint');
   if (hint) hint.innerHTML = REKAP_HINTS[view];
 }
