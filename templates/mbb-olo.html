@@ -161,11 +161,19 @@ const MBB_TARGET_KEYWORD = {
   "mbb-fiberisasi": "Fronthaul",
 };
 
+// PENTING: filter 3 menu di bawah ini (New Infra/Rescoping/Fiberisasi)
+// SENGAJA pakai kolom "Tipe Order" (kolom C), BUKAN "Tower Provider" +
+// bulan berjalan -- supaya Tree Diagram Progress, Nilai PO/BoQ/Comcase,
+// Resume, & tabel semuanya konsisten baca kolom C, TIDAK ikut logika
+// Target (yang tetap pakai Tower Provider + bulan, dihitung terpisah
+// di renderMbbDashboard -- lihat targetBaseRows di bawah). Kolom A
+// (TAHUN=2026) & kolom B ("Plan Deploy" mengandung "TIF") sudah
+// difilter global lewat mbbBaseFilter(), berlaku ke semua menu.
 const VIEWS = {
   "mbb-all":        { title:"MBB", badge:"Semua Data", sub:"Sheet: All Node B", source:"mbb", filter:null },
-  "mbb-newinfra":    { title:"MBB", badge:"New Infra", sub:`Sheet: All Node B — filter kolom \u201cTower Provider\u201d mengandung \u201cNew Infra ( ${CURRENT_MONTH_NAME} )\u201d`, source:"mbb", filter:(r)=>towerProviderTypeMonthMatch(getCol(r,"Tower Provider"), "New Infra", CURRENT_MONTH_NAME) },
-  "mbb-rescoping":   { title:"MBB", badge:"Rescoping", sub:`Sheet: All Node B — filter kolom \u201cTower Provider\u201d mengandung \u201cRescoping ( ${CURRENT_MONTH_NAME} )\u201d`, source:"mbb", filter:(r)=>towerProviderTypeMonthMatch(getCol(r,"Tower Provider"), "Rescoping", CURRENT_MONTH_NAME) },
-  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:`Sheet: All Node B — filter kolom \u201cTower Provider\u201d mengandung \u201cFronthaul ( ${CURRENT_MONTH_NAME} )\u201d`, source:"mbb", filter:(r)=>towerProviderTypeMonthMatch(getCol(r,"Tower Provider"), "Fronthaul", CURRENT_MONTH_NAME) },
+  "mbb-newinfra":    { title:"MBB", badge:"New Infra", sub:`Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cNew Infra\u201d`, source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","new infra") },
+  "mbb-rescoping":   { title:"MBB", badge:"Rescoping", sub:`Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cRescoping\u201d`, source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","rescoping") },
+  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:`Sheet: All Node B — filter kolom \u201cTipe Order\u201d mengandung \u201cFronthaul\u201d`, source:"mbb", filter:(r)=>matchCol(r,"Tipe Order","fronthaul") },
   "olo-all":         { title:"OLO", badge:"Semua Data", sub:"Sheet: OLO", source:"olo", filter:null },
   "olo-progress":    { title:"OLO", badge:"Progress", sub:"Sheet: OLO — filter status belum Done/Drop", source:"olo", filter:(r)=>{
                           const v = getCol(r,"STATUS PEKERJAAN").toLowerCase();
@@ -556,18 +564,24 @@ function renderMbbDashboard(rowsForView, view){
   const mbbTreeDeltas = { l1oa: l1oa - l1oaH1, drop: drop - dropH1, active: active - activeH1, sub: subDeltas };
 
   const monthName = CURRENT_MONTH_NAME;
-  // Penentuan target SEKARANG murni dari kolom "Tower Provider" (bukan
-  // "Tipe Order" lagi):
-  // - Menu New Infra/Rescoping/Fiberisasi: rowsForView SUDAH difilter
-  //   Tower Provider + bulan berjalan di VIEWS di atas -- total order
-  //   target di sini otomatis sama dengan jumlah baris menu itu.
+  // Target SELALU dari kolom "Tower Provider" + bulan berjalan, dihitung
+  // dari SELURUH data yang lolos filter dasar (kolom A=TAHUN 2026 & kolom
+  // B="Plan Deploy" mengandung "TIF") + toggle aktif/tidak-aktif --
+  // TIDAK dari rowsForView, karena rowsForView sekarang sudah difilter
+  // kolom C ("Tipe Order") sesuai menu Tree Diagram Progress (lihat VIEWS
+  // di atas). Dua hal ini sengaja dipisah: Tree Diagram = kolom C,
+  // Target = kolom "Tower Provider" + bulan, supaya klik menu New
+  // Infra/Rescoping/Fiberisasi TIDAK ikut mengubah cara Target dihitung.
+  // - Menu New Infra/Rescoping/Fiberisasi: target = baris yang Tower
+  //   Provider-nya cocok "{Keyword} ( bulan )" utk menu itu saja.
   // - Menu "Semua Data" (mbb-all): target = gabungan ketiganya, yaitu
   //   union baris yang Tower Provider-nya cocok salah satu dari
   //   "Rescoping ( bulan )" / "Fronthaul ( bulan )" / "New Infra ( bulan )".
+  const targetBaseRows = mbbRows.filter(mbbBaseFilter).filter(mbbActiveStatusFilter);
   const targetKeyword = MBB_TARGET_KEYWORD[currentView];
   const targetRows = targetKeyword
-    ? rowsForView
-    : rowsForView.filter(r => Object.values(MBB_TARGET_KEYWORD).some(kw => towerProviderTypeMonthMatch(getCol(r, "Tower Provider"), kw, monthName)));
+    ? targetBaseRows.filter(r => towerProviderTypeMonthMatch(getCol(r, "Tower Provider"), targetKeyword, monthName))
+    : targetBaseRows.filter(r => Object.values(MBB_TARGET_KEYWORD).some(kw => towerProviderTypeMonthMatch(getCol(r, "Tower Provider"), kw, monthName)));
   const targetCount = targetRows.length;
 
   // 3 kotak nilai (Nilai PO/BoQ Survey/Comcase) -- filter SAMA dengan
