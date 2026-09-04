@@ -2054,3 +2054,278 @@ def get_pt2_dashboard_data():
         "current_month_label": config.MONTH_LABEL_ID[today.month - 1],
         "rows": rows,
     }
+
+
+# ── Export "Data A-AP" & Export/Import "Format Update" (Dashboard PT3) ─
+#
+# Tiga fitur baru yang saling terkait, semuanya baca/tulis lewat helper
+# yang SUDAH ADA di atas (get_worksheet, _cached_get_all_values, find_row,
+# update_status) supaya:
+#   - Export "Data A-AP" = dump mentah kolom A s/d AP (row 2 = header) buat
+#     baris yang lagi ditampilkan/difilter di dashboard.
+#   - Export "Format Update" = template Excel siap-isi (ID IHLD, Nama
+#     Mitra, Status Fisik, Sub Status Fisik, Keterangan) + sheet ke-2
+#     referensi Z -> daftar AA yang valid.
+#   - Import = baca file Excel (hasil isian Format Update di atas), lalu
+#     panggil update_status() per baris -- JADI PERILAKUNYA SAMA PERSIS
+#     dengan update 1-per-1 lewat panel Update Status (prepend keterangan
+#     "DD/MM/YY : ...", kolom tanggal & keterangan otomatis mengikuti
+#     Status Fisik yang dipilih, Nama Mitra opsional dgn Jenis Pekerjaan
+#     ikut otomatis, dst -- lihat docstring update_status()).
+
+EXPORT_COL_LAST = "AP"  # kolom terakhir yang diexport (kolom A s/d AP)
+
+
+def _row_values_upto(row: list, upto_col: str = EXPORT_COL_LAST) -> list:
+    """Potong/pad 1 baris `all_values` (list dari gspread) supaya persis
+    sepanjang kolom A s/d `upto_col` (default AP), string kosong utk sel
+    yang kosong/di luar batas."""
+    n = _col_to_index(upto_col)
+    padded = list(row) + [""] * max(0, n - len(row))
+    return padded[:n]
+
+
+def get_export_headers(upto_col: str = EXPORT_COL_LAST) -> list:
+    """Header label kolom A s/d `upto_col`, dibaca dari HEADER_ROW sheet
+    "Detail PT3" (row 2) -- SUMBER TUNGGAL label kolom, jangan hardcode di
+    tempat lain (frontend/backend) supaya selalu sinkron kalau sheet
+    aslinya berubah nama kolom."""
+    ws = get_worksheet()
+    all_values = _cached_get_all_values(ws)
+    header_row = all_values[config.HEADER_ROW - 1] if len(all_values) >= config.HEADER_ROW else []
+    return _row_values_upto(header_row, upto_col)
+
+
+def build_export_workbook_a_ap(row_nums: list = None):
+    """Bangun file .xlsx berisi kolom A s/d AP untuk baris yang diminta
+    (`row_nums`, list of 1-indexed row number) -- kalau None, export SEMUA
+    baris data (tidak difilter). Dipakai tombol "Export Data" di sebelah
+    "Grouping (TSEL)" -- row_nums yang dikirim frontend = baris yang lagi
+    lolos filter Branch/Batch/Priority yang aktif di dashboard, supaya
+    hasil export = persis apa yang lagi ditampilkan, bukan seluruh sheet.
+    Returns BytesIO siap dikirim sebagai attachment."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    ws = get_worksheet()
+    all_values = _cached_get_all_values(ws)
+    headers = get_export_headers()
+    data_rows = all_values[config.DATA_START_ROW - 1:]
+
+    wanted = set(row_nums) if row_nums else None
+
+    wb = Workbook()
+    sheet = wb.active
+    sheet.title = "Data A-AP"
+    sheet.append(headers)
+    sheet.freeze_panes = "A2"
+
+    exported = 0
+    for offset, row in enumerate(data_rows):
+        row_num = config.DATA_START_ROW + offset
+        if wanted is not None and row_num not in wanted:
+            continue
+        padded = _row_values_upto(row)
+        if wanted is None and not any(c.strip() for c in padded):
+            continue  # skip baris kosong total kalau export tanpa filter
+        sheet.append(padded)
+        exported += 1
+
+    # Lebar kolom yang wajar biar langsung enak dibaca (bukan andalan Excel
+    # auto-fit yang kadang tidak jalan tergantung versi/OS).
+    for i in range(1, len(headers) + 1):
+        sheet.column_dimensions[get_column_letter(i)].width = 16
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+UPDATE_TEMPLATE_HEADERS = [
+    "ID IHLD (kolom I) - JANGAN DIUBAH, dipakai utk mencari baris",
+    "Lokasi (referensi saja, tidak dibaca saat import)",
+    "Nama Mitra (kolom Y) - kosongkan jika tidak ingin diubah",
+    "Status Fisik (kolom Z) - WAJIB diisi, lihat sheet Referensi Status",
+    "Sub Status Fisik (kolom AA) - WAJIB diisi, lihat sheet Referensi Status",
+    "Keterangan - WAJIB diisi (jadi paragraf baru, tanggal otomatis)",
+]
+
+
+def build_update_template_workbook(row_nums: list = None):
+    """Bangun file .xlsx "Format Update": sheet 1 berisi baris yang mau
+    diupdate (ID IHLD/Lokasi/Nama Mitra/Status Fisik/Sub Status Fisik
+    terisi nilai SAAT INI, kolom Keterangan sengaja dikosongkan buat
+    diisi user), sheet 2 referensi Status Fisik (Z) -> daftar Sub Status
+    Fisik (AA) yang valid untuk Status itu (config.STATUS_AA_GROUPS).
+    `row_nums` None = semua baris yang punya ID IHLD (kosong dilewati).
+    File hasil isian ini yang nantinya diupload balik lewat
+    apply_bulk_update_from_excel()."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    ws = get_worksheet()
+    all_values = _cached_get_all_values(ws)
+    idx = {
+        "ihld": _col_to_index(config.COL_IHLD) - 1,
+        "lokasi": _col_to_index(config.COL_LOKASI) - 1,
+        "mitra": _col_to_index(config.COL_MITRA) - 1,
+        "status_z": _col_to_index(config.COL_STATUS_Z) - 1,
+        "status_aa": _col_to_index(config.COL_STATUS_AA) - 1,
+    }
+    data_rows = all_values[config.DATA_START_ROW - 1:]
+    wanted = set(row_nums) if row_nums else None
+
+    wb = Workbook()
+    s1 = wb.active
+    s1.title = "Update Data"
+    s1.append(UPDATE_TEMPLATE_HEADERS)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="29467A")
+    for c in range(1, len(UPDATE_TEMPLATE_HEADERS) + 1):
+        cell = s1.cell(row=1, column=c)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(wrap_text=True, vertical="center")
+    s1.freeze_panes = "A2"
+
+    included = 0
+    for offset, row in enumerate(data_rows):
+        row_num = config.DATA_START_ROW + offset
+        if wanted is not None and row_num not in wanted:
+            continue
+
+        def cell(key):
+            i = idx[key]
+            return row[i].strip() if i < len(row) else ""
+
+        ihld_val = cell("ihld")
+        if not ihld_val:
+            continue  # baris tanpa ID IHLD tidak relevan utk diupdate
+        s1.append([ihld_val, cell("lokasi"), cell("mitra"), cell("status_z"), cell("status_aa"), ""])
+        included += 1
+
+    widths = [22, 26, 24, 30, 34, 44]
+    for i, w in enumerate(widths, start=1):
+        s1.column_dimensions[get_column_letter(i)].width = w
+
+    # Sheet 2: referensi Status Fisik (Z) -> Sub Status Fisik (AA) yang valid --
+    # sesuai config.STATUS_AA_GROUPS (aturan yang sama dipakai dropdown AA di
+    # panel Update Status manual), supaya user tahu kombinasi yang benar
+    # sebelum mengisi kolom D & E di sheet "Update Data".
+    s2 = wb.create_sheet("Referensi Status")
+    s2.append(["Status Fisik (kolom Z)", "Sub Status Fisik (kolom AA) yang valid"])
+    for c in range(1, 3):
+        cell = s2.cell(row=1, column=c)
+        cell.font = header_font
+        cell.fill = header_fill
+    for z in config.Z_OPTIONS:
+        aa_list = config.STATUS_AA_GROUPS.get(z, config.AA_OPTIONS)
+        s2.append([z, ", ".join(aa_list)])
+    s2.column_dimensions["A"].width = 28
+    s2.column_dimensions["B"].width = 90
+    for r in range(2, len(config.Z_OPTIONS) + 2):
+        s2.cell(row=r, column=2).alignment = Alignment(wrap_text=True)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def apply_bulk_update_from_excel(file_stream):
+    """Baca file .xlsx hasil isian "Format Update" (lihat
+    build_update_template_workbook) dan terapkan tiap baris lewat
+    update_status() -- SAMA PERSIS logikanya dengan update 1-per-1 lewat
+    panel Update Status (kolom Y/Z/AA/Keterangan, tanggal & note_col
+    ditentukan otomatis dari Status Fisik yang diisi).
+
+    Kolom yang dibaca (urutan HARUS sama dengan UPDATE_TEMPLATE_HEADERS):
+      A) ID IHLD   -- wajib, dipakai cari baris (find_row, lokasi diabaikan)
+      B) Lokasi    -- tidak dipakai (referensi saja)
+      C) Nama Mitra -- opsional: kosong = kolom Y (& X) tidak diubah
+      D) Status Fisik (Z) -- wajib
+      E) Sub Status Fisik (AA) -- wajib
+      F) Keterangan -- wajib, jadi paragraf baru (tanggal upload otomatis)
+
+    Baris yang kosong total dilewati (bukan error). Setiap baris diproses
+    independen -- satu baris gagal TIDAK menghentikan baris lainnya.
+    Returns dict {total, success, failed, results: [...]}."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(file_stream, data_only=True, read_only=True)
+    sheet = wb["Update Data"] if "Update Data" in wb.sheetnames else wb.worksheets[0]
+
+    results = []
+    success = 0
+
+    for excel_row_num, row in enumerate(sheet.iter_rows(min_row=2, max_col=6, values_only=True), start=2):
+        row = row or ()
+        get = lambda i: (str(row[i]).strip() if i < len(row) and row[i] is not None else "")
+        ihld = get(0)
+        mitra = get(2)
+        z_value = get(3)
+        aa_value = get(4)
+        note_text = get(5)
+
+        if not any([ihld, mitra, z_value, aa_value, note_text]):
+            continue  # baris kosong total, lewati diam-diam (bukan error)
+
+        entry = {"excel_row": excel_row_num, "ihld": ihld}
+
+        if not ihld:
+            entry.update(ok=False, error="ID IHLD (kolom A) kosong.")
+            results.append(entry)
+            continue
+        if not z_value:
+            entry.update(ok=False, error="Status Fisik (kolom D) wajib diisi.")
+            results.append(entry)
+            continue
+        if z_value not in config.STATUS_COLUMN_MAP:
+            entry.update(ok=False, error=f"Status Fisik {z_value!r} tidak dikenal. Cek sheet 'Referensi Status'.")
+            results.append(entry)
+            continue
+        if not aa_value:
+            entry.update(ok=False, error="Sub Status Fisik (kolom E) wajib diisi.")
+            results.append(entry)
+            continue
+        valid_aa = config.STATUS_AA_GROUPS.get(z_value)
+        if valid_aa is not None and aa_value not in valid_aa:
+            entry.update(ok=False, error=(
+                f"Sub Status Fisik {aa_value!r} tidak valid untuk Status Fisik {z_value!r}. "
+                f"Cek sheet 'Referensi Status'."
+            ))
+            results.append(entry)
+            continue
+        if not note_text:
+            entry.update(ok=False, error="Keterangan (kolom F) wajib diisi.")
+            results.append(entry)
+            continue
+
+        row_num = find_row(ihld, "")
+        if not row_num:
+            entry.update(ok=False, error="ID IHLD tidak ditemukan di sheet Detail PT3.")
+            results.append(entry)
+            continue
+
+        try:
+            date_col, note_col = update_status(
+                row_num, z_value, aa_value, note_text,
+                mitra_value=mitra or None,
+            )
+            entry.update(ok=True, row=row_num, date_col=date_col, note_col=note_col)
+            success += 1
+        except Exception as e:
+            entry.update(ok=False, error=f"{type(e).__name__}: {e}")
+        results.append(entry)
+
+    invalidate_sheet_cache(config.SHEET_NAME)
+    return {
+        "total": len(results),
+        "success": success,
+        "failed": len(results) - success,
+        "results": results,
+    }

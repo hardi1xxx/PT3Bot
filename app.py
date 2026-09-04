@@ -371,6 +371,66 @@ def api_row_boq_upload(row_num):
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/pt3-export", methods=["POST"])
+def api_pt3_export():
+    """Export "Data A-AP" -- tombol di sebelah "Grouping (TSEL)" pada
+    dashboard PT3. Body JSON: {"rows": [<row_num>, ...]} = baris yang lagi
+    lolos filter Branch/Batch/Priority di dashboard (dikirim frontend);
+    kalau `rows` kosong/tidak dikirim, export SEMUA baris data."""
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("rows") or None
+    try:
+        buf = sheets_service.build_export_workbook_a_ap(rows)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    filename = f"PT3-Data-A-AP-{datetime.date.today().isoformat()}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.route("/api/pt3-update-template", methods=["POST"])
+def api_pt3_update_template():
+    """Download "Format Update" -- template Excel siap-isi (ID IHLD, Nama
+    Mitra, Status Fisik, Sub Status Fisik, Keterangan) + sheet referensi
+    Status/Sub Status. Body JSON: {"rows": [<row_num>, ...]} = baris yang
+    lagi tampil di tabel "Detail Lokasi Sedang Berjalan"; kosong/tidak
+    dikirim -> semua baris yang punya ID IHLD."""
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("rows") or None
+    try:
+        buf = sheets_service.build_update_template_workbook(rows)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    filename = f"PT3-Format-Update-{datetime.date.today().isoformat()}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.route("/api/pt3-import", methods=["POST"])
+def api_pt3_import():
+    """Upload file "Format Update" (hasil isian dari /api/pt3-update-template)
+    untuk update banyak lokasi sekaligus -- tiap baris diterapkan lewat
+    sheets_service.update_status() (logika sama persis dengan update
+    1-per-1 lewat panel Update Status). Baris yang gagal tidak menghentikan
+    baris lainnya -- lihat hasil per baris di response `results`."""
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "File belum dipilih."}), 400
+    if not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify({"ok": False, "error": "File harus berformat .xlsx (hasil download Format Update)."}), 400
+    try:
+        summary = sheets_service.apply_bulk_update_from_excel(file.stream)
+        return jsonify({"ok": True, **summary})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/pending-updates")
 def api_pending_updates():
     try:

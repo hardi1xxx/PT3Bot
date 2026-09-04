@@ -200,6 +200,7 @@
     <button type="button" class="rekap-tab-btn" data-rekap-view="batch">Per Batch</button>
     <button type="button" class="rekap-tab-btn" data-rekap-view="progress">Progress</button>
     <button type="button" class="rekap-tsel-btn" id="tselGroupBtn" title="Gabungkan baris Regional BANTEN &amp; JAKARTA jadi satu baris (TSEL)">Grouping (TSEL)</button>
+    <button type="button" class="btn-ghost btn-sm" id="pt3ExportDataBtn" style="margin-left:8px;" title="Download data kolom A-AP (sesuai filter Branch/Batch/Priority yang sedang aktif) sebagai file Excel">&#11015; Export Data</button>
   </div>
   <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="pivotTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
@@ -255,11 +256,15 @@
 <div class="section-title">
   Detail Lokasi Sedang Berjalan
   <span class="hint">IHLD, Lokasi, Batch, Nama Mitra &amp; kolom L–O (ODP/PORT/BoQ/CPP)</span>
+  <button type="button" class="btn-ghost btn-sm" id="pt3DownloadTemplateBtn" style="margin-left:auto;" title="Download format update (Excel) untuk lokasi yang sedang tampil di tabel ini -- isi lalu upload lewat Import Data">&#11015; Format Update</button>
+  <button type="button" class="btn-ghost btn-sm" id="pt3ImportBtn" title="Upload file Excel Format Update (hasil isian) untuk update banyak lokasi sekaligus, tanpa update satu-satu">&#11014; Import Data</button>
+  <input type="file" id="pt3ImportFileInput" accept=".xlsx" style="display:none;">
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pivot-table-wrap" id="detailTableWrap" style="max-height:420px; overflow-y:auto;">
     <div class="skeleton">Memuat data...</div>
   </div>
+  <div id="pt3ImportResultWrap" style="margin-top:10px;"></div>
 </div>
 
 <!-- Kategori Drop (kolom BH) -->
@@ -802,6 +807,101 @@ function computePivotTables(filteredRows, batches, statuses, groupField = 'statu
 
   return { portTable: buildTable(pivotPort), lopTable: buildTable(pivotLop) };
 }
+
+// ── Export "Data A-AP" & Export/Import "Format Update" ────────────
+// Helper generik: POST {rows:[...]} ke backend, terima file .xlsx,
+// trigger download-nya lewat <a download> sementara (blob URL).
+async function downloadPt3Workbook(url, rows, filename, btnEl) {
+  const originalLabel = btnEl ? btnEl.innerHTML : null;
+  if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = 'Memproses...'; }
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows }),
+    });
+    if (!res.ok) {
+      let msg = 'Gagal download.';
+      try { const j = await res.json(); msg = j.error || msg; } catch (e) { /* respons bukan JSON */ }
+      alert(msg);
+      return;
+    }
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch (e) {
+    alert('Gagal download: ' + e);
+  } finally {
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = originalLabel; }
+  }
+}
+
+// Tombol "Export Data" (sebelah "Grouping (TSEL)"): kolom A-AP, mengikuti
+// filter Branch/Batch/Priority yang sedang aktif di dashboard.
+document.getElementById('pt3ExportDataBtn').addEventListener('click', (e) => {
+  const rows = getFilteredRows().map(r => r.row);
+  if (!rows.length) { alert('Tidak ada data untuk diexport (cek filter Branch/Batch di atas).'); return; }
+  downloadPt3Workbook('/api/pt3-export', rows, `PT3-Data-A-AP-${new Date().toISOString().slice(0,10)}.xlsx`, e.currentTarget);
+});
+
+// Tombol "Format Update" (sebelah judul "Detail Lokasi Sedang Berjalan"):
+// download template siap-isi utk lokasi yang lagi tampil di tabel itu.
+document.getElementById('pt3DownloadTemplateBtn').addEventListener('click', (e) => {
+  const rows = getFilteredRows().filter(r => r.status).map(r => r.row);
+  if (!rows.length) { alert('Tidak ada lokasi yang sedang berjalan untuk didownload (cek filter Branch/Batch di atas).'); return; }
+  downloadPt3Workbook('/api/pt3-update-template', rows, `PT3-Format-Update-${new Date().toISOString().slice(0,10)}.xlsx`, e.currentTarget);
+});
+
+// Tombol "Import Data": buka file picker -> upload -> tampilkan ringkasan
+// hasil (berhasil/gagal per baris) di bawah tabel Detail Lokasi, lalu
+// refresh dashboard kalau ada minimal 1 baris yang berhasil.
+document.getElementById('pt3ImportBtn').addEventListener('click', () => {
+  document.getElementById('pt3ImportFileInput').click();
+});
+
+document.getElementById('pt3ImportFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ''; // reset supaya file yang sama bisa dipilih ulang kalau perlu re-upload
+  if (!file) return;
+
+  const resultWrap = document.getElementById('pt3ImportResultWrap');
+  resultWrap.innerHTML = '<div class="skeleton">Mengupload &amp; memproses import...</div>';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res = await fetch('/api/pt3-import', { method: 'POST', body: formData });
+    const json = await res.json();
+    if (!json.ok) {
+      resultWrap.innerHTML = `<div class="flash error">${esc(json.error || 'Gagal import.')}</div>`;
+      return;
+    }
+
+    const errorRows = json.results.filter(r => !r.ok);
+    let html = `<div class="flash ${errorRows.length ? 'error' : 'success'}">
+      Import selesai: <strong>${json.success}</strong> berhasil, <strong>${json.failed}</strong> gagal dari ${json.total} baris diproses.
+    </div>`;
+    if (errorRows.length) {
+      html += '<div class="pivot-table-wrap" style="margin-top:8px; max-height:260px; overflow-y:auto;"><table class="pivot"><thead><tr><th>Baris Excel</th><th style="text-align:left;">ID IHLD</th><th style="text-align:left;">Kesalahan</th></tr></thead><tbody>';
+      errorRows.forEach(r => {
+        html += `<tr><td>${esc(r.excel_row)}</td><td style="text-align:left;">${esc(r.ihld || '-')}</td><td style="text-align:left;">${esc(r.error)}</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+    }
+    resultWrap.innerHTML = html;
+
+    if (json.success > 0) loadDashboard();
+  } catch (err) {
+    resultWrap.innerHTML = `<div class="flash error">Gagal import: ${err}</div>`;
+  }
+});
 
 // ── Detail Lokasi table (di bawah chart) ──────────────────────────
 function renderDetailTable(filteredRows) {
