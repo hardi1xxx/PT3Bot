@@ -591,10 +591,30 @@ function renderMbbDashboard(rowsForView, view){
   const nilaiBoqTotal = rowsForView.reduce((acc,r)=>acc+parseIdrNumber(getCol(r,"Nilai BoQ (Survey)")), 0);
   const nilaiComcaseTotal = rowsForView.reduce((acc,r)=>acc+parseIdrNumber(getCol(r,"Nilai Comcase")), 0);
 
-  const notesRows = rowsForView.filter(mbbDashboardFilter).filter(r => getCol(r,"Note Progress") !== "");
-  const notesHtml = notesRows.length ? notesRows.slice(0,15).map(r => `
-    <div class="item"><span class="site">${escapeHtml(getCol(r,"SITE ID"))}</span> — ${escapeHtml(firstParagraph(getCol(r,"Note Progress")))}</div>
-  `).join("") : `<div class="empty-state" style="padding:16px 0;">Klik salah satu kategori di kiri untuk lihat catatan (Note Progress)-nya di sini.</div>`;
+  // Sort berdasarkan kolom D ("Sub Sistem") -- pakai angka batch-nya biar
+  // urut numerik yang bener (bukan urut abjad string, biar "Batch 9" gak
+  // nongol setelah "Batch 10"). Baris tanpa angka di kolom D ditaruh di
+  // akhir.
+  const notesRows = rowsForView.filter(mbbDashboardFilter).filter(r => getCol(r,"Note Progress") !== "")
+    .slice()
+    .sort((a,b) => {
+      const ba = getBatchNum(a), bb = getBatchNum(b);
+      if (ba === null && bb === null) return 0;
+      if (ba === null) return 1;
+      if (bb === null) return -1;
+      return ba - bb;
+    });
+  // Urutan tampil per baris: nomor urut | SITE ID | Sub Sistem (kolom D)
+  // | Tipe Order (kolom C) | Status Tsel (kolom Q) — lalu keterangan
+  // (Note Progress).
+  const notesHtml = notesRows.length ? notesRows.slice(0,15).map((r, i) => {
+    const subSistem = getCol(r, "Sub Sistem") || "–";
+    const tipeOrder = getCol(r, "Tipe Order") || "–";
+    const statusTsel = getCol(r, "Status Tsel") || "–";
+    return `
+    <div class="item"><span class="hint">${i + 1}.</span> <span class="site">${escapeHtml(getCol(r,"SITE ID"))}</span> <span class="hint">${escapeHtml(subSistem)}</span> <span class="hint">${escapeHtml(tipeOrder)}</span> <span class="hint">${escapeHtml(statusTsel)}</span> — ${escapeHtml(firstParagraph(getCol(r,"Note Progress")))}</div>
+  `;
+  }).join("") : `<div class="empty-state" style="padding:16px 0;">Klik salah satu kategori di kiri untuk lihat catatan (Note Progress)-nya di sini.</div>`;
 
   // Resume: nama SITE ID saja (dipisah koma) buat 3 status kolom U -- SELALU
   // dari rowsForView (view MBB aktif), tidak ikut kena filter klik tree di
@@ -862,6 +882,14 @@ function renderMbbActiveToggle(){
       <button type="button" class="${mbbActiveFilterMode==='aktif'?'on':''}" onclick="setMbbActiveFilter('aktif')">Aktif</button>
       <button type="button" class="${mbbActiveFilterMode==='tidak-aktif'?'on':''}" onclick="setMbbActiveFilter('tidak-aktif')">Tidak Aktif</button>
     </div>`;
+}
+
+// Ambil nomor BATCH dari satu baris (kolom D, "Sub Sistem"), misal nilai
+// "BATCH 27" -> 27. null kalau kolomnya kosong/tidak ada angka. Dipakai
+// buat sort & tampilan Batch di card SITEID.
+function getBatchNum(row){
+  const m = getCol(row, "Sub Sistem").match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 // Ambil range nomor BATCH dari kolom D (Sub Sistem), misal nilai "BATCH 27"
