@@ -821,7 +821,9 @@ async function downloadPt3Workbook(url, rows, filename, btnEl) {
       body: JSON.stringify({ rows }),
     });
     if (!res.ok) {
-      let msg = 'Gagal download.';
+      let msg = res.status === 401
+        ? 'Sesi login sudah habis. Silakan reload halaman ini, login ulang, lalu coba lagi.'
+        : 'Gagal download.';
       try { const j = await res.json(); msg = j.error || msg; } catch (e) { /* respons bukan JSON */ }
       alert(msg);
       return;
@@ -878,7 +880,21 @@ document.getElementById('pt3ImportFileInput').addEventListener('change', async (
 
   try {
     const res = await fetch('/api/pt3-import', { method: 'POST', body: formData });
-    const json = await res.json();
+    const rawText = await res.text();
+    let json;
+    try {
+      json = JSON.parse(rawText);
+    } catch (parseErr) {
+      // Respons bukan JSON -- biasanya sesi login habis (dibalas halaman
+      // login HTML) atau proxy/limit ukuran file dari server (halaman
+      // error HTML juga). Jangan tampilkan raw SyntaxError, kasih pesan
+      // yang jelas + tindakan yang bisa dilakukan.
+      const friendly = res.status === 401
+        ? 'Sesi login sudah habis. Silakan reload halaman ini, login ulang, lalu upload lagi.'
+        : `Server mengembalikan respons tidak terduga (status ${res.status}). Kemungkinan file terlalu besar atau koneksi terputus saat upload -- coba reload halaman lalu upload ulang.`;
+      resultWrap.innerHTML = `<div class="flash error">${esc(friendly)}</div>`;
+      return;
+    }
     if (!json.ok) {
       resultWrap.innerHTML = `<div class="flash error">${esc(json.error || 'Gagal import.')}</div>`;
       return;

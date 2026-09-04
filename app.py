@@ -64,6 +64,15 @@ def require_login():
     if request.path.startswith(exempt_paths):
         return None
     if not session.get("user"):
+        # Endpoint /api/* dipanggil lewat fetch() dari JS (bukan navigasi
+        # browser) -- kalau di-redirect ke /login (HTML), fetch tetap
+        # "berhasil" (ikut redirect, status 200) tapi body-nya HTML, bukan
+        # JSON -- bikin frontend gagal parse JSON dengan pesan membingungkan
+        # ("Unexpected token '<' ... is not valid JSON"). Untuk /api/*,
+        # balas 401 JSON supaya frontend bisa kasih tahu user secara jelas
+        # ("sesi habis, reload & login ulang") alih-alih error parse mentah.
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "error": "Sesi login sudah habis. Reload halaman ini lalu login ulang, kemudian coba lagi."}), 401
         return redirect(url_for("login", next=request.path))
     return None
 
