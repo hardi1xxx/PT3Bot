@@ -2222,12 +2222,20 @@ def build_update_template_workbook(row_nums: list = None):
         cell = s2.cell(row=1, column=c)
         cell.font = header_font
         cell.fill = header_fill
+    # Z yang TIDAK punya kelompok di STATUS_AA_GROUPS (mis. "0.1 SURVEI")
+    # sengaja DILEWATI di sini -- kalau dipaksa tampil, isinya jadi SEMUA
+    # 32 opsi AA_OPTIONS (bukan daftar "valid" beneran), jadi tidak
+    # informatif dan cuma bikin bingung user yang isi Format Update.
+    row_count = 0
     for z in config.Z_OPTIONS:
-        aa_list = config.STATUS_AA_GROUPS.get(z, config.AA_OPTIONS)
+        aa_list = config.STATUS_AA_GROUPS.get(z)
+        if not aa_list:
+            continue
         s2.append([z, ", ".join(aa_list)])
+        row_count += 1
     s2.column_dimensions["A"].width = 28
     s2.column_dimensions["B"].width = 90
-    for r in range(2, len(config.Z_OPTIONS) + 2):
+    for r in range(2, row_count + 2):
         s2.cell(row=r, column=2).alignment = Alignment(wrap_text=True)
 
     buf = io.BytesIO()
