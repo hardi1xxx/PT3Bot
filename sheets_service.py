@@ -2085,6 +2085,21 @@ def _row_values_upto(row: list, upto_col: str = EXPORT_COL_LAST) -> list:
     return padded[:n]
 
 
+def _numeric_or_text(raw: str):
+    """Kalau `raw` berupa digit murni (mis. ID IHLD "13034337"), kembalikan
+    sebagai int supaya openpyxl menulisnya sebagai tipe NUMBER asli di
+    Excel (bukan teks -- biar tidak perlu convert manual satu-satu di
+    Excel). Selain itu (ada huruf/simbol, atau kosong) dikembalikan apa
+    adanya sebagai teks."""
+    raw = (raw or "").strip()
+    if raw.isdigit():
+        try:
+            return int(raw)
+        except ValueError:
+            return raw
+    return raw
+
+
 def get_export_headers(upto_col: str = EXPORT_COL_LAST) -> list:
     """Header label kolom A s/d `upto_col`, dibaca dari HEADER_ROW sheet
     "Detail PT3" (row 2) -- SUMBER TUNGGAL label kolom, jangan hardcode di
@@ -2114,6 +2129,7 @@ def build_export_workbook_a_ap(row_nums: list = None):
     data_rows = all_values[config.DATA_START_ROW - 1:]
 
     wanted = set(row_nums) if row_nums else None
+    ihld_offset = _col_to_index(config.COL_IHLD) - 1  # index dalam baris hasil _row_values_upto, buat dikonversi ke number
 
     wb = Workbook()
     sheet = wb.active
@@ -2129,6 +2145,7 @@ def build_export_workbook_a_ap(row_nums: list = None):
         padded = _row_values_upto(row)
         if wanted is None and not any(c.strip() for c in padded):
             continue  # skip baris kosong total kalau export tanpa filter
+        padded[ihld_offset] = _numeric_or_text(padded[ihld_offset])  # ID IHLD -> tipe NUMBER, bukan teks
         sheet.append(padded)
         exported += 1
 
@@ -2205,7 +2222,7 @@ def build_update_template_workbook(row_nums: list = None):
         ihld_val = cell("ihld")
         if not ihld_val:
             continue  # baris tanpa ID IHLD tidak relevan utk diupdate
-        s1.append([ihld_val, cell("lokasi"), cell("mitra"), cell("status_z"), cell("status_aa"), ""])
+        s1.append([_numeric_or_text(ihld_val), cell("lokasi"), cell("mitra"), cell("status_z"), cell("status_aa"), ""])
         included += 1
 
     widths = [22, 26, 24, 30, 34, 44]
@@ -2270,9 +2287,19 @@ def apply_bulk_update_from_excel(file_stream):
     results = []
     success = 0
 
+    def _cell_to_text(v):
+        """Excel bisa balikin cell angka sebagai int ATAU float (mis.
+        13034337.0) tergantung format sel -- rapikan supaya ID IHLD dkk.
+        tidak berubah jadi "13034337.0" saat dibandingkan ke sheet."""
+        if v is None:
+            return ""
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        return str(v).strip()
+
     for excel_row_num, row in enumerate(sheet.iter_rows(min_row=2, max_col=6, values_only=True), start=2):
         row = row or ()
-        get = lambda i: (str(row[i]).strip() if i < len(row) and row[i] is not None else "")
+        get = lambda i: (_cell_to_text(row[i]) if i < len(row) else "")
         ihld = get(0)
         mitra = get(2)
         z_value = get(3)
