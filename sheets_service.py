@@ -467,6 +467,34 @@ def find_row(ihld: str, lokasi: str):
     return None
 
 
+def _build_ihld_row_index():
+    """Baca kolom IHLD (I) SEKALI (1 panggilan API) dan bangun dict
+    {ihld_lower: row_num} untuk lookup O(1) di memori.
+
+    Dipakai oleh apply_bulk_update_from_excel() supaya import banyak baris
+    TIDAK memanggil find_row() per baris -- find_row() sendiri melakukan
+    2x ws.col_values() (baca ulang seluruh kolom I & J dari Google Sheets,
+    tanpa cache) SETIAP kali dipanggil. Untuk file import isi N baris, itu
+    berarti 2*N round-trip API cuma untuk mencari baris saja, di luar
+    panggilan API dari update_status() -- itulah penyebab utama proses
+    import lama & rawan kena timeout/rate-limit (muncul sebagai error 500
+    di frontend). Dengan index ini, pencarian jadi 1 panggilan API total
+    untuk seluruh file, bukan 2 panggilan API per baris.
+
+    Kalau ada IHLD duplikat di sheet, yang dipakai adalah kemunculan
+    PERTAMA (perilaku sama seperti find_row() yang scan dari atas)."""
+    ws = get_worksheet()
+    ihld_col_idx = _col_to_index(config.COL_IHLD)
+    ihld_values = ws.col_values(ihld_col_idx)
+
+    index = {}
+    for i in range(config.DATA_START_ROW - 1, len(ihld_values)):
+        v_ihld = ihld_values[i].strip().lower()
+        if v_ihld and v_ihld not in index:
+            index[v_ihld] = i + 1
+    return index
+
+
 def search_rows(query: str, limit: int = 15):
     """
     Loose search across IHLD + LOKASI IHLD for autocomplete-style lookup
@@ -2287,6 +2315,12 @@ def apply_bulk_update_from_excel(file_stream):
     results = []
     success = 0
 
+    # Bangun index IHLD -> row_num SEKALI di awal (1 panggilan API),
+    # bukan panggil find_row() per baris (lihat docstring
+    # _build_ihld_row_index() untuk alasannya -- ini penyebab utama import
+    # lama/kena timeout untuk file dengan banyak baris).
+    ihld_index = _build_ihld_row_index()
+
     def _cell_to_text(v):
         """Excel bisa balikin cell angka sebagai int ATAU float (mis.
         13034337.0) tergantung format sel -- rapikan supaya ID IHLD dkk.
@@ -2340,7 +2374,7 @@ def apply_bulk_update_from_excel(file_stream):
             results.append(entry)
             continue
 
-        row_num = find_row(ihld, "")
+        row_num = ihld_index.get(ihld.strip().lower())
         if not row_num:
             entry.update(ok=False, error="ID IHLD tidak ditemukan di sheet Detail PT3.")
             results.append(entry)
