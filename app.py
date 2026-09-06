@@ -45,7 +45,7 @@ PROJECT_MENUS = [
     {"key": "FBB", "label": "FBB", "desc": "Monitoring & laporan FBB.", "url": "/fbb", "status": "active"},
     {"key": "MBB", "label": "MBB", "desc": "Monitoring All Node B.", "url": "/mbb-olo", "status": "active"},
     {"key": "OLO", "label": "OLO", "desc": "Monitoring OLO (satu halaman sama dengan MBB).", "url": "/mbb-olo", "status": "active"},
-    {"key": "HEM", "label": "HEM", "desc": "Segera hadir.", "url": None, "status": "soon"},
+    {"key": "HEM", "label": "HEM", "desc": "Input data semesta (form manual / upload Excel-CSV) & generate perintah SQL.", "url": "/hem", "status": "active"},
     {"key": "QE", "label": "QE", "desc": "Segera hadir.", "url": None, "status": "soon"},
 ]
 
@@ -510,6 +510,17 @@ def mbb_olo_page():
     lagi CSV export publik dari browser. Tampilan ditentukan lewat
     ?view=... dari link menu MBB/OLO di sidebar (mis. /mbb-olo?view=mbb-newinfra)."""
     return render_template("mbb-olo.html")
+
+
+@app.route("/hem")
+def hem_page():
+    """Input Data Semesta (HEM) -- extend base.html (sidebar & topbar sama
+    seperti halaman lain). Untuk sekarang murni form client-side (upload
+    Excel/CSV atau input manual) yang menghasilkan perintah SQL
+    'INSERT INTO data_semesta' buat dijalankan manual di Query Railway --
+    belum baca/tulis data lewat backend, jadi tidak butuh endpoint /api/
+    tambahan dulu."""
+    return render_template("hem.html")
 
 
 @app.route("/api/mbb-data")
