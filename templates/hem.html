@@ -1,13 +1,20 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Input Data Semesta</title>
+{% extends "base.html" %}
+{% block title %}Input Data Semesta{% endblock %}
+{% block active_category %}hem{% endblock %}
+{% block menu_hem %}active{% endblock %}
+{% block page_title %}Input Data Semesta{% endblock %}
+{% block page_sub %}Isi data lewat form manual atau unggah file Excel/CSV, lalu hasilkan perintah SQL untuk dijalankan di Query Railway.{% endblock %}
+
+{% block content %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-  :root{
+  /* Halaman HEM (Input Data Semesta) -- dulunya HTML standalone terpisah,
+     sekarang jadi child template base.html. Semua style di-scope di
+     bawah .hem-shell (bukan :root/body global) biar variabel warna &
+     class generiknya (card, btn, panel, dst.) gak bentrok sama halaman
+     lain yang pakai style.css bareng-bareng. */
+  .hem-shell{
     --bg:#F5F6F3;
     --surface:#FFFFFF;
     --ink:#1A1F1D;
@@ -22,133 +29,116 @@
     --warn-soft:#FBEAE8;
     --radius:10px;
     --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  }
-  *{box-sizing:border-box;}
-  body{
-    margin:0;
-    background:var(--bg);
     color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     line-height:1.5;
   }
-  .shell{max-width:960px;margin:0 auto;padding:32px 24px 80px;}
+  .hem-shell *{box-sizing:border-box;}
 
-  header.top{
-    display:flex;justify-content:space-between;align-items:flex-end;
-    border-bottom:1px solid var(--line-strong);
-    padding-bottom:20px;margin-bottom:28px;gap:16px;flex-wrap:wrap;
-  }
-  header.top h1{font-size:22px;font-weight:600;margin:0 0 6px;letter-spacing:-0.01em;}
-  header.top p{margin:0;color:var(--ink-soft);font-size:14px;max-width:520px;}
-  .target-chip{
+  .hem-shell .target-chip{
     font-family:var(--mono);font-size:12px;color:var(--accent);
     background:var(--accent-soft);border-radius:6px;padding:6px 10px;white-space:nowrap;
   }
 
-  .mode-switch{display:flex;gap:8px;margin-bottom:24px;}
-  .mode-switch button{
+  .hem-shell .mode-switch{display:flex;gap:8px;margin-bottom:24px;}
+  .hem-shell .mode-switch button{
     flex:1;padding:12px 16px;border-radius:var(--radius);border:1px solid var(--line);
     background:var(--surface);color:var(--ink-soft);font-size:14px;font-weight:500;
     cursor:pointer;text-align:left;transition:border-color .15s;
   }
-  .mode-switch button .sub{display:block;font-size:12px;font-weight:400;color:var(--ink-faint);margin-top:2px;}
-  .mode-switch button.active{border-color:var(--accent);color:var(--ink);background:var(--accent-soft);}
-  .mode-switch button.active .sub{color:var(--ink-soft);}
+  .hem-shell .mode-switch button .sub{display:block;font-size:12px;font-weight:400;color:var(--ink-faint);margin-top:2px;}
+  .hem-shell .mode-switch button.active{border-color:var(--accent);color:var(--ink);background:var(--accent-soft);}
+  .hem-shell .mode-switch button.active .sub{color:var(--ink-soft);}
 
-  .panel{display:none;}
-  .panel.active{display:block;}
+  .hem-shell .panel{display:none;}
+  .hem-shell .panel.active{display:block;}
 
-  .card{
+  .hem-shell .card{
     background:var(--surface);border:1px solid var(--line);border-radius:12px;
     padding:24px;margin-bottom:20px;
   }
 
   /* --- upload panel --- */
-  .dropzone{
+  .hem-shell .dropzone{
     border:1.5px dashed var(--line-strong);border-radius:var(--radius);
     padding:36px 20px;text-align:center;cursor:pointer;color:var(--ink-soft);
     background:var(--bg);transition:border-color .15s,background .15s;
   }
-  .dropzone.drag{border-color:var(--accent);background:var(--accent-soft);}
-  .dropzone strong{color:var(--ink);}
-  .dropzone input{display:none;}
-  .template-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
+  .hem-shell .dropzone.drag{border-color:var(--accent);background:var(--accent-soft);}
+  .hem-shell .dropzone strong{color:var(--ink);}
+  .hem-shell .dropzone input{display:none;}
+  .hem-shell .template-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
 
-  table.preview{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px;}
-  table.preview th,table.preview td{
+  .hem-shell table.preview{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px;}
+  .hem-shell table.preview th,.hem-shell table.preview td{
     border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;
     white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis;
   }
-  table.preview th{color:var(--ink-soft);font-weight:500;background:var(--bg);position:sticky;top:0;}
-  .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin-top:14px;}
+  .hem-shell table.preview th{color:var(--ink-soft);font-weight:500;background:var(--bg);position:sticky;top:0;}
+  .hem-shell .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin-top:14px;}
 
-  .status-line{font-size:13px;margin-top:12px;color:var(--ink-soft);}
-  .status-line.err{color:var(--warn);}
-  .status-line.ok{color:var(--accent);}
+  .hem-shell .status-line{font-size:13px;margin-top:12px;color:var(--ink-soft);}
+  .hem-shell .status-line.err{color:var(--warn);}
+  .hem-shell .status-line.ok{color:var(--accent);}
 
   /* --- manual panel --- */
-  details.group{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden;}
-  details.group summary{
+  .hem-shell details.group{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden;}
+  .hem-shell details.group summary{
     list-style:none;cursor:pointer;padding:14px 16px;font-weight:500;font-size:14px;
     display:flex;justify-content:space-between;align-items:center;background:var(--surface);
   }
-  details.group summary::-webkit-details-marker{display:none;}
-  details.group summary .count{font-size:12px;color:var(--ink-faint);font-weight:400;}
-  details.group[open] summary{border-bottom:1px solid var(--line);}
-  .group-body{padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;background:var(--bg);}
-  .field{display:flex;flex-direction:column;gap:6px;}
-  .field.wide{grid-column:1 / -1;}
-  .field label{font-size:12.5px;color:var(--ink-soft);}
-  .field input,.field textarea{
+  .hem-shell details.group summary::-webkit-details-marker{display:none;}
+  .hem-shell details.group summary .count{font-size:12px;color:var(--ink-faint);font-weight:400;}
+  .hem-shell details.group[open] summary{border-bottom:1px solid var(--line);}
+  .hem-shell .group-body{padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;background:var(--bg);}
+  .hem-shell .field{display:flex;flex-direction:column;gap:6px;}
+  .hem-shell .field.wide{grid-column:1 / -1;}
+  .hem-shell .field label{font-size:12.5px;color:var(--ink-soft);}
+  .hem-shell .field input,.hem-shell .field textarea{
     border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;
     font-size:13.5px;font-family:inherit;background:var(--surface);color:var(--ink);
   }
-  .field textarea{resize:vertical;min-height:56px;}
-  .field input:focus,.field textarea:focus{outline:none;border-color:var(--accent);}
+  .hem-shell .field textarea{resize:vertical;min-height:56px;}
+  .hem-shell .field input:focus,.hem-shell .field textarea:focus{outline:none;border-color:var(--accent);}
 
-  .actions-row{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
-  button.btn{
+  .hem-shell .actions-row{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
+  .hem-shell button.btn{
     border-radius:8px;padding:10px 18px;font-size:13.5px;font-weight:500;
     cursor:pointer;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);
   }
-  button.btn:hover{border-color:var(--ink-faint);}
-  button.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
-  button.btn.primary:hover{opacity:.92;}
-  button.btn.ghost{border-color:transparent;color:var(--ink-soft);}
-  button.btn:disabled{opacity:.45;cursor:not-allowed;}
+  .hem-shell button.btn:hover{border-color:var(--ink-faint);}
+  .hem-shell button.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
+  .hem-shell button.btn.primary:hover{opacity:.92;}
+  .hem-shell button.btn.ghost{border-color:transparent;color:var(--ink-soft);}
+  .hem-shell button.btn:disabled{opacity:.45;cursor:not-allowed;}
 
-  .rows-table-wrap{margin-top:8px;}
-  .rows-table-wrap table{width:100%;border-collapse:collapse;font-size:12.5px;}
-  .rows-table-wrap th,.rows-table-wrap td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;}
-  .rows-table-wrap th{color:var(--ink-soft);font-weight:500;}
-  .rows-table-wrap td.del{width:28px;text-align:center;cursor:pointer;color:var(--warn);}
+  .hem-shell .rows-table-wrap{margin-top:8px;}
+  .hem-shell .rows-table-wrap table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .hem-shell .rows-table-wrap th,.hem-shell .rows-table-wrap td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;}
+  .hem-shell .rows-table-wrap th{color:var(--ink-soft);font-weight:500;}
+  .hem-shell .rows-table-wrap td.del{width:28px;text-align:center;cursor:pointer;color:var(--warn);}
 
-  .empty-note{color:var(--ink-faint);font-size:13px;padding:10px 2px;}
+  .hem-shell .empty-note{color:var(--ink-faint);font-size:13px;padding:10px 2px;}
 
   /* --- sql output --- */
-  .sql-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin-top:6px;}
-  .sql-card-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);}
-  .sql-card-head span{font-size:13px;color:var(--ink-soft);}
-  pre.sql-box{
+  .hem-shell .sql-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin-top:6px;}
+  .hem-shell .sql-card-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);}
+  .hem-shell .sql-card-head span{font-size:13px;color:var(--ink-soft);}
+  .hem-shell pre.sql-box{
     margin:0;padding:16px 18px;font-family:var(--mono);font-size:12.5px;line-height:1.6;
     white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto;color:var(--ink);
   }
-  .hint{font-size:12.5px;color:var(--ink-faint);margin-top:8px;}
+  .hem-shell .hint{font-size:12.5px;color:var(--ink-faint);margin-top:8px;}
 </style>
-</head>
-<body>
-<div class="shell">
 
-  <header class="top">
-    <div>
-      <h1>Input data semesta</h1>
-      <p>Isi data lewat form manual atau unggah file Excel/CSV, lalu hasilkan perintah SQL untuk dijalankan di Query Railway.</p>
-    </div>
-    <div class="target-chip">tambah data </div>
-  </header>
+<div class="hem-shell">
 
   <div class="mode-switch">
-    <button id="tab-upload" class="active" onclick="setMode('upload')">
+    <button id="tab-ihld" class="active" onclick="setMode('ihld')">
+      Upload IHLD
+      <span class="sub">Import data IHLD/LOP dulu, buat auto-isi form manual</span>
+    </button>
+    <button id="tab-upload" onclick="setMode('upload')">
       Upload file
       <span class="sub">Import banyak baris dari Excel / CSV</span>
     </button>
@@ -158,8 +148,21 @@
     </button>
   </div>
 
+  <!-- ================= UPLOAD IHLD PANEL ================= -->
+  <section id="panel-ihld" class="panel active">
+    <div class="card">
+      <div class="dropzone" id="dropzoneIhld">
+        <div><strong>Klik untuk pilih file IHLD/LOP</strong>, atau seret file ke sini</div>
+        <div style="font-size:12.5px;margin-top:4px;">Format: .csv, .xlsx, .xls — export List of Project (LOP)/iHLD, baris pertama nama kolom</div>
+        <input type="file" id="fileInputIhld" accept=".csv,.xlsx,.xls">
+      </div>
+      <div id="ihldStatus" class="status-line"></div>
+    </div>
+    <div class="hint">Data IHLD yang berhasil dimuat di sini dipakai buat auto-isi sebagian kolom di tab "Input manual" berdasarkan <strong>iHLD LoP ID</strong> yang diketik/dipilih di sana — kolom lain di luar itu (progress, target, keuangan aktual, dll.) tetap perlu diisi manual karena memang belum ada di data IHLD. Tidak memengaruhi tab "Upload file".</div>
+  </section>
+
   <!-- ================= UPLOAD PANEL ================= -->
-  <section id="panel-upload" class="panel active">
+  <section id="panel-upload" class="panel">
     <div class="card">
       <div class="dropzone" id="dropzone">
         <div><strong>Klik untuk pilih file</strong>, atau seret file ke sini</div>
@@ -184,6 +187,8 @@
 
   <!-- ================= MANUAL PANEL ================= -->
   <section id="panel-manual" class="panel">
+    <datalist id="ihldSuggestions"></datalist>
+    <div class="hint" id="ihldLookupStatus" style="margin-bottom:14px;">Isi kolom "iHLD LoP ID" di bawah untuk auto-isi dari data IHLD yang sudah diupload (kalau ada).</div>
     <div id="groupsContainer"></div>
 
     <div class="actions-row">
@@ -323,8 +328,10 @@ function normalize(s){
 }
 
 function setMode(mode){
+  document.getElementById('panel-ihld').classList.toggle('active', mode==='ihld');
   document.getElementById('panel-upload').classList.toggle('active', mode==='upload');
   document.getElementById('panel-manual').classList.toggle('active', mode==='manual');
+  document.getElementById('tab-ihld').classList.toggle('active', mode==='ihld');
   document.getElementById('tab-upload').classList.toggle('active', mode==='upload');
   document.getElementById('tab-manual').classList.toggle('active', mode==='manual');
 }
@@ -356,7 +363,8 @@ function renderField(key,label,type){
   } else if(type === 'datetime'){
     input = `<input id="f_${key}" type="datetime-local">`;
   } else {
-    input = `<input id="f_${key}" type="text">`;
+    const listAttr = key === 'ihld_lop_id' ? ' list="ihldSuggestions"' : '';
+    input = `<input id="f_${key}" type="text"${listAttr}>`;
   }
   return `<div class="field${wide}"><label for="f_${key}">${label}</label>${input}</div>`;
 }
@@ -605,7 +613,212 @@ function triggerDownload(blob, filename){
   URL.revokeObjectURL(url);
 }
 
+// ===================== UPLOAD IHLD (buat auto-isi form manual) =====================
+// Kolom kunci pencocokan di file IHLD/LOP (dicocokkan lewat normalize()
+// biar toleran beda kapital/spasi/tanda baca pada header).
+const IHLD_KEY_HEADER = "iHLD LoP ID";
+
+// Pemetaan kolom data_semesta -> nama kolom di file IHLD/LOP. HANYA yang
+// jelas & yakin cocok yang dipetakan di sini (dicek manual dari contoh
+// export "LOP--REGIONAL...csv"); kolom data_semesta lain yang TIDAK ada
+// di daftar ini (progress, target tanggal, status BA/UT, keuangan
+// aktual, SMILE, dll.) memang belum tersedia di data IHLD, jadi tetap
+// harus diisi manual. Tinggal tambah baris baru di sini kalau mau
+// petakan kolom lain / beda export punya nama kolom lain.
+const IHLD_FIELD_MAP = {
+  ihld_lop_id:    "iHLD LoP ID",
+  nama_proyek:    "Nama Proyek",
+  tipe_desain:    "Tipe Desain",
+  status_ihld:    "Status Proyek",
+  tahun:          "Tahun Program",
+  region_tif:     "Regional",
+  witel_lama:     "Witel Lama",
+  branch:         "Telkomsel Branch",
+  sto:            "STO",
+  datek:          "Datel",
+  pr:             "No PR",
+  po:             "No PO",
+  tgl_go_live:    "Estimasi Go Live",
+  total_boq_ihld: "Total BOQ",
+  nama_mitra:     "Nama Mitra",
+};
+
+let ihldRows = [];   // array of {header asli file IHLD: value}, apa adanya
+let ihldIndex = {};  // normalize(iHLD LoP ID) -> row IHLD
+
+// Sebagian export LOP/IHLD (mis. tombol "Download CSV" di aplikasi LOP)
+// membungkus SATU BARIS PENUH di dalam satu pasang kutip dua, dengan
+// kutip dua di dalam baris itu di-escape jadi dobel (""..."") --
+// BUKAN format CSV standar per-kolom, jadi kalau langsung di-Papa.parse
+// semua kolom kebaca jadi satu kolom raksasa. Fungsi ini mendeteksi &
+// membongkarnya dulu (baris yang formatnya sudah normal dibiarkan apa
+// adanya) sebelum di-parse.
+function unwrapDoubleQuotedCsvLine(line){
+  const trimmed = line.trim();
+  if(trimmed.length >= 2 && trimmed[0] === '"' && trimmed[trimmed.length-1] === '"'){
+    const inner = trimmed.slice(1, -1);
+    if(inner.includes('""')) return inner.replace(/""/g, '"');
+  }
+  return line;
+}
+function unwrapDoubleQuotedCsvText(text){
+  return text.split(/\r\n|\n/).map(unwrapDoubleQuotedCsvLine).join('\n');
+}
+
+// Beberapa kolom tanggal di IHLD (mis. "Estimasi Go Live") formatnya
+// bisa "-" (kosong) atau "YYYY-MM-DD ..." -- ambil bagian tanggalnya
+// saja biar valid dipasang ke <input type="date">; kalau polanya tidak
+// ketemu, dianggap kosong (dilewati, tidak diisi paksa).
+function toDateInputValue(raw){
+  const m = String(raw).match(/(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+}
+
+const dropzoneIhld = document.getElementById('dropzoneIhld');
+const fileInputIhld = document.getElementById('fileInputIhld');
+dropzoneIhld.addEventListener('click', () => fileInputIhld.click());
+dropzoneIhld.addEventListener('dragover', e => { e.preventDefault(); dropzoneIhld.classList.add('drag'); });
+dropzoneIhld.addEventListener('dragleave', () => dropzoneIhld.classList.remove('drag'));
+dropzoneIhld.addEventListener('drop', e => {
+  e.preventDefault(); dropzoneIhld.classList.remove('drag');
+  if(e.dataTransfer.files.length) handleIhldFile(e.dataTransfer.files[0]);
+});
+fileInputIhld.addEventListener('change', e => {
+  if(e.target.files.length) handleIhldFile(e.target.files[0]);
+});
+
+function handleIhldFile(file){
+  const name = file.name.toLowerCase();
+  const statusEl = document.getElementById('ihldStatus');
+  statusEl.className = 'status-line';
+  statusEl.textContent = 'Membaca file...';
+
+  if(name.endsWith('.csv')){
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try{
+        const text = unwrapDoubleQuotedCsvText(String(evt.target.result));
+        const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
+        processIhldParsed(parsed.data, parsed.meta.fields || []);
+      }catch(err){ showIhldError(err.message); }
+    };
+    reader.onerror = () => showIhldError('Gagal membaca file.');
+    reader.readAsText(file, 'utf-8');
+  } else if(name.endsWith('.xlsx') || name.endsWith('.xls')){
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try{
+        const wb = XLSX.read(evt.target.result, { type:'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { defval:"" });
+        processIhldParsed(json, json.length ? Object.keys(json[0]) : []);
+      }catch(err){ showIhldError(err.message); }
+    };
+    reader.onerror = () => showIhldError('Gagal membaca file.');
+    reader.readAsArrayBuffer(file);
+  } else {
+    showIhldError('Format file tidak didukung. Gunakan .csv, .xlsx, atau .xls.');
+  }
+}
+
+function showIhldError(msg){
+  const statusEl = document.getElementById('ihldStatus');
+  statusEl.className = 'status-line err';
+  statusEl.textContent = 'Gagal: ' + msg;
+}
+
+function processIhldParsed(data, headers){
+  const statusEl = document.getElementById('ihldStatus');
+  const idHeader = headers.find(h => normalize(h) === normalize(IHLD_KEY_HEADER));
+  if(!idHeader){
+    statusEl.className = 'status-line err';
+    statusEl.textContent = `Gagal: kolom "${IHLD_KEY_HEADER}" tidak ditemukan di file ini.`;
+    ihldRows = []; ihldIndex = {};
+    updateIhldSuggestions();
+    return;
+  }
+
+  ihldRows = data.filter(r => {
+    const v = String(r[idHeader] ?? '').trim();
+    return v !== '' && v !== '-';
+  });
+  ihldIndex = {};
+  ihldRows.forEach(r => { ihldIndex[normalize(r[idHeader])] = r; });
+
+  updateIhldSuggestions();
+
+  if(ihldRows.length === 0){
+    statusEl.className = 'status-line err';
+    statusEl.textContent = 'Tidak ada baris IHLD dengan iHLD LoP ID yang terbaca.';
+  } else {
+    statusEl.className = 'status-line ok';
+    statusEl.textContent = `${ihldRows.length} baris IHLD berhasil dimuat. Sekarang ketik/pilih iHLD LoP ID di tab "Input manual" buat auto-isi.`;
+  }
+}
+
+function updateIhldSuggestions(){
+  const dl = document.getElementById('ihldSuggestions');
+  if(!dl) return;
+  if(ihldRows.length === 0){ dl.innerHTML = ''; return; }
+  const idHeader = Object.keys(ihldRows[0]).find(h => normalize(h) === normalize(IHLD_KEY_HEADER));
+  const nameHeader = Object.keys(ihldRows[0]).find(h => normalize(h) === normalize("Nama Proyek"));
+  dl.innerHTML = ihldRows.map(r => {
+    const id = String(r[idHeader] ?? '');
+    const proj = nameHeader ? String(r[nameHeader] ?? '') : '';
+    const label = (id + (proj ? (' — ' + proj) : '')).replace(/"/g, '&quot;');
+    return `<option value="${id.replace(/"/g,'&quot;')}" label="${label}">`;
+  }).join('');
+}
+
+// Dipasang di container (bukan per-input), jadi tetap jalan walau isi
+// #groupsContainer di-render ulang oleh buildGroups().
+document.getElementById('groupsContainer').addEventListener('change', e => {
+  if(e.target && e.target.id === 'f_ihld_lop_id') applyIhldLookup(e.target.value);
+});
+
+function applyIhldLookup(idValue){
+  const statusEl = document.getElementById('ihldLookupStatus');
+  const key = normalize(idValue);
+  if(!key){
+    if(statusEl){ statusEl.className = 'hint'; statusEl.textContent = 'Isi kolom "iHLD LoP ID" di bawah untuk auto-isi dari data IHLD yang sudah diupload (kalau ada).'; }
+    return;
+  }
+  const row = ihldIndex[key];
+  if(!row){
+    if(statusEl){
+      statusEl.className = 'hint';
+      statusEl.textContent = ihldRows.length
+        ? `iHLD LoP ID "${idValue}" tidak ditemukan di data IHLD yang diupload -- isi kolom lain secara manual.`
+        : 'Belum ada data IHLD yang diupload -- buka tab "Upload IHLD" dulu kalau mau auto-isi.';
+    }
+    return;
+  }
+
+  let filled = 0;
+  Object.entries(IHLD_FIELD_MAP).forEach(([fieldKey, ihldHeader]) => {
+    if(fieldKey === 'ihld_lop_id') return; // ini yang lagi diketik user sendiri
+    const el = document.getElementById('f_' + fieldKey);
+    if(!el) return;
+    const actualHeader = Object.keys(row).find(h => normalize(h) === normalize(ihldHeader));
+    if(!actualHeader) return;
+    let val = String(row[actualHeader] ?? '').trim();
+    if(val === '' || val === '-') return;
+    if(FIELD_TYPE[fieldKey] === 'date'){
+      val = toDateInputValue(val);
+      if(!val) return;
+    }
+    el.value = val;
+    filled++;
+  });
+
+  const nameHeader = Object.keys(row).find(h => normalize(h) === normalize("Nama Proyek"));
+  const label = nameHeader ? row[nameHeader] : idValue;
+  if(statusEl){
+    statusEl.className = 'hint';
+    statusEl.textContent = `\u2713 Data IHLD ditemukan (${label}) -- ${filled} kolom terisi otomatis, sisanya isi manual.`;
+  }
+}
+
 buildGroups();
 </script>
-</body>
-</html>
+{% endblock %}
