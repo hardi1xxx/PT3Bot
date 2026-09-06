@@ -179,8 +179,10 @@
     </div>
 
     <div class="actions-row">
-      <button class="btn primary" id="genUploadSql" disabled onclick="generateSqlFromUpload()">Buat perintah SQL</button>
+      <button class="btn primary" id="saveUploadDirect" disabled onclick="saveRowsDirectly(uploadedRows, 'saveUploadDirect', 'uploadDirectStatus')">Simpan ke Database</button>
+      <button class="btn ghost" id="genUploadSql" disabled onclick="generateSqlFromUpload()">Lihat perintah SQL</button>
     </div>
+    <div id="uploadDirectStatus" class="status-line"></div>
 
     <div id="uploadSqlOut"></div>
   </section>
@@ -207,8 +209,10 @@
     </div>
 
     <div class="actions-row">
-      <button class="btn primary" id="genManualSql" disabled onclick="generateSqlFromManual()">Buat perintah SQL dari semua baris</button>
+      <button class="btn primary" id="saveManualDirect" disabled onclick="saveRowsDirectly(manualRows, 'saveManualDirect', 'manualDirectStatus')">Simpan ke Database</button>
+      <button class="btn ghost" id="genManualSql" disabled onclick="generateSqlFromManual()">Lihat perintah SQL</button>
     </div>
+    <div id="manualDirectStatus" class="status-line"></div>
 
     <div id="manualSqlOut"></div>
   </section>
@@ -403,8 +407,10 @@ function renderRowsTable(){
   const wrap = document.getElementById('rowsTableWrap');
   const countLabel = document.getElementById('rowCountLabel');
   const genBtn = document.getElementById('genManualSql');
+  const saveBtn = document.getElementById('saveManualDirect');
   countLabel.textContent = manualRows.length + " baris";
   genBtn.disabled = manualRows.length === 0;
+  saveBtn.disabled = manualRows.length === 0;
 
   if(manualRows.length === 0){
     wrap.innerHTML = '<div class="empty-note">Belum ada baris. Isi form di atas lalu klik "Tambah baris ini ke daftar".</div>';
@@ -507,16 +513,19 @@ function processParsed(data, headers){
 
   const statusEl = document.getElementById('uploadStatus');
   const genBtn = document.getElementById('genUploadSql');
+  const saveBtn = document.getElementById('saveUploadDirect');
   if(uploadedRows.length === 0){
     statusEl.className = 'status-line err';
     statusEl.textContent = 'Tidak ada baris data yang terbaca.';
     genBtn.disabled = true;
+    saveBtn.disabled = true;
   } else {
     statusEl.className = 'status-line ok';
     let msg = uploadedRows.length + ' baris siap diimpor.';
     if(unmatched.length) msg += ' Kolom tidak dikenali (diabaikan): ' + unmatched.join(', ');
     statusEl.textContent = msg;
     genBtn.disabled = false;
+    saveBtn.disabled = false;
   }
 }
 
@@ -595,6 +604,41 @@ function renderSqlOutput(rows, targetId){
     <div id="${targetId}_dbstatus" class="status-line"></div>
     <p class="hint">Klik "Simpan ke Database" buat langsung insert ke Postgres (Railway). Kalau butuh cara manual, "Salin"/"Unduh .sql" tetap bisa buat di-paste sendiri ke tab Query Railway.</p>
   `;
+}
+
+async function saveRowsDirectly(rows, btnId, statusId){
+  const btn = document.getElementById(btnId);
+  const statusEl = document.getElementById(statusId);
+  if(!rows.length || !statusEl) return;
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Menyimpan...'; }
+  statusEl.className = 'status-line';
+  statusEl.textContent = 'Menyimpan ke database...';
+
+  try{
+    const res = await fetch('/api/hem/insert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows })
+    });
+    const data = await res.json().catch(() => null);
+    if(!data || !data.ok){
+      statusEl.className = 'status-line err';
+      statusEl.textContent = 'Gagal: ' + (data && data.error ? data.error : `HTTP ${res.status}`);
+      return;
+    }
+    let msg = `\u2713 ${data.inserted} dari ${rows.length} baris berhasil disimpan ke database.`;
+    if(data.errors && data.errors.length){
+      msg += ` ${data.errors.length} baris gagal -- ${data.errors.join('; ')}`;
+    }
+    statusEl.className = (data.errors && data.errors.length && data.inserted === 0) ? 'status-line err' : 'status-line ok';
+    statusEl.textContent = msg;
+  }catch(err){
+    statusEl.className = 'status-line err';
+    statusEl.textContent = 'Gagal terhubung ke server: ' + err.message;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Simpan ke Database'; }
+  }
 }
 
 async function saveToDatabase(targetId){
