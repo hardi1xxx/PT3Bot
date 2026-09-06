@@ -576,6 +576,13 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
 PORT = int(os.environ.get("PORT", 5000))
 
+# ── Postgres (fitur HEM -- "Input Data Semesta") ───────────────────────
+# Railway OTOMATIS nyuntik env var ini begitu addon Postgres di-attach ke
+# service ini -- tidak perlu diisi manual. Dipakai oleh hem_db_service.py
+# buat insert langsung ke tabel data_semesta (menggantikan cara lama:
+# generate teks SQL lalu di-paste manual ke tab Query Railway).
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
 # ── Spreadsheet MBB (All Node B) & OLO ──────────────────────────────────
 # Spreadsheet TERPISAH dari "Detail PT3" -- tetap private, dibaca lewat
 # service account yang sama (GOOGLE_SERVICE_ACCOUNT_JSON di atas). Service

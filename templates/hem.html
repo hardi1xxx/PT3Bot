@@ -563,8 +563,11 @@ function formatValue(key, rawVal){
   return `'${sqlEscape(rawVal)}'`;
 }
 
+let lastRowsByTarget = {}; // targetId -> rows array (dipakai saveToDatabase)
+
 function renderSqlOutput(rows, targetId){
   const target = document.getElementById(targetId);
+  lastRowsByTarget[targetId] = rows;
   if(!rows.length){ target.innerHTML = ''; return; }
 
   // kolom yang dipakai = union semua key yang terisi di seluruh baris, urut sesuai FIELD_ORDER
@@ -584,12 +587,50 @@ function renderSqlOutput(rows, targetId){
         <div style="display:flex;gap:8px;">
           <button class="btn" onclick="copySql('${targetId}')">Salin</button>
           <button class="btn" onclick="downloadSql('${targetId}')">Unduh .sql</button>
+          <button class="btn primary" id="${targetId}_savebtn" onclick="saveToDatabase('${targetId}')">Simpan ke Database</button>
         </div>
       </div>
       <pre class="sql-box" id="${targetId}_code">${sql.replace(/</g,'&lt;')}</pre>
     </div>
-    <p class="hint">Paste isi ini ke tab Query di dashboard Railway (service Postgres kamu), lalu jalankan.</p>
+    <div id="${targetId}_dbstatus" class="status-line"></div>
+    <p class="hint">Klik "Simpan ke Database" buat langsung insert ke Postgres (Railway). Kalau butuh cara manual, "Salin"/"Unduh .sql" tetap bisa buat di-paste sendiri ke tab Query Railway.</p>
   `;
+}
+
+async function saveToDatabase(targetId){
+  const rows = lastRowsByTarget[targetId] || [];
+  const btn = document.getElementById(targetId + '_savebtn');
+  const statusEl = document.getElementById(targetId + '_dbstatus');
+  if(!rows.length || !statusEl) return;
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Menyimpan...'; }
+  statusEl.className = 'status-line';
+  statusEl.textContent = 'Menyimpan ke database...';
+
+  try{
+    const res = await fetch('/api/hem/insert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows })
+    });
+    const data = await res.json().catch(() => null);
+    if(!data || !data.ok){
+      statusEl.className = 'status-line err';
+      statusEl.textContent = 'Gagal: ' + (data && data.error ? data.error : `HTTP ${res.status}`);
+      return;
+    }
+    let msg = `\u2713 ${data.inserted} dari ${rows.length} baris berhasil disimpan ke database.`;
+    if(data.errors && data.errors.length){
+      msg += ` ${data.errors.length} baris gagal -- ${data.errors.join('; ')}`;
+    }
+    statusEl.className = (data.errors && data.errors.length && data.inserted === 0) ? 'status-line err' : 'status-line ok';
+    statusEl.textContent = msg;
+  }catch(err){
+    statusEl.className = 'status-line err';
+    statusEl.textContent = 'Gagal terhubung ke server: ' + err.message;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Simpan ke Database'; }
+  }
 }
 
 function copySql(targetId){

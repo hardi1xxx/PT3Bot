@@ -11,6 +11,7 @@ from googleapiclient.errors import HttpError
 import config
 import sheets_service
 import auth_service
+import hem_db_service
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
@@ -515,12 +516,31 @@ def mbb_olo_page():
 @app.route("/hem")
 def hem_page():
     """Input Data Semesta (HEM) -- extend base.html (sidebar & topbar sama
-    seperti halaman lain). Untuk sekarang murni form client-side (upload
-    Excel/CSV atau input manual) yang menghasilkan perintah SQL
-    'INSERT INTO data_semesta' buat dijalankan manual di Query Railway --
-    belum baca/tulis data lewat backend, jadi tidak butuh endpoint /api/
-    tambahan dulu."""
+    seperti halaman lain). Form manual/upload IHLD di sisi client, lalu
+    baris hasilnya di-insert ke Postgres (tabel data_semesta) lewat
+    /api/hem/insert -- lihat hem_db_service.py."""
     return render_template("hem.html")
+
+
+@app.route("/api/hem/insert", methods=["POST"])
+def api_hem_insert():
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("rows")
+    if not isinstance(rows, list) or not rows:
+        return jsonify({"ok": False, "error": "Tidak ada baris data yang dikirim."}), 400
+    try:
+        inserted, errors = hem_db_service.insert_rows(rows)
+        return jsonify({"ok": True, "inserted": inserted, "errors": errors})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/debug/hem-schema")
+def debug_hem_schema():
+    """Tampilkan DDL 'CREATE TABLE IF NOT EXISTS data_semesta (...)' buat
+    di-copy-paste manual ke tab Query Railway KALAU tabelnya belum ada --
+    TIDAK dieksekusi otomatis oleh endpoint ini."""
+    return Response(hem_db_service.build_create_table_sql(), mimetype="text/plain")
 
 
 @app.route("/api/mbb-data")
