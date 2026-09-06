@@ -105,6 +105,8 @@
             {% set card_url = '/mbb-olo?view=mbb-all' %}
           {% elif m.label == 'OLO' %}
             {% set card_url = '/mbb-olo?view=olo-all' %}
+          {% elif m.label == 'HEM' %}
+            {% set card_url = '/hem?view=hem-all' %}
           {% else %}
             {% set card_url = m.url %}
           {% endif %}
