@@ -263,7 +263,7 @@
       <span><span class="dot" style="background:#16a34a;"></span>Sudah Golive (GOLIVE/UT/REKON/BAST)</span>
       <span style="color:var(--muted);">Angka di badge: jumlah LOP &middot; jumlah Port</span>
     </div>
-    <button type="button" class="btn-ghost btn-sm fi-cal-month-btn" id="fiCalMonthListBtn" style="align-self:flex-start; margin-bottom:10px;">&#128203; Cek Target Bulan Ini</button>
+    <button type="button" class="btn-ghost btn-sm fi-cal-month-btn" id="fiCalMonthListBtn" style="align-self:flex-start; margin-bottom:10px;">&#128203; Cek Komit Golive Bulan Ini</button>
     <div class="fi-cal-grid" id="fiCalGrid"><div class="skeleton">Memuat kalender...</div></div>
   </div>
 </div>
@@ -1686,22 +1686,32 @@ function openFiCalMonthList() {
     .filter(iso => iso.startsWith(monthPrefix))
     .sort()
     .flatMap(iso => fiCalDayIndex[iso])
+    // Total/list "Cek Komit Golive Bulan Ini" cuma buat komitmen Golive
+    // (kolom AL / Target Golive, atau tanggal Golive aktual BD) -- entri
+    // Target FI (kolom AK) TIDAK ditampilkan/dihitung di sini sama sekali.
+    .filter(r => r.cal_entry_source !== 'target_fi')
     // Hanya 5 status utama tahapan pekerjaan (01. PERIJINAN s/d 05. FINISH
-    // INSTALASI) -- exclude lokasi yang sudah Drop atau di luar tahapan ini.
-    .filter(r => Object.prototype.hasOwnProperty.call(STATUS_COLORS, r.status));
+    // INSTALASI) yang di-exclude kalau di luar itu (Drop dsb) -- KECUALI
+    // entri yang sudah Golive aktual (status_val-nya memang null karena
+    // sudah lewat dari 5 tahap itu), yang tetap ditampilkan.
+    .filter(r => r.cal_entry_source === 'golive' || Object.prototype.hasOwnProperty.call(STATUS_COLORS, r.status));
 
-  const totalPort = items.reduce((sum, r) => sum + (r.port || 0), 0);
+  // Yang sudah Golive TETAP ditampilkan di daftar, tapi TIDAK dihitung ke
+  // Total lokasi/Total Port -- total cuma mewakili komitmen yang belum
+  // tercapai bulan ini.
+  const countItems = items.filter(r => r.cal_entry_status !== 'done');
+  const totalPort = countItems.reduce((sum, r) => sum + (r.port || 0), 0);
   const monthName = `${FI_CAL_MONTH_NAMES[fiCalMonth]} ${fiCalYear}`;
   const isCurrentMonth = fiCalYear === today0.getFullYear() && fiCalMonth === today0.getMonth();
 
   const modalBox = document.getElementById('bhModalBox');
   modalBox.innerHTML = `
     <div class="modal-header">
-      <div class="modal-title">Target FI / Golive — ${esc(monthName)}${isCurrentMonth ? ' <span class="badge" style="background:var(--brand-blue,#29467a);">Bulan ini</span>' : ''}</div>
+      <div class="modal-title">Komit Golive (Target Golive / AL) — ${esc(monthName)}${isCurrentMonth ? ' <span class="badge" style="background:var(--brand-blue,#29467a);">Bulan ini</span>' : ''}</div>
       <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
     </div>
     <div class="fi-cal-summary">
-      <span>Total lokasi: <strong>${fmtNum(items.length)} LOP</strong></span>
+      <span>Total lokasi: <strong>${fmtNum(countItems.length)} LOP</strong></span>
       <span>Total Port: <strong>${fmtNum(totalPort)} Port</strong></span>
     </div>
     <div class="loc-list" style="max-height:420px; overflow:auto;" id="fiCalMonthModalList">
@@ -1715,7 +1725,7 @@ function openFiCalMonthList() {
             <span class="badge">${fiCalSourceLabel(r.cal_entry_source)}: ${esc(r.cal_entry_display) || '-'}</span>
           </div>
         </div>
-      `).join('') : `<div class="empty-state">Tidak ada lokasi dengan Target FI/Golive di bulan ${esc(monthName)}.</div>`}
+      `).join('') : `<div class="empty-state">Tidak ada komit Golive (Target Golive) di bulan ${esc(monthName)}.</div>`}
     </div>
   `;
   document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
