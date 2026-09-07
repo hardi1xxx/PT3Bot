@@ -3,7 +3,7 @@
 {% block menu_mbb %}{{ 'active' if request.args.get('view','mbb-all').startswith('mbb') else '' }}{% endblock %}
 {% block menu_olo %}{{ 'active' if request.args.get('view','mbb-all').startswith('olo') else '' }}{% endblock %}
 {% block page_title %}{{ 'MBB Monitoring' if request.args.get('view','mbb-all').startswith('mbb') else 'OLO Monitoring' }}{% endblock %}
-{% block page_sub %}Data langsung dari Google Sheets (Node B &amp; OLO) &mdash; <a href="https://docs.google.com/spreadsheets/d/1h1NBs7k4rCibwFvNVu9t0rIlq-TuF7sh6YZvxhu9VqQ" target="_blank" rel="noopener">buka spreadsheet &#8599;</a>{% endblock %}
+{% block page_sub %}Data langsung dari Google Sheets (Node B) &mdash; <a href="https://docs.google.com/spreadsheets/d/1h1NBs7k4rCibwFvNVu9t0rIlq-TuF7sh6YZvxhu9VqQ" target="_blank" rel="noopener">buka spreadsheet &#8599;</a>{% endblock %}
 
 {% block content %}
 <style>
@@ -221,6 +221,10 @@ const MBB_OA_CONFIRMATION_MATCH = (s)=> s.includes("oa confirmation");
 // bulan berjalan, karena keduanya pakai classifyMbbRow/MBB_SUB_BUCKETS
 // yang sama.
 const MBB_SUB_BUCKETS = [
+  // "6. L0 Ready" ditaruh PALING ATAS (di atas Progress - Issue BTS),
+  // dipisah jadi leaf sendiri di tree "SITE ID" (sebelumnya numpuk di
+  // "Lainnya" karena tidak match bucket manapun).
+  { key:"l0-ready",   label:"L0 Ready",     match:(s)=> s.includes("l0 ready") },
   { key:"progress-issue-bts", label:"Progress - Issue BTS", match:(s)=> s.includes("issue bts") },
   { key:"progress-fo",label:"Progress FO",  match:(s)=> s.includes("progress fo") || s.includes("fo progress") },
   { key:"matdev",     label:"Matdev",       match:(s)=> s.includes("matdev") || s.includes("material") },
@@ -228,9 +232,6 @@ const MBB_SUB_BUCKETS = [
   { key:"drm",        label:"DRM",          match:(s)=> s.includes("drm") },
   { key:"done-survey",label:"Done Survey",  match:(s)=> s.includes("done survey") },
   { key:"survey",     label:"Survey",       match:(s)=> s.includes("survey") },
-  // "6. L0 Ready" sekarang dipisah jadi leaf sendiri di tree "SITE ID"
-  // (sebelumnya numpuk di "Lainnya" karena tidak match bucket manapun).
-  { key:"l0-ready",   label:"L0 Ready",     match:(s)=> s.includes("l0 ready") },
   { key:"hold",       label:"HOLD",         match:(s)=> s.includes("hold") },
 ];
 
@@ -410,8 +411,8 @@ function targetTreeBox(x, y, w, h, color, label, value, valueSize, labelSize, de
   return `
     <g>
       <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#fff" stroke="${color}" stroke-width="2"/>
-      <text x="${x + w/2}" y="${y + h/2 + 1}" text-anchor="middle" font-size="${valueSize}" font-weight="800" fill="${color}">${fmtN(value)}</text>
-      <text x="${x + w/2}" y="${y + h/2 + 15}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${color}" opacity="0.9">${escapeHtml(label)}</text>
+      <text x="${x + w/2}" y="${y + h/2 - 1}" text-anchor="middle" font-size="${valueSize}" font-weight="800" fill="${color}">${fmtN(value)}</text>
+      <text x="${x + w/2}" y="${y + h/2 + 12}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${color}" opacity="0.9">${escapeHtml(label)}</text>
       ${deltaBadge(x + w - 5, y + 11, delta)}
     </g>`;
 }
@@ -645,7 +646,7 @@ function renderMbbDashboard(rowsForView, view){
     <div class="mbb-dash-top">
       <div class="card tree-card">
         <div class="section-title" style="margin:0 0 4px;">Tree Diagram Progress</div>
-        <div class="mbb-tree-subtitle">${escapeHtml(subProgramBatchLabel(rowsForView))}<br>${escapeHtml(MBB_TREE_VIEW_LABEL[currentView] || view.badge)}</div>
+        <div class="mbb-tree-subtitle">${escapeHtml(subProgramBatchLabel(targetBaseRows))}<br>${escapeHtml(MBB_TREE_VIEW_LABEL[currentView] || view.badge)}</div>
         <div class="mbb-tree-svg-wrap">${renderMbbTreeSvg(total, l1oa, drop, active, subCounts, mbbTreeDeltas)}</div>
       </div>
 
