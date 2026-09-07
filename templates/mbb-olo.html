@@ -179,7 +179,7 @@ const VIEWS = {
   "mbb-all":        { title:"MBB", badge:"Semua Data", sub:"Sheet: All Node B", source:"mbb", filter:null },
   "mbb-newinfra":    { title:"MBB", badge:"New Infra", sub:`Sheet: All Node B — filter kolom \u201cTipe Order (CW)\u201d mengandung \u201cNew Infra\u201d`, source:"mbb", filter:(r)=>matchCol(r,"Tipe Order (CW)","new infra") },
   "mbb-rescoping":   { title:"MBB", badge:"Rescoping", sub:`Sheet: All Node B — filter kolom \u201cTipe Order (CW)\u201d mengandung \u201cRescoping\u201d`, source:"mbb", filter:(r)=>matchCol(r,"Tipe Order (CW)","rescoping") },
-  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:`Sheet: All Node B — filter kolom \u201cTipe Order (CW)\u201d mengandung \u201cFronthaul\u201d`, source:"mbb", filter:(r)=>matchCol(r,"Tipe Order (CW)","fronthaul") },
+  "mbb-fiberisasi":  { title:"MBB", badge:"Fiberisasi", sub:`Sheet: All Node B — filter kolom \u201cTipe Order (CW)\u201d mengandung \u201cFiberisasi\u201d`, source:"mbb", filter:(r)=>matchCol(r,"Tipe Order (CW)","fiberisasi") },
   "olo-all":         { title:"OLO", badge:"Semua Data", sub:"Sheet: OLO", source:"olo", filter:null },
   "olo-progress":    { title:"OLO", badge:"Progress", sub:"Sheet: OLO — filter status belum Done/Drop", source:"olo", filter:(r)=>{
                           const v = getCol(r,"STATUS PEKERJAAN").toLowerCase();
@@ -629,13 +629,13 @@ function renderMbbDashboard(rowsForView, view){
   `;
   }).join("") : `<div class="empty-state" style="padding:16px 0;">Klik salah satu kategori di kiri untuk lihat catatan (Note Progress)-nya di sini.</div>`;
 
-  // Resume: nama SITE ID saja (dipisah koma) buat 3 status kolom U -- SELALU
+  // Resume: nama SITE ID saja (dipisah koma) buat status kolom U -- SELALU
   // dari rowsForView (view MBB aktif), tidak ikut kena filter klik tree di
-  // atas, dan sekarang jadi card sendiri terpisah dari Notes.
+  // atas, dan sekarang jadi card sendiri terpisah dari Notes. Baris
+  // "Status Hold" sudah DIHAPUS dari Resume atas permintaan.
   const resumeHtml = `
     <div class="item"><span class="site">List L0 Ready</span>${siteListByWitel(rowsForView, "6. L0 Ready")}</div>
     <div class="item"><span class="site">List L0 Issue BTS</span>${siteListByWitel(rowsForView, "5.1 L0 Progress - Issue BTS")}</div>
-    <div class="item"><span class="site">Status Hold</span>${siteListByWitel(rowsForView, "0. HOLD")}</div>
   `;
 
   wrap.innerHTML = `
