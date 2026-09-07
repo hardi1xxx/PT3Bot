@@ -644,6 +644,7 @@ def get_dashboard_data():
         "boq_n": _col_to_index(config.COL_BOQ_N) - 1,
         "cpp_o": _col_to_index(config.COL_CPP_O) - 1,
         "target_fi": _col_to_index(config.COL_TARGET_FI) - 1,
+        "target_golive_al": _col_to_index(getattr(config, "COL_TARGET_GOLIVE_AL", "AL")) - 1,
         "regional": _col_to_index(getattr(config, "COL_REGIONAL", "T")) - 1,
         "golive_date": _col_to_index(getattr(config, "COL_GOLIVE_DATE", "BD")) - 1,
         "order_prioritas": _col_to_index(config.COL_ORDER_PRIORITAS) - 1,
@@ -680,11 +681,16 @@ def get_dashboard_data():
             batch_order.append(batch_val)
 
         target_fi_date = _parse_date(cell("target_fi"))
+        target_golive_al_date = _parse_date(cell("target_golive_al"))
         golive_date_date = _parse_date(cell("golive_date"))
 
         # Kalender: kalau status fisik (kolom Z) sudah salah satu dari
-        # tahap golive ke atas, pakai tanggal Golive (kolom BD); kalau
-        # belum, tetap pakai Target FI (kolom AK).
+        # tahap golive ke atas DAN tanggal Golive aktual (BD) sudah
+        # terisi, pakai itu; kalau belum, cal_date_iso/source (dipakai di
+        # tempat lain di luar kalender FI/Golive) tetap fallback ke Target
+        # FI (AK) seperti sebelumnya -- kalender FI/Golive sendiri di
+        # PT3.html sekarang membaca target_fi_iso & target_golive_iso
+        # (AL) langsung sebagai 2 entri terpisah, lihat buildFiCalEntries().
         is_golive_stage = _normalize_status(status_raw) in GOLIVE_STAGE_STATUSES
         cal_date = golive_date_date if is_golive_stage else target_fi_date
         cal_date_source = "golive" if (is_golive_stage and golive_date_date) else ("target_fi" if cal_date else None)
@@ -709,11 +715,14 @@ def get_dashboard_data():
             "bh": cell("bh") if cell("bh").strip().upper() not in {v.strip().upper() for v in config.BH_EXCLUDE_VALUES} else "",
             "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,
             "target_fi_display": target_fi_date.strftime("%d/%b/%y") if target_fi_date else None,
+            "target_golive_iso": target_golive_al_date.isoformat() if target_golive_al_date else None,
+            "target_golive_display": target_golive_al_date.strftime("%d/%b/%y") if target_golive_al_date else None,
             "golive_date_iso": golive_date_date.isoformat() if golive_date_date else None,
             "golive_date_display": golive_date_date.strftime("%d/%m/%Y") if golive_date_date else None,
             "cal_date_iso": cal_date.isoformat() if cal_date else None,
             "cal_date_display": cal_date.strftime("%d/%m/%Y") if cal_date else None,
             "cal_date_source": cal_date_source,  # "golive" atau "target_fi"
+            "is_golive_stage": is_golive_stage,
             "regional": cell("regional") or "(TANPA REGIONAL)",
             "order_prioritas": cell("order_prioritas"),  # kolom BX, opsional -- badge di list "Lokasi Sedang Berjalan"
             "priority_bx": cell("order_prioritas"),  # alias kolom BX -- dipakai filter "Hanya Order Priority" di PT3.html

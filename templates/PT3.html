@@ -60,6 +60,7 @@
   .fi-badge { display: inline-flex; align-items: center; gap: 3px; min-width: 17px; height: 16px; padding: 0 5px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; color: #fff; cursor: pointer; line-height: 1; white-space: nowrap; }
   .fi-badge.fi-over { background: #dc2626; }
   .fi-badge.fi-upcoming { background: var(--brand-blue, #29467a); }
+  .fi-badge.fi-upcoming-golive { background: #7c3aed; }
   .fi-badge.fi-done { background: #16a34a; }
   .fi-badge-port { font-weight: 600; opacity: 0.85; }
   .fi-badge-port::before { content: '\00b7'; margin-right: 3px; }
@@ -247,7 +248,7 @@
 
   <div class="card fi-cal-card">
     <div class="fi-cal-head">
-      <div class="fi-cal-title">Kalender Target FI &amp; Golive <span class="hint" style="font-weight:400;">(AK / BD)</span></div>
+      <div class="fi-cal-title">Kalender Target FI &amp; Golive <span class="hint" style="font-weight:400;">(AK / AL / BD)</span></div>
       <div class="fi-cal-nav">
         <button type="button" id="fiCalPrevBtn" title="Bulan sebelumnya">&#8249;</button>
         <div class="fi-cal-month-label" id="fiCalMonthLabel">–</div>
@@ -256,8 +257,9 @@
       </div>
     </div>
     <div class="fi-cal-legend">
-      <span><span class="dot" style="background:#dc2626;"></span>Lewat Target FI, belum Golive</span>
+      <span><span class="dot" style="background:#dc2626;"></span>Lewat Target FI/Golive, belum Golive</span>
       <span><span class="dot" style="background:var(--brand-blue,#29467a);"></span>Terjadwal (Target FI)</span>
+      <span><span class="dot" style="background:#7c3aed;"></span>Terjadwal (Target Golive) <span class="hint" style="font-weight:400;">(AL)</span></span>
       <span><span class="dot" style="background:#16a34a;"></span>Sudah Golive (GOLIVE/UT/REKON/BAST)</span>
       <span style="color:var(--muted);">Angka di badge: jumlah LOP &middot; jumlah Port</span>
     </div>
@@ -1505,28 +1507,68 @@ function openGoliveTrendBucket(bucketKey) {
 }
 
 // ── Kalender Target FI (kolom AK) & Golive (kolom BD) ─────────────
-// Tanggal yang dipakai per baris (cal_date_iso) sudah ditentukan di
-// backend (get_dashboard_data): kalau status fisik (kolom Z) sudah salah
-// satu dari 06.GOLIVE/07.UT/09.REKON/10.BAST, pakai tanggal Golive
-// (kolom BD); kalau belum, pakai Target FI (kolom AK). cal_date_source
-// bilang tanggal mana yang lagi dipakai ("golive" atau "target_fi").
-function fiCalClassify(row) {
-  if (row.cal_date_source === 'golive') return 'done';
-  if (row.cal_date_iso < today0.toISOString().slice(0, 10)) return 'over';
-  return 'upcoming';
+// Sekarang tiap LOP bisa berkontribusi SAMPAI 2 entri kalender terpisah
+// (Target FI di tanggal AK-nya, Target Golive di tanggal AL-nya) selama
+// LOP itu belum benar-benar Golive -- begitu status fisik (kolom Z) sudah
+// tahap Golive ke atas DAN tanggal Golive aktual (kolom BD) sudah
+// terisi, cuma 1 entri "done" di tanggal BD yang dipakai (AK/AL dianggap
+// tidak relevan lagi). buildFiCalEntries() yang melakukan pemecahan ini;
+// fiCalDayIndex lalu diindex dari ENTRI ini (bukan dari baris mentah),
+// jadi 1 LOP bisa muncul di 2 tanggal berbeda kalau AK & AL-nya beda.
+function buildFiCalEntries(rows) {
+  const todayIso = today0.toISOString().slice(0, 10);
+  const entries = [];
+  rows.forEach(r => {
+    if (r.is_golive_stage && r.golive_date_iso) {
+      entries.push({
+        ...r,
+        cal_entry_source: 'golive',
+        cal_entry_status: 'done',
+        cal_entry_iso: r.golive_date_iso,
+        cal_entry_display: r.golive_date_display,
+      });
+      return;
+    }
+    if (r.target_fi_iso) {
+      entries.push({
+        ...r,
+        cal_entry_source: 'target_fi',
+        cal_entry_status: r.target_fi_iso < todayIso ? 'over' : 'upcoming_fi',
+        cal_entry_iso: r.target_fi_iso,
+        cal_entry_display: r.target_fi_display,
+      });
+    }
+    if (r.target_golive_iso) {
+      entries.push({
+        ...r,
+        cal_entry_source: 'target_golive',
+        cal_entry_status: r.target_golive_iso < todayIso ? 'over' : 'upcoming_golive',
+        cal_entry_iso: r.target_golive_iso,
+        cal_entry_display: r.target_golive_display,
+      });
+    }
+  });
+  return entries;
+}
+
+// Label singkat dipakai di badge/modal untuk sumber tanggal satu entri.
+function fiCalSourceLabel(source) {
+  if (source === 'golive') return 'Golive';
+  if (source === 'target_golive') return 'Target Golive';
+  return 'Target FI';
 }
 
 function renderFiCalendar(filteredRows) {
   const monthLabel = document.getElementById('fiCalMonthLabel');
   if (monthLabel) monthLabel.textContent = `${FI_CAL_MONTH_NAMES[fiCalMonth]} ${fiCalYear}`;
 
-  // Index semua baris yang punya tanggal kalender (cal_date_iso) berdasarkan
+  // Index semua entri kalender (lihat buildFiCalEntries) berdasarkan
   // tanggal, supaya bisa dipakai lintas bulan (navigasi prev/next tanpa
   // fetch ulang).
+  const entries = buildFiCalEntries(filteredRows);
   fiCalDayIndex = {};
-  filteredRows.forEach(r => {
-    if (!r.cal_date_iso) return;
-    (fiCalDayIndex[r.cal_date_iso] = fiCalDayIndex[r.cal_date_iso] || []).push(r);
+  entries.forEach(e => {
+    (fiCalDayIndex[e.cal_entry_iso] = fiCalDayIndex[e.cal_entry_iso] || []).push(e);
   });
 
   const grid = document.getElementById('fiCalGrid');
@@ -1539,6 +1581,9 @@ function renderFiCalendar(filteredRows) {
 
   let html = FI_CAL_DAY_LABELS.map(l => `<div class="fi-cal-daylabel">${l}</div>`).join('');
 
+  const STATUS_ORDER = ['over', 'upcoming_fi', 'upcoming_golive', 'done'];
+  const STATUS_CLASS = { over: 'fi-over', upcoming_fi: 'fi-upcoming', upcoming_golive: 'fi-upcoming-golive', done: 'fi-done' };
+
   for (let i = 0; i < 42; i++) {
     const cellDate = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
     const iso = cellDate.toISOString().slice(0, 10);
@@ -1546,16 +1591,16 @@ function renderFiCalendar(filteredRows) {
     const isToday = iso === todayIso;
     const items = fiCalDayIndex[iso] || [];
 
-    const counts = { over: { n: 0, port: 0 }, upcoming: { n: 0, port: 0 }, done: { n: 0, port: 0 } };
-    items.forEach(r => {
-      const k = fiCalClassify(r);
-      counts[k].n++;
-      counts[k].port += (r.port || 0);
+    const counts = {};
+    STATUS_ORDER.forEach(k => { counts[k] = { n: 0, port: 0 }; });
+    items.forEach(e => {
+      counts[e.cal_entry_status].n++;
+      counts[e.cal_entry_status].port += (e.port || 0);
     });
 
-    const badges = ['over', 'upcoming', 'done']
+    const badges = STATUS_ORDER
       .filter(k => counts[k].n > 0)
-      .map(k => `<span class="fi-badge fi-${k}" data-fi-iso="${iso}" title="Klik untuk lihat daftar (${fmtNum(counts[k].n)} LOP, ${fmtNum(counts[k].port)} Port)">${fmtNum(counts[k].n)}<span class="fi-badge-port">${fmtNum(counts[k].port)}p</span></span>`)
+      .map(k => `<span class="fi-badge ${STATUS_CLASS[k]}" data-fi-iso="${iso}" title="Klik untuk lihat daftar (${fmtNum(counts[k].n)} LOP, ${fmtNum(counts[k].port)} Port)">${fmtNum(counts[k].n)}<span class="fi-badge-port">${fmtNum(counts[k].port)}p</span></span>`)
       .join('');
 
     html += `
@@ -1613,7 +1658,7 @@ function openFiCalDay(iso) {
             <span class="badge">${esc(r.batch) || '-'}</span>
             <span class="badge">${fmtNum(r.port)} Port</span>
             ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
-            <span class="badge">${r.cal_date_source === 'golive' ? 'Golive' : 'Target FI'}: ${esc(r.cal_date_display) || '-'}</span>
+            <span class="badge">${fiCalSourceLabel(r.cal_entry_source)}: ${esc(r.cal_entry_display) || '-'}</span>
           </div>
         </div>
       `).join('') : '<div class="empty-state">Tidak ada lokasi dengan Target FI/Golive di tanggal ini.</div>'}
@@ -1667,7 +1712,7 @@ function openFiCalMonthList() {
             <span class="badge">${esc(r.batch) || '-'}</span>
             <span class="badge">${fmtNum(r.port)} Port</span>
             ${r.status_raw ? `<span class="badge status">${esc(r.status_raw)}</span>` : ''}
-            <span class="badge">${r.cal_date_source === 'golive' ? 'Golive' : 'Target FI'}: ${esc(r.cal_date_display) || '-'}</span>
+            <span class="badge">${fiCalSourceLabel(r.cal_entry_source)}: ${esc(r.cal_entry_display) || '-'}</span>
           </div>
         </div>
       `).join('') : `<div class="empty-state">Tidak ada lokasi dengan Target FI/Golive di bulan ${esc(monthName)}.</div>`}
