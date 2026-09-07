@@ -13,6 +13,7 @@ WAJIB diupdate juga supaya tetap sinkron -- tidak ada mekanisme
 otomatis yang menjaga keduanya tetap sama.
 """
 import datetime
+import re
 
 import psycopg2
 import psycopg2.extras
@@ -38,12 +39,12 @@ HEM_FIELDS = [
     ("sap", "text"), ("pr", "text"), ("po", "text"),
 
     ("progress_w01", "text"), ("progress_w02", "text"),
-    ("progress_jt_last_update", "datetime"), ("progress", "text"),
+    ("progress_jt_last_update", "text"), ("progress", "text"),
     ("keterangan_detail", "textarea"), ("umur_order", "number"),
     ("grouping_umur_order", "text"), ("issue", "textarea"),
 
     ("target_fi", "date"), ("tanggal_fi", "date"), ("tgl_go_live", "date"),
-    ("bulan_golive", "text"), ("tgl_ut", "date"), ("target_weekly_bast", "date"),
+    ("bulan_golive", "text"), ("tgl_ut", "date"), ("target_weekly_bast", "text"),
 
     ("status_drop", "text"), ("status_ut", "text"), ("status_rekon", "text"),
     ("bast", "text"), ("status_ba_drop", "text"), ("tanggal_ba_drop", "date"),
@@ -75,23 +76,21 @@ def get_connection():
     return psycopg2.connect(config.DATABASE_URL)
 
 
-def _cast_value(field_type, raw):
+def _cast_value(field_type, raw, key=None):
     """String dari JS -> tipe Python yang cocok buat psycopg2 ("" / None
-    jadi NULL). number di-parse ke int/float; date/datetime di-parse &
-    dinormalisasi ke ISO lewat _parse_date()/_parse_datetime() (lihat
-    docstring keduanya kenapa ini penting); text/textarea dikirim apa
-    adanya sebagai string."""
+    jadi NULL). number di-parse lewat _parse_number() (kecuali kolom
+    "tahun", lihat _extract_year_number()); date/datetime di-parse &
+    dinormalisasi ke ISO lewat _parse_date()/_parse_datetime(); text/
+    textarea dikirim apa adanya sebagai string."""
     if raw is None:
         return None
     val = str(raw).strip()
     if val == "":
         return None
     if field_type == "number":
-        try:
-            f = float(val)
-        except ValueError:
-            raise ValueError(f"'{raw}' bukan angka yang valid")
-        return int(f) if f.is_integer() else f
+        if key == "tahun":
+            return _extract_year_number(val)
+        return _parse_number(val)
     if field_type == "date":
         return _parse_date(val)
     if field_type == "datetime":
@@ -99,10 +98,62 @@ def _cast_value(field_type, raw):
     return val
 
 
+# Kolom "tahun" di file sumber ternyata bercampur: angka murni ("2026")
+# ATAU label + tahun ("CO 2025", kemungkinan singkatan "Carry Over 2025").
+# Atas keputusan pengguna, label seperti "CO" dibuang -- hanya 4 digit
+# tahunnya yang disimpan (mis. "CO 2025" -> 2025). Info "CO" itu sendiri
+# TIDAK disimpan di kolom manapun setelah ini.
+_YEAR_RE = re.compile(r"(\d{4})")
+
+
+def _extract_year_number(val):
+    m = _YEAR_RE.search(val)
+    if not m:
+        raise ValueError(f"'{val}' tidak mengandung tahun (4 digit angka) yang valid")
+    return int(m.group(1))
+
+
+# Token error formula Excel & placeholder "kosong" -- atas keputusan
+# pengguna, ini dianggap NULL (baris tetap masuk, kolom itu kosong)
+# alih-alih menggagalkan baris.
+_NUMBER_NULL_TOKENS = {"#n/a", "#ref!", "#value!", "#div/0!", "#null!", "#num!", "#name?", "-"}
+
+# Format Indonesia: titik = pemisah ribuan, koma = desimal, mis.
+# "7.111.783,00" atau "-4.609.953". Regex mengharuskan grup 3 digit
+# persis setelah tiap titik supaya tidak salah anggap titik desimal
+# biasa (mis. "12.5") sebagai format Indonesia.
+_ID_THOUSANDS_RE = re.compile(r'^-?\d{1,3}(\.\d{3})+(,\d+)?$')
+_PLAIN_COMMA_DECIMAL_RE = re.compile(r'^-?\d+,\d+$')
+
+
+def _parse_number(val):
+    """Normalisasi angka dari file Excel/CSV: buang tanda '%' (nilai
+    persen disimpan sebagai angka utuh, bukan pecahan -- keputusan
+    pengguna), pahami format ribuan/desimal ala Indonesia, dan anggap
+    token error Excel / '-' sebagai NULL. Sisanya di-parse lewat
+    float() seperti biasa."""
+    v = val.strip()
+    if v.lower() in _NUMBER_NULL_TOKENS:
+        return None
+    if v.endswith("%"):
+        v = v[:-1].strip()
+    if _ID_THOUSANDS_RE.match(v):
+        v = v.replace(".", "").replace(",", ".")
+    elif _PLAIN_COMMA_DECIMAL_RE.match(v):
+        v = v.replace(",", ".")
+    try:
+        f = float(v)
+    except ValueError:
+        raise ValueError(f"'{val}' bukan angka yang valid")
+    return int(f) if f.is_integer() else f
+
+
 # Format tanggal yang diterima, dicoba berurutan sampai salah satu cocok.
 # "%Y-%m-%d" -> ISO, dikirim oleh <input type="date"> di form manual.
 # "%d/%m/%Y" dan "%d-%m-%Y" -> format Indonesia umum dari file Excel/CSV
-# (mis. "21/07/2026").
+# (mis. "21/07/2026"). Pola "DD-Mon-YY" (mis. "05-Agu-26") ditangani
+# terpisah lewat _MONTH_ABBR karena singkatan bulannya campur
+# Indonesia/Inggris (Agu/Aug, Mei/May, Okt/Oct, Des/Dec, dst).
 _DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"]
 
 _DATETIME_FORMATS = [
@@ -112,10 +163,30 @@ _DATETIME_FORMATS = [
     "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
 ]
 
+_MONTH_ABBR = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4,
+    "mei": 5, "may": 5,
+    "jun": 6, "jul": 7,
+    "agu": 8, "aug": 8,
+    "sep": 9,
+    "okt": 10, "oct": 10,
+    "nov": 11,
+    "des": 12, "dec": 12,
+}
+_MONTH_ABBR_DATE_RE = re.compile(r'^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$')
+
 # Serial date Excel: hari sejak 1899-12-30 (termasuk bug tahun kabisat
 # 1900 bawaan Excel/Lotus). Dipakai kalau sel Excel bertipe tanggal asli
 # tapi kebetulan terbaca sebagai angka mentah, bukan teks terformat.
 _EXCEL_EPOCH = datetime.date(1899, 12, 30)
+
+# "DROP" di kolom target_fi/tanggal_fi/tgl_go_live artinya target itu
+# sendiri dibatalkan (bukan data rusak) -- atas keputusan pengguna,
+# dianggap NULL, sisanya (mayoritas tanggal asli di kolom2 itu) tetap
+# tersimpan sebagai tanggal. Data tanggal yang benar-benar rusak/typo
+# (mis. "170Feb026") SENGAJA tidak ditangkap di sini -- tetap gagal
+# per baris supaya dikoreksi manual di file sumbernya.
+_DATE_NULL_TOKENS = {"drop"}
 
 
 def _parse_date(val):
@@ -129,16 +200,32 @@ def _parse_date(val):
     ke ISO SEBELUM sampai ke Postgres -- dan karena ini dipanggil per
     baris (lewat _cast_value di dalam loop insert_rows), satu tanggal
     salah format hanya menggagalkan baris itu, bukan seluruh batch."""
+    if val.lower() in _DATE_NULL_TOKENS:
+        return None
     for fmt in _DATE_FORMATS:
         try:
             return datetime.datetime.strptime(val, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
+    m = _MONTH_ABBR_DATE_RE.match(val)
+    if m:
+        day_s, mon_s, year_s = m.groups()
+        mon = _MONTH_ABBR.get(mon_s.lower())
+        if mon:
+            year = int(year_s)
+            if year < 100:
+                year += 2000
+            try:
+                return datetime.date(year, mon, int(day_s)).isoformat()
+            except ValueError:
+                pass  # mis. tanggal 31 di bulan yg cuma 30 hari -- lanjut ke error di bawah
     if val.isdigit() and 1 <= int(val) <= 100000:
         return (_EXCEL_EPOCH + datetime.timedelta(days=int(val))).isoformat()
     raise ValueError(
-        f"tanggal '{val}' tidak dikenali formatnya (harus YYYY-MM-DD atau DD/MM/YYYY)"
+        f"tanggal '{val}' tidak dikenali formatnya "
+        f"(harus YYYY-MM-DD, DD/MM/YYYY, atau DD-Mon-YY)"
     )
+
 
 
 def _parse_datetime(val):
@@ -185,7 +272,7 @@ def insert_rows(rows):
             row_values = []
             for k in used_keys:
                 try:
-                    row_values.append(_cast_value(HEM_FIELD_TYPE[k], r.get(k)))
+                    row_values.append(_cast_value(HEM_FIELD_TYPE[k], r.get(k), key=k))
                 except ValueError as e:
                     raise ValueError(f"kolom '{k}': {e}") from None
             values.append(row_values)
