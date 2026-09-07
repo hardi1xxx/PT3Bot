@@ -13,6 +13,7 @@ WAJIB diupdate juga supaya tetap sinkron -- tidak ada mekanisme
 otomatis yang menjaga keduanya tetap sama.
 """
 import datetime
+import decimal
 import re
 
 import psycopg2
@@ -64,6 +65,202 @@ HEM_FIELDS = [
 ]
 HEM_FIELD_TYPE = dict(HEM_FIELDS)
 HEM_FIELD_KEYS = [k for k, _ in HEM_FIELDS]
+
+# Label tampilan per kolom -- DISALIN PERSIS dari LABEL_BY_KEY (COLUMN_GROUPS)
+# di templates/hem.html, sama alasannya dengan HEM_FIELDS di atas: dipakai
+# buat header export Excel & label kolom Detail di dashboard (hem_dashboard.html)
+# supaya labelnya konsisten dengan form input, BUKAN dijaga otomatis --
+# kalau salah satu sisi berubah, sisi yang lain wajib diupdate manual juga.
+HEM_FIELD_LABELS = {
+    "no": "No", "tahun": "Tahun", "no_order": "No Order",
+    "ihld_lop_id": "iHLD LoP ID", "nama_proyek": "Nama Proyek",
+    "status_ihld": "Status iHLD", "tipe_desain": "Tipe Desain", "prioritas": "Prioritas",
+
+    "status_wo_tif": "Status WO (TIF)", "new_region_ta": "New Region TA",
+    "region_tif": "Region TIF", "reg_lama": "Reg Lama", "witel_lama": "Witel Lama",
+    "branch": "Branch", "sto": "STO", "sc": "SC", "datek": "Datek",
+    "tipe_deploy_actual": "Tipe Deploy Actual",
+
+    "layanan": "Layanan", "nde_wo": "NDE WO", "tanggal_nde_wo": "Tanggal NDE/WO",
+    "nde_permohonan_ut": "NDE Permohonan UT",
+
+    "panjang_kabel_meter": "Panjang Kabel (meter)", "id_pr_material": "ID PR Material",
+    "pid": "PID", "sap": "SAP", "pr": "PR", "po": "PO",
+
+    "progress_w01": "Progress W-01", "progress_w02": "Progress W-02",
+    "progress_jt_last_update": "Progress JT Last Update", "progress": "Progress",
+    "keterangan_detail": "Keterangan / Detail", "umur_order": "Umur Order",
+    "grouping_umur_order": "Grouping Umur Order", "issue": "Issue",
+
+    "target_fi": "Target FI", "tanggal_fi": "Tanggal FI", "tgl_go_live": "Tgl Go Live",
+    "bulan_golive": "Bulan Golive", "tgl_ut": "Tgl UT",
+    "target_weekly_bast": "Target Weekly BAST",
+
+    "status_drop": "Status Drop", "status_ut": "Status UT", "status_rekon": "Status Rekon",
+    "bast": "BAST", "status_ba_drop": "Status BA Drop", "tanggal_ba_drop": "Tanggal BA Drop",
+    "ket_ba_drop": "Ket BA Drop", "ba_redesign": "BA Redesign", "lact": "LACT", "baut": "BAUT",
+
+    "total_boq_ihld": "Total BOQ IHLD", "total_boq_wo": "Total BOQ WO",
+    "total_drm": "Total DRM", "total_boq_actual_ut_rekon": "Total BOQ Actual UT - Rekon",
+    "material_ut": "Material UT", "jasa_ut": "Jasa UT", "total_ut": "Total UT",
+    "nilai_perizinan": "Nilai Perizinan", "kenaikan": "Kenaikan",
+    "selisih_nilai_wo_ihld": "Selisih Nilai WO & IHLD",
+    "persen_perubahan_nilai": "% Perub Nilai",
+
+    "nama_mitra": "Nama Mitra", "jumlah_manpower": "Jumlah Manpower",
+    "no_wo_smile": "No WO Smile", "nama_smile": "Nama Smile",
+    "persen_smile": "% Smile", "status_smile": "Status Smile",
+
+    "sp": "SP", "nomor_sp": "Nomor SP",
+}
+
+# Kolom yang dipakai sebagai filter/rekap di dashboard -- daftar nilai
+# uniknya diambil langsung dari data yang ada (get_filter_options), BUKAN
+# daftar tetap, supaya otomatis ikut kalau ada nilai baru masuk lewat
+# form/upload di hem.html.
+DASHBOARD_FILTER_COLS = ["new_region_ta", "branch", "status_ihld", "prioritas"]
+
+
+def _row_value_to_json_safe(v):
+    """Baris hasil query psycopg2 (RealDictCursor) bisa berisi
+    decimal.Decimal (kolom NUMERIC) atau datetime.date/datetime (kolom
+    DATE/TIMESTAMP) -- keduanya TIDAK bisa langsung di-jsonify Flask.
+    Konversi ke float/ISO-string di sini, sekali, dipakai semua fungsi
+    baca di bawah."""
+    if v is None:
+        return None
+    if isinstance(v, decimal.Decimal):
+        return float(v)
+    if isinstance(v, (datetime.datetime, datetime.date)):
+        return v.isoformat()
+    return v
+
+
+def get_dashboard_rows(filters: dict = None):
+    """Baca baris dari data_semesta buat dashboard. `filters` dict
+    opsional {col: [nilai, ...]} -- HANYA kolom di DASHBOARD_FILTER_COLS
+    yang diterima (kolom lain diabaikan diam-diam, jaga-jaga input dari
+    luar). Filter diterapkan di level SQL (WHERE ... IN (...)) supaya
+    tetap ringan walau baris di tabel banyak, bukan difilter belakangan
+    di Python. Return: list of dict {"id": ..., **HEM_FIELD_KEYS}, semua
+    value sudah JSON-safe (lihat _row_value_to_json_safe)."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cols_sql = ", ".join(f'"{k}"' for k in HEM_FIELD_KEYS)
+            where_clauses = []
+            params = []
+            if filters:
+                for col in DASHBOARD_FILTER_COLS:
+                    values = [v for v in (filters.get(col) or []) if v]
+                    if values:
+                        placeholders = ", ".join(["%s"] * len(values))
+                        where_clauses.append(f'"{col}" IN ({placeholders})')
+                        params.extend(values)
+            where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+            cur.execute(f'SELECT id, {cols_sql} FROM {TABLE_NAME} {where_sql} ORDER BY id', params)
+            raw_rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {k: _row_value_to_json_safe(v) for k, v in dict(r).items()}
+        for r in raw_rows
+    ]
+
+
+def get_filter_options():
+    """Daftar nilai unik utk dropdown/checkbox filter dashboard (New
+    Region TA, Branch, Status iHLD, Prioritas), diambil langsung dari isi
+    tabel saat ini -- bukan daftar tetap yang bisa basi kalau ada nilai
+    baru masuk lewat form manual/upload di hem.html."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            options = {}
+            for col in DASHBOARD_FILTER_COLS:
+                cur.execute(
+                    f'SELECT DISTINCT "{col}" FROM {TABLE_NAME} '
+                    f'WHERE "{col}" IS NOT NULL AND TRIM("{col}") <> \'\' '
+                    f'ORDER BY 1'
+                )
+                options[col] = [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+    return options
+
+
+def _to_num(v):
+    try:
+        return float(v) if v not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def get_dashboard_summary(rows: list):
+    """Ringkasan KPI + rekap "New Region TA" x "Status iHLD" (baris x
+    kolom, kayak tabel Rekap Regional/Branch di dashboard PT3), dihitung
+    di Python dari `rows` yang SUDAH diambil get_dashboard_rows() (biar
+    tidak query ulang -- 1x baca dipakai buat rows mentah, summary, DAN
+    export sekaligus)."""
+    total = len(rows)
+    total_nilai_wo = sum(_to_num(r.get("total_boq_wo")) for r in rows)
+    total_nilai_ihld = sum(_to_num(r.get("total_boq_ihld")) for r in rows)
+    total_ut = sum(_to_num(r.get("total_ut")) for r in rows)
+    golive_count = sum(1 for r in rows if (r.get("tgl_go_live") or "").strip())
+    drop_count = sum(1 for r in rows if (r.get("status_drop") or "").strip())
+
+    regions = {}       # {region: {"__total__": n, status1: n, status2: n, ...}}
+    statuses_seen = []  # urutan kemunculan pertama, dipakai jadi kolom tabel rekap
+    for r in rows:
+        region = (r.get("new_region_ta") or "").strip() or "(Tanpa Region)"
+        status = (r.get("status_ihld") or "").strip() or "(Tanpa Status)"
+        if status not in statuses_seen:
+            statuses_seen.append(status)
+        bucket = regions.setdefault(region, {"__total__": 0})
+        bucket[status] = bucket.get(status, 0) + 1
+        bucket["__total__"] += 1
+
+    return {
+        "total_order": total,
+        "total_nilai_wo": total_nilai_wo,
+        "total_nilai_ihld": total_nilai_ihld,
+        "total_ut": total_ut,
+        "golive_count": golive_count,
+        "drop_count": drop_count,
+        "statuses": statuses_seen,
+        "regions": regions,
+    }
+
+
+def build_export_workbook(filters: dict = None):
+    """Export SEMUA kolom data_semesta (sesuai filter dashboard yang lagi
+    aktif, sama seperti Export Data A-AP di dashboard PT3) sebagai
+    .xlsx -- 1 baris = 1 record, header pakai HEM_FIELD_LABELS supaya
+    lebih enak dibaca daripada nama kolom mentah (snake_case)."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    rows = get_dashboard_rows(filters)
+    headers = ["ID"] + [HEM_FIELD_LABELS.get(k, k) for k in HEM_FIELD_KEYS]
+
+    wb = Workbook()
+    sheet = wb.active
+    sheet.title = "Data Semesta"
+    sheet.append(headers)
+    sheet.freeze_panes = "A2"
+
+    for r in rows:
+        sheet.append([r.get("id", "")] + [r.get(k, "") if r.get(k) is not None else "" for k in HEM_FIELD_KEYS])
+
+    for i in range(1, len(headers) + 1):
+        sheet.column_dimensions[get_column_letter(i)].width = 18
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
 
 
 def get_connection():

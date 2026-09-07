@@ -46,7 +46,7 @@ PROJECT_MENUS = [
     {"key": "FBB", "label": "FBB", "desc": "Monitoring & laporan FBB.", "url": "/fbb", "status": "active"},
     {"key": "MBB", "label": "MBB", "desc": "Monitoring All Node B.", "url": "/mbb-olo", "status": "active"},
     {"key": "OLO", "label": "OLO", "desc": "Monitoring OLO (satu halaman sama dengan MBB).", "url": "/mbb-olo", "status": "active"},
-    {"key": "HEM", "label": "HEM", "desc": "Input data semesta (form manual / upload Excel-CSV) & generate perintah SQL.", "url": "/hem", "status": "active"},
+    {"key": "HEM", "label": "HEM", "desc": "Dashboard & input data Semesta (data_semesta, Postgres).", "url": "/hem/dashboard", "status": "active"},
     {"key": "QE", "label": "QE", "desc": "Segera hadir.", "url": None, "status": "soon"},
 ]
 
@@ -76,6 +76,24 @@ def require_login():
             return jsonify({"ok": False, "error": "Sesi login sudah habis. Reload halaman ini lalu login ulang, kemudian coba lagi."}), 401
         return redirect(url_for("login", next=request.path))
     return None
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(e):
+    """Jaring pengaman terakhir: kalau ADA route /api/* yang lolos tanpa
+    try/except sendiri dan meledak dengan error tak terduga, Flask secara
+    default membalas HALAMAN HTML generik ("Internal Server Error") --
+    itu penyebab pesan "Server mengembalikan respons tidak terduga" di
+    frontend (fetch gagal parse HTML sebagai JSON). Untuk /api/*, selalu
+    balas JSON supaya frontend selalu bisa menampilkan pesan yang jelas.
+    Route non-/api/* (halaman biasa) tetap pakai halaman error default
+    Flask/Werkzeug seperti sebelumnya."""
+    if request.path.startswith("/api/"):
+        from werkzeug.exceptions import HTTPException
+        status = e.code if isinstance(e, HTTPException) else 500
+        logger.exception("Unhandled error on %s", request.path)
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), status
+    raise e
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -441,6 +459,82 @@ def api_pt3_import():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/hem")
+def hem_input_page():
+    """Halaman "Input Data Semesta" (form manual / upload Excel-CSV /
+    generate SQL) -- lihat templates/hem.html. Datanya masuk ke tabel
+    Postgres data_semesta lewat /api/hem/insert di bawah."""
+    return render_template("hem.html")
+
+
+@app.route("/api/hem/insert", methods=["POST"])
+def api_hem_insert():
+    """Dipanggil tombol "Simpan ke Database" di hem.html (baik dari tab
+    Upload file maupun Input manual) -- body JSON: {"rows": [{field_key:
+    value, ...}, ...]}. Response HARUS {"ok", "inserted", "errors"} --
+    itu kontrak yang sudah dipakai JS di hem.html (lihat
+    saveRowsDirectly())."""
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("rows") or []
+    try:
+        inserted, errors = hem_db_service.insert_rows(rows)
+        return jsonify({"ok": True, "inserted": inserted, "errors": errors})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/hem/dashboard")
+def hem_dashboard_page():
+    """Dashboard "Data Semesta" (data_semesta, Postgres) -- lihat
+    templates/hem_dashboard.html. Data & filter diambil lewat
+    /api/hem-dashboard, export lewat /api/hem-export."""
+    return render_template("hem_dashboard.html")
+
+
+@app.route("/api/hem-dashboard")
+def api_hem_dashboard():
+    """Data untuk dashboard HEM: rows mentah (sudah difilter kalau ada
+    query param filter), ringkasan KPI + rekap Region x Status, dan
+    opsi filter (nilai unik per kolom filter). Query param multi-value,
+    mis. ?new_region_ta=Jabo&new_region_ta=Jabar&status_ihld=Approved."""
+    filters = {
+        col: request.args.getlist(col) for col in hem_db_service.DASHBOARD_FILTER_COLS
+    }
+    filters = {k: v for k, v in filters.items() if v}
+    try:
+        rows = hem_db_service.get_dashboard_rows(filters or None)
+        summary = hem_db_service.get_dashboard_summary(rows)
+        options = hem_db_service.get_filter_options()
+        return jsonify({
+            "ok": True,
+            "rows": rows,
+            "summary": summary,
+            "options": options,
+            "field_labels": hem_db_service.HEM_FIELD_LABELS,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/hem-export", methods=["POST"])
+def api_hem_export():
+    """Export SEMUA kolom data_semesta (sesuai filter yang lagi aktif di
+    dashboard) sebagai .xlsx. Body JSON: {"filters": {col: [nilai, ...]}}."""
+    payload = request.get_json(silent=True) or {}
+    filters = payload.get("filters") or {}
+    filters = {k: v for k, v in filters.items() if k in hem_db_service.DASHBOARD_FILTER_COLS and v}
+    try:
+        buf = hem_db_service.build_export_workbook(filters or None)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    filename = f"Data-Semesta-{datetime.date.today().isoformat()}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @app.route("/api/pending-updates")
 def api_pending_updates():
     try:
@@ -511,36 +605,6 @@ def mbb_olo_page():
     lagi CSV export publik dari browser. Tampilan ditentukan lewat
     ?view=... dari link menu MBB/OLO di sidebar (mis. /mbb-olo?view=mbb-newinfra)."""
     return render_template("mbb-olo.html")
-
-
-@app.route("/hem")
-def hem_page():
-    """Input Data Semesta (HEM) -- extend base.html (sidebar & topbar sama
-    seperti halaman lain). Form manual/upload IHLD di sisi client, lalu
-    baris hasilnya di-insert ke Postgres (tabel data_semesta) lewat
-    /api/hem/insert -- lihat hem_db_service.py."""
-    return render_template("hem.html")
-
-
-@app.route("/api/hem/insert", methods=["POST"])
-def api_hem_insert():
-    payload = request.get_json(silent=True) or {}
-    rows = payload.get("rows")
-    if not isinstance(rows, list) or not rows:
-        return jsonify({"ok": False, "error": "Tidak ada baris data yang dikirim."}), 400
-    try:
-        inserted, errors = hem_db_service.insert_rows(rows)
-        return jsonify({"ok": True, "inserted": inserted, "errors": errors})
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-
-
-@app.route("/debug/hem-schema")
-def debug_hem_schema():
-    """Tampilkan DDL 'CREATE TABLE IF NOT EXISTS data_semesta (...)' buat
-    di-copy-paste manual ke tab Query Railway KALAU tabelnya belum ada --
-    TIDAK dieksekusi otomatis oleh endpoint ini."""
-    return Response(hem_db_service.build_create_table_sql(), mimetype="text/plain")
 
 
 @app.route("/api/mbb-data")
