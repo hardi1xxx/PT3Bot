@@ -594,9 +594,10 @@ MBB_SHEET_GID = os.environ.get("MBB_SHEET_GID", "212134262")   # tab: All Node B
 OLO_SHEET_GID = os.environ.get("OLO_SHEET_GID", "487400008")    # tab: OLO
 
 # Kolom MBB: A-V, X-AA, AB (Tanggal LI), AD-AU, BB-BC, BD (Tanggal L0 Ready),
-# BO (NEW TA AREA), BP, BY, CM, CZ
+# BO (NEW TA AREA), BP, BY, CM, CW (Tipe Order versi baru -- dipakai filter
+# menu New Infra/Rescoping/Fiberisasi, gantiin kolom C "Tipe Order" lama), CZ
 # (label harus SEJAJAR urutan dengan MBB_RANGES kalau di-expand satu-satu).
-MBB_RANGES = [("A", "V"), ("X", "AA"), ("AB", "AB"), ("AD", "AU"), ("BB", "BC"), ("BD", "BD"), ("BO", "BO"), ("BP", "BP"), ("BY", "BY"), ("CM", "CM"), ("CZ", "CZ")]
+MBB_RANGES = [("A", "V"), ("X", "AA"), ("AB", "AB"), ("AD", "AU"), ("BB", "BC"), ("BD", "BD"), ("BO", "BO"), ("BP", "BP"), ("BY", "BY"), ("CM", "CM"), ("CW", "CW"), ("CZ", "CZ")]
 MBB_LABELS = [
     "TAHUN", "Plan Deploy", "Tipe Order", "Sub Sistem", "SITE ID", "WITEL", "STO", "SITE NAME", "Lat", "Long",
     "Jarak PO", "Catuan PO", "Nilai PO", "DASAR KERJA", "REG TSEL", "Tower Provider", "Status Tsel", "Status Recti", "Target RFI", "BULAN PLAN",
@@ -611,6 +612,7 @@ MBB_LABELS = [
     "ID iHLD",
     "NAMA WASPANG TA",
     "STATUS DRM",
+    "Tipe Order (CW)",
     "Status Pekerjaan H-1",
 ]
 MBB_HEADER_CHECK_COL = "A"
