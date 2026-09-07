@@ -644,12 +644,14 @@ def api_aging_data():
 def update_form(row_num):
     try:
         snapshot = sheets_service.get_row_snapshot(row_num)
+        label = sheets_service.get_row_label(row_num)
     except Exception as e:
         flash(f"Gagal mengambil data baris: {type(e).__name__}: {e}", "error")
         return redirect(url_for("index"))
     return render_template(
         "update.html",
         row=row_num,
+        label=label,
         snapshot=snapshot,
         z_options=config.Z_OPTIONS,
         aa_options=config.AA_OPTIONS,

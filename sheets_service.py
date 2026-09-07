@@ -1062,6 +1062,12 @@ def get_row_snapshot(row_num: int):
     dibuka. Sekarang cukup 1 round-trip."""
     ws = get_worksheet()
 
+    # ODP/Port kolom L & M (nilai perencanaan) vs AF & AG (nilai Golive) --
+    # lihat pemilihan is_golive_stage di bawah. COL_ODP_AF belum ada di
+    # config.py sebelumnya, jadi pakai getattr dengan fallback "AF" (pola
+    # yang sama dengan COL_REGIONAL/COL_GOLIVE_DATE di get_dashboard_data()).
+    col_odp_af = getattr(config, "COL_ODP_AF", "AF")
+
     base_refs = [
         f"{config.COL_STATUS_Z}{row_num}",
         f"{config.COL_STATUS_AA}{row_num}",
@@ -1070,6 +1076,10 @@ def get_row_snapshot(row_num: int):
         f"{config.COL_TARGET_FI}{row_num}",
         f"{config.COL_BH}{row_num}",
         f"{config.COL_MITRA}{row_num}",
+        f"{config.COL_ODP_L}{row_num}",
+        f"{config.COL_PORT_M}{row_num}",
+        f"{col_odp_af}{row_num}",
+        f"{config.COL_PORT}{row_num}",
     ]
     extra_refs = [f"{col}{row_num}" for col in config.EXTRA_FIELD_COLUMNS.values()]
     note_col_refs = [f"{m['note_col']}{row_num}" for m in config.STATUS_COLUMN_MAP.values()]
@@ -1119,6 +1129,20 @@ def get_row_snapshot(row_num: int):
             current_stage_deadline = deadline_date.isoformat()
             is_overdue = today > deadline_date
 
+    # ODP & Port yang ditampilkan di panel: normal pakai kolom L (ODP) & M
+    # (Port) -- begitu status fisik (Z) sudah masuk tahap Golive ke atas
+    # (sama grup GOLIVE_STAGE_STATUSES yang dipakai kalender di
+    # get_dashboard_data), pakai kolom AF (ODP) & AG (Port) sebagai gantinya.
+    is_golive_stage = _normalize_status(z_val) in GOLIVE_STAGE_STATUSES
+    if is_golive_stage:
+        odp_display = v(f"{col_odp_af}{row_num}")
+        port_display = v(f"{config.COL_PORT}{row_num}")
+        odp_port_source = "golive"  # AF/AG
+    else:
+        odp_display = v(f"{config.COL_ODP_L}{row_num}")
+        port_display = v(f"{config.COL_PORT_M}{row_num}")
+        odp_port_source = "plan"  # L/M
+
     documents = {}
     for key, meta in config.DOCUMENT_TYPES.items():
         documents[key] = {
@@ -1147,6 +1171,9 @@ def get_row_snapshot(row_num: int):
         "target_fi_required": z_val in config.PRE_FINISH_INSTALL_STATUSES,
         "kategori_drop": v(f"{config.COL_BH}{row_num}") or None,
         "mitra": v(f"{config.COL_MITRA}{row_num}") or None,
+        "odp": odp_display or None,
+        "port": port_display or None,
+        "odp_port_source": odp_port_source,  # "golive" (AF/AG) atau "plan" (L/M)
         "documents": documents,
     }
 

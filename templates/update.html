@@ -4,10 +4,21 @@
 {% block page_sub %}Update status &amp; keterangan tanpa buka Google Sheet{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:640px; margin:0 auto 16px;">
-  <div class="sub" style="color:var(--muted); font-size:0.85rem;">Baris #{{ row }}</div>
-  <div style="margin: 8px 0 10px;">
-    <span class="badge status">Status saat ini: {{ snapshot.status_z or '-' }}</span>
+<div class="card" style="max-width:640px; margin:0 auto 16px; background:var(--panel-alt); padding:14px 16px;">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+    <div style="min-width:0;">
+      <div style="font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.03em; margin-bottom:3px;">Baris #{{ row }}{% if label %} &middot; {{ label.ihld }}{% endif %}</div>
+      {% if label and label.lokasi %}
+        <div style="font-weight:700; font-size:0.95rem; color:var(--text); line-height:1.35;">{{ label.lokasi }}</div>
+      {% endif %}
+    </div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; flex-shrink:0;">
+      <span class="badge" title="{{ 'Dari kolom AF (Golive)' if snapshot.odp_port_source == 'golive' else 'Dari kolom L' }}">ODP: <strong>{{ snapshot.odp or '-' }}</strong></span>
+      <span class="badge" title="{{ 'Dari kolom AG (Golive)' if snapshot.odp_port_source == 'golive' else 'Dari kolom M' }}">Port: <strong>{{ snapshot.port or '-' }}</strong></span>
+    </div>
+  </div>
+  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+    <span class="badge status">Status: {{ snapshot.status_z or '-' }}</span>
     <span class="badge">Sub: {{ snapshot.status_aa or '-' }}</span>
   </div>
   {% if snapshot.progress_stage_label == 'Drop' %}
@@ -41,7 +52,7 @@
   {% endif %}
 </div>
 
-<form method="post" class="card" style="max-width:640px; margin:0 auto;" enctype="multipart/form-data">
+<form method="post" class="card update-form" style="max-width:640px; margin:0 auto;" enctype="multipart/form-data">
   <style>
     /* Dropdown pencarian Nama Mitra (kolom Y) -- daftar bisa ~500 nama,
        jadi dibuat combobox kecil dgn hasil filter dibatasi (lihat JS),
@@ -60,6 +71,18 @@
     .mitra-combo-empty { padding: 7px 10px; font-size: 0.8rem; color: var(--muted); }
     .mitra-jenis-hint { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
     .mitra-jenis-hint strong { color: var(--text); }
+
+    /* Rapikan form update: scoped ke .update-form saja supaya tidak ikut
+       mengubah .field/label di halaman lain yang pakai base.html sama. */
+    .update-form .field { margin-bottom: 16px; }
+    .update-form .field:last-of-type { margin-bottom: 0; }
+    .update-form .field > label { display: block; font-weight: 600; font-size: 0.82rem; color: var(--text); margin-bottom: 6px; }
+    .update-form select, .update-form input[type="text"], .update-form input[type="date"], .update-form textarea {
+      width: 100%; box-sizing: border-box;
+    }
+    .update-form textarea { min-height: 76px; resize: vertical; }
+    .update-form .note-preview { line-height: 1.5; }
+    .update-form button[type="submit"] { width: 100%; margin-top: 4px; }
   </style>
 
   <div class="field mitra-combo" id="mitraComboField">
