@@ -12,6 +12,8 @@ nambah/hapus/ubah nama kolom di salah satu sisi, sisi yang satu lagi
 WAJIB diupdate juga supaya tetap sinkron -- tidak ada mekanisme
 otomatis yang menjaga keduanya tetap sama.
 """
+import datetime
+
 import psycopg2
 import psycopg2.extras
 
@@ -75,9 +77,10 @@ def get_connection():
 
 def _cast_value(field_type, raw):
     """String dari JS -> tipe Python yang cocok buat psycopg2 ("" / None
-    jadi NULL). text/textarea/date/datetime dikirim apa adanya sebagai
-    string -- Postgres cast otomatis 'YYYY-MM-DD' / 'YYYY-MM-DDTHH:MM'
-    ke kolom DATE/TIMESTAMP kalau tabelnya memang bertipe begitu."""
+    jadi NULL). number di-parse ke int/float; date/datetime di-parse &
+    dinormalisasi ke ISO lewat _parse_date()/_parse_datetime() (lihat
+    docstring keduanya kenapa ini penting); text/textarea dikirim apa
+    adanya sebagai string."""
     if raw is None:
         return None
     val = str(raw).strip()
@@ -89,7 +92,71 @@ def _cast_value(field_type, raw):
         except ValueError:
             raise ValueError(f"'{raw}' bukan angka yang valid")
         return int(f) if f.is_integer() else f
+    if field_type == "date":
+        return _parse_date(val)
+    if field_type == "datetime":
+        return _parse_datetime(val)
     return val
+
+
+# Format tanggal yang diterima, dicoba berurutan sampai salah satu cocok.
+# "%Y-%m-%d" -> ISO, dikirim oleh <input type="date"> di form manual.
+# "%d/%m/%Y" dan "%d-%m-%Y" -> format Indonesia umum dari file Excel/CSV
+# (mis. "21/07/2026").
+_DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"]
+
+_DATETIME_FORMATS = [
+    "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",   # dari <input type="datetime-local">
+    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
+    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M",
+    "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M",
+]
+
+# Serial date Excel: hari sejak 1899-12-30 (termasuk bug tahun kabisat
+# 1900 bawaan Excel/Lotus). Dipakai kalau sel Excel bertipe tanggal asli
+# tapi kebetulan terbaca sebagai angka mentah, bukan teks terformat.
+_EXCEL_EPOCH = datetime.date(1899, 12, 30)
+
+
+def _parse_date(val):
+    """Normalisasi string tanggal ke ISO 'YYYY-MM-DD'.
+
+    PENTING: kalau string mentah (mis. '21/07/2026') dikirim apa adanya
+    ke Postgres tanpa dinormalisasi, Postgres membacanya pakai DateStyle
+    default (MDY -- bulan/hari/tahun), jadi '21' dibaca sebagai bulan
+    dan meledak dengan error "date/time field value out of range" untuk
+    tanggal yang harinya > 12. Di sinilah tempatnya divalidasi & diubah
+    ke ISO SEBELUM sampai ke Postgres -- dan karena ini dipanggil per
+    baris (lewat _cast_value di dalam loop insert_rows), satu tanggal
+    salah format hanya menggagalkan baris itu, bukan seluruh batch."""
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.datetime.strptime(val, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    if val.isdigit() and 1 <= int(val) <= 100000:
+        return (_EXCEL_EPOCH + datetime.timedelta(days=int(val))).isoformat()
+    raise ValueError(
+        f"tanggal '{val}' tidak dikenali formatnya (harus YYYY-MM-DD atau DD/MM/YYYY)"
+    )
+
+
+def _parse_datetime(val):
+    """Sama seperti _parse_date() tapi untuk kolom timestamp (ikut jam)."""
+    for fmt in _DATETIME_FORMATS:
+        try:
+            return datetime.datetime.strptime(val, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    try:
+        return _parse_date(val) + " 00:00:00"
+    except ValueError:
+        pass
+    raise ValueError(
+        f"tanggal/waktu '{val}' tidak dikenali formatnya "
+        f"(harus YYYY-MM-DD HH:MM atau DD/MM/YYYY HH:MM)"
+    )
+
 
 
 def insert_rows(rows):
@@ -115,9 +182,16 @@ def insert_rows(rows):
     errors = []
     for i, r in enumerate(rows):
         try:
-            values.append([_cast_value(HEM_FIELD_TYPE[k], r.get(k)) for k in used_keys])
+            row_values = []
+            for k in used_keys:
+                try:
+                    row_values.append(_cast_value(HEM_FIELD_TYPE[k], r.get(k)))
+                except ValueError as e:
+                    raise ValueError(f"kolom '{k}': {e}") from None
+            values.append(row_values)
         except ValueError as e:
             errors.append(f"Baris {i + 1}: {e}")
+
 
     if not values:
         return 0, errors
