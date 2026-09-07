@@ -65,6 +65,10 @@
 
   #mbb-pivot-wrap table.pivot th, #mbb-pivot-wrap table.pivot td{text-align:right;}
   #mbb-pivot-wrap table.pivot th:first-child, #mbb-pivot-wrap table.pivot td:first-child{text-align:left;}
+  /* Header kolom Status Pekerjaan bisa panjang -- wrap teksnya (bukan
+     satu baris memanjang ke samping) supaya tabel tidak memicu scroll
+     horizontal yang tidak perlu. */
+  #mbb-pivot-wrap table.pivot th{white-space:normal; word-break:break-word; max-width:130px; vertical-align:bottom; line-height:1.3;}
 </style>
 
 <div class="section-title">
@@ -224,6 +228,9 @@ const MBB_SUB_BUCKETS = [
   { key:"drm",        label:"DRM",          match:(s)=> s.includes("drm") },
   { key:"done-survey",label:"Done Survey",  match:(s)=> s.includes("done survey") },
   { key:"survey",     label:"Survey",       match:(s)=> s.includes("survey") },
+  // "6. L0 Ready" sekarang dipisah jadi leaf sendiri di tree "SITE ID"
+  // (sebelumnya numpuk di "Lainnya" karena tidak match bucket manapun).
+  { key:"l0-ready",   label:"L0 Ready",     match:(s)=> s.includes("l0 ready") },
   { key:"hold",       label:"HOLD",         match:(s)=> s.includes("hold") },
 ];
 
@@ -255,7 +262,9 @@ function classifyMbbRow(row){
   for (const b of MBB_SUB_BUCKETS){
     if (b.match(s)) return { top:"active", sub:b.key };
   }
-  return { top:"active", sub:null }; // status lain yang tidak kena bucket manapun
+  // Status lain yang tidak kena bucket manapun ("Lainnya") sekarang
+  // digabung masuk ke bucket "HOLD", bukan leaf terpisah lagi.
+  return { top:"active", sub:"hold" };
 }
 
 // Sama persis kayak classifyMbbRow, tapi baca kolom "Status Pekerjaan H-1"
@@ -272,7 +281,8 @@ function classifyMbbRowH1(row){
   for (const b of MBB_SUB_BUCKETS){
     if (b.match(s)) return { top:"active", sub:b.key };
   }
-  return { top:"active", sub:null };
+  // Sama seperti classifyMbbRow -- "Lainnya" digabung ke HOLD.
+  return { top:"active", sub:"hold" };
 }
 
 /* Filter TAMBAHAN dari klik dashboard (di atas filter view + pencarian) */
@@ -342,11 +352,11 @@ function renderMbbTreeSvg(total, l1oa, drop, active, subCounts, deltas){
   const midW = 120, midH = 72, midX = rootX + rootW + 26;
   const midCYs = [TREE_SVG_H*0.17, TREE_SVG_H/2, TREE_SVG_H*0.83];
   const leafW = 160, leafH = 36, leafX = midX + midW + 26;
-  // 8 sub-bucket MBB_SUB_BUCKETS TIDAK menutup semua kemungkinan nilai
-  // Status Pekerjaan -- ditambah 1 leaf "Lainnya" (sisa: active dikurangi
-  // jumlah 8 sub-bucket) supaya total leaf SELALU pas dengan angka kotak
-  // "SITE ID" (aktif) di sebelahnya, tidak lagi kurang seperti sebelumnya.
-  const leafDefs = MBB_SUB_BUCKETS.concat([{ key:"lainnya", label:"Lainnya" }]);
+  // Setiap baris "active" sekarang SELALU kebagian salah satu sub-bucket
+  // (status yang tidak match bucket manapun otomatis masuk "HOLD" lewat
+  // classifyMbbRow), jadi tidak perlu lagi leaf "Lainnya" terpisah --
+  // total leaf tetap SELALU pas dengan angka kotak "SITE ID" (aktif).
+  const leafDefs = MBB_SUB_BUCKETS;
   const leafSlot = TREE_SVG_H / leafDefs.length;
   const leafCYs = leafDefs.map((_,i) => leafSlot*i + leafSlot/2);
 
@@ -400,8 +410,8 @@ function targetTreeBox(x, y, w, h, color, label, value, valueSize, labelSize, de
   return `
     <g>
       <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#fff" stroke="${color}" stroke-width="2"/>
-      <text x="${x + w/2}" y="${y + h/2 - 3}" text-anchor="middle" font-size="${valueSize}" font-weight="800" fill="${color}">${fmtN(value)}</text>
-      <text x="${x + w/2}" y="${y + h/2 + 12}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${color}" opacity="0.9">${escapeHtml(label)}</text>
+      <text x="${x + w/2}" y="${y + h/2 + 1}" text-anchor="middle" font-size="${valueSize}" font-weight="800" fill="${color}">${fmtN(value)}</text>
+      <text x="${x + w/2}" y="${y + h/2 + 15}" text-anchor="middle" font-size="${labelSize}" font-weight="700" fill="${color}" opacity="0.9">${escapeHtml(label)}</text>
       ${deltaBadge(x + w - 5, y + 11, delta)}
     </g>`;
 }
@@ -432,15 +442,17 @@ function renderTargetTreeSvg(rowsForMonth){
   // Status Pekerjaan -- baris yang isinya di luar semua itu (mis. status
   // baru yang belum ke-daftar di MBB_SUB_BUCKETS, atau baris berstatus
   // Drop yang lolos ke RFI/NY RFI) sebelumnya HILANG dari leaf (jumlah
-  // leaf < angka cabang RFI/NY RFI, mis. 29 vs 33). Sekarang leaf
-  // "lainnya" = sisa baris yang belum ke-hitung leaf lain, dihitung TERAKHIR
-  // (bukan by-match) supaya jumlah leaf SELALU pas dengan angka cabangnya.
-  // "l0-ready" & "oa-confirmation" adalah 2 key KHUSUS (bukan dari
-  // MBB_SUB_BUCKETS) -- dicocokkan langsung ke teks Status Pekerjaan,
-  // supaya "6. L0 Ready" & "7. L3. OA Confirmation" di kolom NY RFI
-  // tampil sebagai leaf sendiri-sendiri (bukan numpuk di "Lainnya").
+  // leaf < angka cabang RFI/NY RFI, mis. 29 vs 33). Sisa baris yang tidak
+  // ke-hitung leaf manapun ("lainnya") sekarang digabung ke leaf "HOLD"
+  // (bukan ditampilkan terpisah lagi -- lihat subCount/subCountH1 di
+  // bawah). "l0-ready" SEKARANG bagian dari MBB_SUB_BUCKETS (leaf "6. L0
+  // Ready" dipisah dari klasifikasi utama, dipakai sama persis lewat
+  // classifyMbbRow di bawah), tinggal "oa-confirmation" yang masih key
+  // KHUSUS (bukan dari MBB_SUB_BUCKETS) -- dicocokkan langsung ke teks
+  // Status Pekerjaan, supaya "7. L3. OA Confirmation" di kolom NY RFI
+  // tampil sebagai leaf sendiri (statusnya sendiri top-level "l1oa", jadi
+  // tidak kena classifyMbbRow sub manapun).
   function knownSubCount(rows, key){
-    if (key === "l0-ready") return rows.filter(r=> MBB_L0_READY_MATCH(getCol(r,"Status Pekerjaan").toLowerCase())).length;
     if (key === "oa-confirmation") return rows.filter(r=> MBB_OA_CONFIRMATION_MATCH(getCol(r,"Status Pekerjaan").toLowerCase())).length;
     return rows.filter(r=>{
       const c = classifyMbbRow(r);
@@ -448,7 +460,6 @@ function renderTargetTreeSvg(rowsForMonth){
     }).length;
   }
   function knownSubCountH1(rows, key){
-    if (key === "l0-ready") return rows.filter(r=> MBB_L0_READY_MATCH(getCol(r,"Status Pekerjaan H-1").toLowerCase())).length;
     if (key === "oa-confirmation") return rows.filter(r=> MBB_OA_CONFIRMATION_MATCH(getCol(r,"Status Pekerjaan H-1").toLowerCase())).length;
     return rows.filter(r=>{
       const c = classifyMbbRowH1(r);
@@ -456,23 +467,26 @@ function renderTargetTreeSvg(rowsForMonth){
       return key === "l1oa" ? c.top === "l1oa" : (c.top === "active" && c.sub === key);
     }).length;
   }
+  // Leaf "HOLD" = hitungan HOLD biasa + sisa baris yang tidak ke-hitung
+  // leaf manapun (dulu leaf "Lainnya" terpisah) -- supaya jumlah leaf
+  // tetap SELALU pas dengan angka cabangnya, tanpa kotak "Lainnya" lagi.
   function subCount(rows, key, knownKeys){
-    if (key === "lainnya") return rows.length - knownKeys.reduce((acc,k)=>acc+knownSubCount(rows,k),0);
-    return knownSubCount(rows, key);
+    if (key !== "hold") return knownSubCount(rows, key);
+    const sisa = rows.length - knownKeys.reduce((acc,k)=>acc+knownSubCount(rows,k),0);
+    return knownSubCount(rows, key) + sisa;
   }
   // Sama seperti subCount, tapi klasifikasi pakai "Status Pekerjaan H-1"
-  // (CZ) -- dipakai buat hitung deviasi tiap leaf. Baris yang classifyMbbRowH1
-  // return null (CZ kosong) otomatis tidak ke-hitung ke bucket manapun (jadi
-  // ikut kehitung "lainnya" versi H-1 -- itu wajar, sama seperti hari ini).
+  // (CZ) -- dipakai buat hitung deviasi tiap leaf.
   function subCountH1(rows, key, knownKeys){
-    if (key === "lainnya") return rows.length - knownKeys.reduce((acc,k)=>acc+knownSubCountH1(rows,k),0);
-    return knownSubCountH1(rows, key);
+    if (key !== "hold") return knownSubCountH1(rows, key);
+    const sisa = rows.length - knownKeys.reduce((acc,k)=>acc+knownSubCountH1(rows,k),0);
+    return knownSubCountH1(rows, key) + sisa;
   }
 
-  const rfiKnownKeys = ["l1oa", ...MBB_SUB_BUCKETS.map(b=>b.key)];   // L1-ON AIR + 8 sub-bucket (setelah digabung)
-  const nyRfiKnownKeys = [...MBB_SUB_BUCKETS.map(b=>b.key), "l0-ready", "oa-confirmation"]; // 8 sub-bucket + L0 Ready + OA Confirmation (tanpa L1-ON AIR)
-  const rfiLeafKeys = [...rfiKnownKeys, "lainnya"];
-  const nyRfiLeafKeys = [...nyRfiKnownKeys, "lainnya"];
+  const rfiKnownKeys = ["l1oa", ...MBB_SUB_BUCKETS.map(b=>b.key)];   // L1-ON AIR + 9 sub-bucket (setelah digabung)
+  const nyRfiKnownKeys = [...MBB_SUB_BUCKETS.map(b=>b.key), "oa-confirmation"]; // 9 sub-bucket + OA Confirmation (tanpa L1-ON AIR)
+  const rfiLeafKeys = rfiKnownKeys;
+  const nyRfiLeafKeys = nyRfiKnownKeys;
 
   const total = rowsForMonth.length;
 
@@ -553,14 +567,10 @@ function renderMbbDashboard(rowsForView, view){
   });
   // Deviasi = hari ini (kolom U) - kemarin (kolom CZ, "Status Pekerjaan
   // H-1"), ditampilkan sebagai panah naik/turun di tiap kotak tree diagram.
+  // Sejak classifyMbbRow menaruh status yang tidak match bucket manapun
+  // langsung ke "HOLD", subCounts per bucket SELALU pas menjumlah ke
+  // "active" -- tidak perlu lagi leaf/hitungan "Lainnya" terpisah.
   const subDeltas = {}; MBB_SUB_BUCKETS.forEach(b => subDeltas[b.key] = subCounts[b.key] - subCountsH1[b.key]);
-  // Leaf "Lainnya" = sisa baris aktif yang statusnya di luar 8 sub-bucket
-  // di atas -- supaya jumlah leaf selalu pas dengan angka kotak "SITE ID".
-  const knownSubSum = MBB_SUB_BUCKETS.reduce((acc,b)=>acc+subCounts[b.key], 0);
-  const knownSubSumH1 = MBB_SUB_BUCKETS.reduce((acc,b)=>acc+subCountsH1[b.key], 0);
-  subCounts["lainnya"] = active - knownSubSum;
-  subCountsH1["lainnya"] = activeH1 - knownSubSumH1;
-  subDeltas["lainnya"] = subCounts["lainnya"] - subCountsH1["lainnya"];
   const mbbTreeDeltas = { l1oa: l1oa - l1oaH1, drop: drop - dropH1, active: active - activeH1, sub: subDeltas };
 
   const monthName = CURRENT_MONTH_NAME;
