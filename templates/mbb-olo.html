@@ -2,7 +2,7 @@
 {% block active_category %}{{ 'mbb' if request.args.get('view','mbb-all').startswith('mbb') else 'olo' }}{% endblock %}
 {% block menu_mbb %}{{ 'active' if request.args.get('view','mbb-all').startswith('mbb') else '' }}{% endblock %}
 {% block menu_olo %}{{ 'active' if request.args.get('view','mbb-all').startswith('olo') else '' }}{% endblock %}
-{% block page_title %}MBB &amp; OLO Monitoring{% endblock %}
+{% block page_title %}{{ 'MBB Monitoring' if request.args.get('view','mbb-all').startswith('mbb') else 'OLO Monitoring' }}{% endblock %}
 {% block page_sub %}Data langsung dari Google Sheets (Node B &amp; OLO) &mdash; <a href="https://docs.google.com/spreadsheets/d/1h1NBs7k4rCibwFvNVu9t0rIlq-TuF7sh6YZvxhu9VqQ" target="_blank" rel="noopener">buka spreadsheet &#8599;</a>{% endblock %}
 
 {% block content %}
