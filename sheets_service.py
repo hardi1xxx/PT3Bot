@@ -2249,6 +2249,7 @@ def build_export_workbook_a_ap(row_nums: list = None):
 
 UPDATE_TEMPLATE_HEADERS = [
     "ID IHLD (kolom I) - JANGAN DIUBAH, dipakai utk mencari baris",
+    "Branch (referensi saja, tidak dibaca saat import)",
     "Lokasi (referensi saja, tidak dibaca saat import)",
     "Nama Mitra (kolom Y) - kosongkan jika tidak ingin diubah",
     "Status Fisik (kolom Z) - WAJIB diisi, lihat sheet Referensi Status",
@@ -2261,10 +2262,10 @@ UPDATE_TEMPLATE_HEADERS = [
 
 def build_update_template_workbook(row_nums: list = None):
     """Bangun file .xlsx "Format Update": sheet 1 berisi baris yang mau
-    diupdate (ID IHLD/Lokasi/Nama Mitra/Status Fisik/Sub Status Fisik/
-    Komit FI/Komit GL terisi nilai SAAT INI, kolom Keterangan sengaja
-    dikosongkan buat diisi user), sheet 2 referensi Status Fisik (Z) ->
-    daftar Sub Status Fisik (AA) yang valid untuk Status itu
+    diupdate (ID IHLD/Branch/Lokasi/Nama Mitra/Status Fisik/Sub Status
+    Fisik/Komit FI/Komit GL terisi nilai SAAT INI, kolom Keterangan
+    sengaja dikosongkan buat diisi user), sheet 2 referensi Status Fisik
+    (Z) -> daftar Sub Status Fisik (AA) yang valid untuk Status itu
     (config.STATUS_AA_GROUPS). `row_nums` None = semua baris yang punya
     ID IHLD (kosong dilewati). File hasil isian ini yang nantinya diupload
     balik lewat apply_bulk_update_from_excel()."""
@@ -2277,6 +2278,7 @@ def build_update_template_workbook(row_nums: list = None):
     all_values = _cached_get_all_values(ws)
     idx = {
         "ihld": _col_to_index(config.COL_IHLD) - 1,
+        "branch": _col_to_index(config.COL_BRANCH) - 1,
         "lokasi": _col_to_index(config.COL_LOKASI) - 1,
         "mitra": _col_to_index(config.COL_MITRA) - 1,
         "status_z": _col_to_index(config.COL_STATUS_Z) - 1,
@@ -2314,13 +2316,13 @@ def build_update_template_workbook(row_nums: list = None):
         if not ihld_val:
             continue  # baris tanpa ID IHLD tidak relevan utk diupdate
         s1.append([
-            _numeric_or_text(ihld_val), cell("lokasi"), cell("mitra"),
+            _numeric_or_text(ihld_val), cell("branch"), cell("lokasi"), cell("mitra"),
             cell("status_z"), cell("status_aa"), "",
             cell("target_fi"), cell("komit_gl"),
         ])
         included += 1
 
-    widths = [22, 26, 24, 30, 34, 44, 20, 20]
+    widths = [22, 20, 26, 24, 30, 34, 44, 20, 20]
     for i, w in enumerate(widths, start=1):
         s1.column_dimensions[get_column_letter(i)].width = w
 
@@ -2365,15 +2367,16 @@ def apply_bulk_update_from_excel(file_stream):
 
     Kolom yang dibaca (urutan HARUS sama dengan UPDATE_TEMPLATE_HEADERS):
       A) ID IHLD   -- wajib, dipakai cari baris (find_row, lokasi diabaikan)
-      B) Lokasi    -- tidak dipakai (referensi saja)
-      C) Nama Mitra -- opsional: kosong = kolom Y (& X) tidak diubah
-      D) Status Fisik (Z) -- wajib
-      E) Sub Status Fisik (AA) -- wajib
-      F) Keterangan -- wajib, jadi paragraf baru (tanggal upload otomatis)
-      G) Komit FI (AK) -- opsional: kosong = tidak diubah; diabaikan kalau
+      B) Branch    -- tidak dipakai (referensi saja)
+      C) Lokasi    -- tidak dipakai (referensi saja)
+      D) Nama Mitra -- opsional: kosong = kolom Y (& X) tidak diubah
+      E) Status Fisik (Z) -- wajib
+      F) Sub Status Fisik (AA) -- wajib
+      G) Keterangan -- wajib, jadi paragraf baru (tanggal upload otomatis)
+      H) Komit FI (AK) -- opsional: kosong = tidak diubah; diabaikan kalau
          status Z-nya Drop atau sudah lewat Finish Instalasi (sama seperti
          update_status(), lihat docstring-nya)
-      H) Komit GL (AM) -- opsional: kosong = mengikuti otomatis dari Komit
+      I) Komit GL (AM) -- opsional: kosong = mengikuti otomatis dari Komit
          FI (+2 hari, atau sama persis kalau Komit FI tgl 30/31); diisi =
          override manual, dipakai apa adanya
 
@@ -2419,17 +2422,18 @@ def apply_bulk_update_from_excel(file_stream):
             return v.isoformat()
         return str(v).strip()
 
-    for excel_row_num, row in enumerate(sheet.iter_rows(min_row=2, max_col=8, values_only=True), start=2):
+    for excel_row_num, row in enumerate(sheet.iter_rows(min_row=2, max_col=9, values_only=True), start=2):
         row = row or ()
         get = lambda i: (_cell_to_text(row[i]) if i < len(row) else "")
         get_date = lambda i: (_cell_to_date_text(row[i]) if i < len(row) else "")
         ihld = get(0)
-        mitra = get(2)
-        z_value = get(3)
-        aa_value = get(4)
-        note_text = get(5)
-        target_fi = get_date(6)
-        komit_gl = get_date(7)
+        # kolom B (Branch) & C (Lokasi) sengaja tidak dibaca -- referensi saja
+        mitra = get(3)
+        z_value = get(4)
+        aa_value = get(5)
+        note_text = get(6)
+        target_fi = get_date(7)
+        komit_gl = get_date(8)
 
         if not any([ihld, mitra, z_value, aa_value, note_text, target_fi, komit_gl]):
             continue  # baris kosong total, lewati diam-diam (bukan error)
@@ -2441,7 +2445,7 @@ def apply_bulk_update_from_excel(file_stream):
             results.append(entry)
             continue
         if not z_value:
-            entry.update(ok=False, error="Status Fisik (kolom D) wajib diisi.")
+            entry.update(ok=False, error="Status Fisik (kolom E) wajib diisi.")
             results.append(entry)
             continue
         if z_value not in config.STATUS_COLUMN_MAP:
@@ -2449,7 +2453,7 @@ def apply_bulk_update_from_excel(file_stream):
             results.append(entry)
             continue
         if not aa_value:
-            entry.update(ok=False, error="Sub Status Fisik (kolom E) wajib diisi.")
+            entry.update(ok=False, error="Sub Status Fisik (kolom F) wajib diisi.")
             results.append(entry)
             continue
         valid_aa = config.STATUS_AA_GROUPS.get(z_value)
@@ -2461,7 +2465,7 @@ def apply_bulk_update_from_excel(file_stream):
             results.append(entry)
             continue
         if not note_text:
-            entry.update(ok=False, error="Keterangan (kolom F) wajib diisi.")
+            entry.update(ok=False, error="Keterangan (kolom G) wajib diisi.")
             results.append(entry)
             continue
 
