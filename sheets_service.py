@@ -1252,7 +1252,7 @@ def validate_extra_field(key: str, raw: str):
 def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                    extra_fields: dict = None, target_fi: str = None,
                    kategori_drop: str = None, mitra_value: str = None,
-                   when: datetime.date = None):
+                   komit_gl: str = None, when: datetime.date = None):
     """
     Apply one update to a row:
       1. Write Z and AA dropdown values.
@@ -1263,13 +1263,23 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
          - z_value Drop (config.PROGRESS_DROP_STATUSES) -> kolom AK
            DIKOSONGKAN (komit FI dihapus, karena LOP-nya batal).
          - z_value SUDAH Finish Instalasi/Golive ke atas (bukan lagi di
-           config.PRE_FINISH_INSTALL_STATUSES) -> `target_fi` DIABAIKAN
-           total, apapun isinya (form di frontend memang menyembunyikan
-           field ini untuk status-status itu, tapi diabaikan juga di sini
-           sebagai jaring pengaman kalau ada nilai lama nyangkut terkirim).
+           config.PRE_FINISH_INSTALL_STATUSES) -> `target_fi`/`komit_gl`
+           DIABAIKAN total, apapun isinya (form di frontend memang
+           menyembunyikan field ini untuk status-status itu, tapi
+           diabaikan juga di sini sebagai jaring pengaman kalau ada nilai
+           lama nyangkut terkirim).
          - selain 2 kasus di atas: `target_fi` diisi -> tulis ke AK; kosong
            -> tidak diubah, nilai lama tetap dipertahankan (validasi
            wajib-isi dilakukan terpisah lewat validate_target_fi()).
+           Komit Golive (kolom AM) mengikuti salah satu dari:
+             a) `komit_gl` diisi eksplisit (mis. dari Format Update kolom
+                H) -> ditulis apa adanya, OVERRIDE aturan otomatis di
+                bawah ini.
+             b) `komit_gl` kosong TAPI `target_fi` diisi -> dihitung
+                otomatis = Komit FI + 2 hari, KECUALI Komit FI jatuh di
+                tanggal akhir bulan (30/31) -> disamakan persis dgn Komit
+                FI (tidak ditambah 2 hari).
+             c) keduanya kosong -> AM tidak diubah.
       6. Kalau z_value ada di config.PROGRESS_DROP_STATUSES dan
          `kategori_drop` diisi, tulis ke kolom BH (validasi wajib-isi
          terpisah lewat validate_kategori_drop(), BUKAN di sini).
@@ -1376,6 +1386,8 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
         pass
     else:
         target_fi = (target_fi or "").strip()
+        komit_gl_override = (komit_gl or "").strip()
+        parsed_target_fi = None
         if target_fi:
             parsed_target_fi = _parse_date(target_fi)
             if parsed_target_fi:
@@ -1385,18 +1397,29 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
                 })
                 date_format_targets.append((config.COL_TARGET_FI, "dd/mmm/yy"))
 
-                # Komit GL = Komit FI + 2 hari, KECUALI Komit FI jatuh di
-                # tanggal akhir bulan (30/31) -> Komit GL disamakan persis
-                # dgn Komit FI (tidak ditambah 2 hari).
-                if parsed_target_fi.day in (30, 31):
-                    komit_gl = parsed_target_fi
-                else:
-                    komit_gl = parsed_target_fi + datetime.timedelta(days=2)
+        if komit_gl_override:
+            # Override manual (mis. dari Format Update kolom H) -- dipakai
+            # apa adanya, TIDAK dihitung ulang dari target_fi.
+            parsed_komit_gl = _parse_date(komit_gl_override)
+            if parsed_komit_gl:
                 updates.append({
                     "range": f"{config.COL_KOMIT_GL}{row_num}",
-                    "values": [[komit_gl.isoformat()]],
+                    "values": [[parsed_komit_gl.isoformat()]],
                 })
                 date_format_targets.append((config.COL_KOMIT_GL, "dd/mmm/yy"))
+        elif parsed_target_fi:
+            # Komit GL = Komit FI + 2 hari, KECUALI Komit FI jatuh di
+            # tanggal akhir bulan (30/31) -> Komit GL disamakan persis
+            # dgn Komit FI (tidak ditambah 2 hari).
+            if parsed_target_fi.day in (30, 31):
+                komit_gl_auto = parsed_target_fi
+            else:
+                komit_gl_auto = parsed_target_fi + datetime.timedelta(days=2)
+            updates.append({
+                "range": f"{config.COL_KOMIT_GL}{row_num}",
+                "values": [[komit_gl_auto.isoformat()]],
+            })
+            date_format_targets.append((config.COL_KOMIT_GL, "dd/mmm/yy"))
 
     # 6. Kategori Drop (kolom BH) — cuma relevan & ditulis kalau status Z
     #    Drop dan ada nilainya (kosong = tidak diubah, sama seperti field
@@ -2231,18 +2254,20 @@ UPDATE_TEMPLATE_HEADERS = [
     "Status Fisik (kolom Z) - WAJIB diisi, lihat sheet Referensi Status",
     "Sub Status Fisik (kolom AA) - WAJIB diisi, lihat sheet Referensi Status",
     "Keterangan - WAJIB diisi (jadi paragraf baru, tanggal otomatis)",
+    "Komit FI (kolom AK) - kosongkan jika tidak ingin diubah, isi tanggal (mis. 05/08/2026)",
+    "Komit GL (kolom AM) - kosongkan = otomatis Komit FI+2 hari, isi tanggal utk override manual",
 ]
 
 
 def build_update_template_workbook(row_nums: list = None):
     """Bangun file .xlsx "Format Update": sheet 1 berisi baris yang mau
-    diupdate (ID IHLD/Lokasi/Nama Mitra/Status Fisik/Sub Status Fisik
-    terisi nilai SAAT INI, kolom Keterangan sengaja dikosongkan buat
-    diisi user), sheet 2 referensi Status Fisik (Z) -> daftar Sub Status
-    Fisik (AA) yang valid untuk Status itu (config.STATUS_AA_GROUPS).
-    `row_nums` None = semua baris yang punya ID IHLD (kosong dilewati).
-    File hasil isian ini yang nantinya diupload balik lewat
-    apply_bulk_update_from_excel()."""
+    diupdate (ID IHLD/Lokasi/Nama Mitra/Status Fisik/Sub Status Fisik/
+    Komit FI/Komit GL terisi nilai SAAT INI, kolom Keterangan sengaja
+    dikosongkan buat diisi user), sheet 2 referensi Status Fisik (Z) ->
+    daftar Sub Status Fisik (AA) yang valid untuk Status itu
+    (config.STATUS_AA_GROUPS). `row_nums` None = semua baris yang punya
+    ID IHLD (kosong dilewati). File hasil isian ini yang nantinya diupload
+    balik lewat apply_bulk_update_from_excel()."""
     import io
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
@@ -2256,6 +2281,8 @@ def build_update_template_workbook(row_nums: list = None):
         "mitra": _col_to_index(config.COL_MITRA) - 1,
         "status_z": _col_to_index(config.COL_STATUS_Z) - 1,
         "status_aa": _col_to_index(config.COL_STATUS_AA) - 1,
+        "target_fi": _col_to_index(config.COL_TARGET_FI) - 1,
+        "komit_gl": _col_to_index(config.COL_KOMIT_GL) - 1,
     }
     data_rows = all_values[config.DATA_START_ROW - 1:]
     wanted = set(row_nums) if row_nums else None
@@ -2286,10 +2313,14 @@ def build_update_template_workbook(row_nums: list = None):
         ihld_val = cell("ihld")
         if not ihld_val:
             continue  # baris tanpa ID IHLD tidak relevan utk diupdate
-        s1.append([_numeric_or_text(ihld_val), cell("lokasi"), cell("mitra"), cell("status_z"), cell("status_aa"), ""])
+        s1.append([
+            _numeric_or_text(ihld_val), cell("lokasi"), cell("mitra"),
+            cell("status_z"), cell("status_aa"), "",
+            cell("target_fi"), cell("komit_gl"),
+        ])
         included += 1
 
-    widths = [22, 26, 24, 30, 34, 44]
+    widths = [22, 26, 24, 30, 34, 44, 20, 20]
     for i, w in enumerate(widths, start=1):
         s1.column_dimensions[get_column_letter(i)].width = w
 
@@ -2339,6 +2370,12 @@ def apply_bulk_update_from_excel(file_stream):
       D) Status Fisik (Z) -- wajib
       E) Sub Status Fisik (AA) -- wajib
       F) Keterangan -- wajib, jadi paragraf baru (tanggal upload otomatis)
+      G) Komit FI (AK) -- opsional: kosong = tidak diubah; diabaikan kalau
+         status Z-nya Drop atau sudah lewat Finish Instalasi (sama seperti
+         update_status(), lihat docstring-nya)
+      H) Komit GL (AM) -- opsional: kosong = mengikuti otomatis dari Komit
+         FI (+2 hari, atau sama persis kalau Komit FI tgl 30/31); diisi =
+         override manual, dipakai apa adanya
 
     Baris yang kosong total dilewati (bukan error). Setiap baris diproses
     independen -- satu baris gagal TIDAK menghentikan baris lainnya.
@@ -2367,16 +2404,34 @@ def apply_bulk_update_from_excel(file_stream):
             return str(int(v))
         return str(v).strip()
 
-    for excel_row_num, row in enumerate(sheet.iter_rows(min_row=2, max_col=6, values_only=True), start=2):
+    def _cell_to_date_text(v):
+        """Kolom Komit FI/GL (G & H) -- Excel bisa balikin cell tanggal
+        sbg objek datetime.date/datetime.datetime (kalau sel diformat
+        Date) ATAU string biasa (kalau user ketik manual tanpa format
+        khusus). Dirapikan jadi ISO (YYYY-MM-DD) yang dikenali
+        _parse_date(); string non-tanggal dibiarkan apa adanya supaya
+        tetap kena validasi/`None` di update_status()."""
+        if v is None:
+            return ""
+        if isinstance(v, datetime.datetime):
+            return v.date().isoformat()
+        if isinstance(v, datetime.date):
+            return v.isoformat()
+        return str(v).strip()
+
+    for excel_row_num, row in enumerate(sheet.iter_rows(min_row=2, max_col=8, values_only=True), start=2):
         row = row or ()
         get = lambda i: (_cell_to_text(row[i]) if i < len(row) else "")
+        get_date = lambda i: (_cell_to_date_text(row[i]) if i < len(row) else "")
         ihld = get(0)
         mitra = get(2)
         z_value = get(3)
         aa_value = get(4)
         note_text = get(5)
+        target_fi = get_date(6)
+        komit_gl = get_date(7)
 
-        if not any([ihld, mitra, z_value, aa_value, note_text]):
+        if not any([ihld, mitra, z_value, aa_value, note_text, target_fi, komit_gl]):
             continue  # baris kosong total, lewati diam-diam (bukan error)
 
         entry = {"excel_row": excel_row_num, "ihld": ihld}
@@ -2420,6 +2475,8 @@ def apply_bulk_update_from_excel(file_stream):
             date_col, note_col = update_status(
                 row_num, z_value, aa_value, note_text,
                 mitra_value=mitra or None,
+                target_fi=target_fi or None,
+                komit_gl=komit_gl or None,
             )
             entry.update(ok=True, row=row_num, date_col=date_col, note_col=note_col)
             success += 1
