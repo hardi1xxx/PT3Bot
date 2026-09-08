@@ -13,8 +13,10 @@ WAJIB diupdate juga supaya tetap sinkron -- tidak ada mekanisme
 otomatis yang menjaga keduanya tetap sama.
 """
 import datetime
+import io
 import re
 
+import openpyxl
 import psycopg2
 import psycopg2.extras
 
@@ -601,3 +603,97 @@ def insert_ihld_rows(rows):
         conn.close()
 
     return len(values), errors
+
+
+# =============================================================================
+# Dashboard "Data Semesta" (/hem/dashboard) -- dipakai app.py:
+# api_hem_dashboard() & api_hem_export().
+
+# Kolom yang bisa difilter di dashboard (checkbox multi-value per kolom).
+DASHBOARD_FILTER_COLS = ["status_wo_tif", "new_region_ta", "branch", "progress_jt_last_update"]
+
+# Kolom yang di-breakdown (hitung jumlah per nilai) buat KPI/rekap.
+_SUMMARY_BREAKDOWN_COLS = ["status_wo_tif", "new_region_ta", "branch", "layanan", "progress_jt_last_update"]
+
+# Label tampilan tiap kolom -- dipakai frontend kalau perlu (fallback:
+# nama kolom di-title-case apa adanya).
+HEM_FIELD_LABELS = {k: k.replace("_", " ").title() for k, _ in HEM_FIELDS}
+
+
+def get_dashboard_rows(filters=None):
+    """Ambil baris data_semesta (semua kolom), difilter kalau `filters`
+    diisi ({kolom: [nilai, ...]}, kolom HARUS salah satu dari
+    DASHBOARD_FILTER_COLS -- kolom lain diabaikan biar tidak bisa dipakai
+    utk SQL injection lewat nama kolom bebas)."""
+    where_sql, params = "", []
+    if filters:
+        clauses = []
+        for col, vals in filters.items():
+            if col not in DASHBOARD_FILTER_COLS or not vals:
+                continue
+            clauses.append(f'"{col}" = ANY(%s)')
+            params.append(list(vals))
+        if clauses:
+            where_sql = "WHERE " + " AND ".join(clauses)
+
+    cols_sql = ", ".join(f'"{k}"' for k in HEM_FIELD_KEYS)
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f'SELECT id_semesta, {cols_sql} FROM {TABLE_NAME} {where_sql} ORDER BY id_semesta DESC',
+                params,
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_dashboard_summary(rows):
+    """Ringkasan dari `rows` (hasil get_dashboard_rows, SUDAH sesuai
+    filter aktif): total baris + breakdown jumlah per nilai utk tiap
+    kolom di _SUMMARY_BREAKDOWN_COLS."""
+    summary = {"total_row": len(rows)}
+    for col in _SUMMARY_BREAKDOWN_COLS:
+        counts = {}
+        for r in rows:
+            v = r.get(col) or "(kosong)"
+            counts[v] = counts.get(v, 0) + 1
+        summary[col] = dict(sorted(counts.items(), key=lambda kv: -kv[1]))
+    return summary
+
+
+def get_filter_options():
+    """Nilai unik yang tersedia utk tiap kolom di DASHBOARD_FILTER_COLS,
+    dari SELURUH tabel (bukan cuma yang sesuai filter aktif) -- supaya
+    orang tetap bisa pilih kombinasi filter baru dari checkbox."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            options = {}
+            for col in DASHBOARD_FILTER_COLS:
+                cur.execute(
+                    f'SELECT DISTINCT "{col}" FROM {TABLE_NAME} WHERE "{col}" IS NOT NULL ORDER BY 1'
+                )
+                options[col] = [row[0] for row in cur.fetchall()]
+            return options
+    finally:
+        conn.close()
+
+
+def build_export_workbook(filters=None):
+    """Bikin file .xlsx (semua kolom data_semesta, sesuai filter aktif)
+    di memori -- dikembalikan sbg BytesIO, dikirim app.py sbg attachment
+    download lewat /api/hem-export."""
+    rows = get_dashboard_rows(filters)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Data Semesta"
+    headers = ["id_semesta"] + HEM_FIELD_KEYS
+    ws.append([HEM_FIELD_LABELS.get(h, h) if h != "id_semesta" else "ID" for h in headers])
+    for r in rows:
+        ws.append([r.get(h) for h in headers])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf

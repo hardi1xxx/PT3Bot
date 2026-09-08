@@ -128,8 +128,8 @@
   <!-- ── Rekap New Region TA x Status iHLD ────────────────────────── -->
   <div class="card">
     <div class="section-title">
-      Rekap New Region TA &times; Status iHLD
-      <span class="hint">Jumlah order per kombinasi Region &amp; Status iHLD (sesuai filter aktif)</span>
+      Rekap per Kategori
+      <span class="hint">Jumlah order per nilai (sesuai filter aktif)</span>
       <button class="btn-ghost" id="hemExportBtn" style="margin-left:auto;" title="Download seluruh kolom data_semesta (sesuai filter aktif) sebagai file Excel">&#11015; Export Data</button>
     </div>
     <div class="table-wrap" id="hemRekapWrap">
@@ -157,16 +157,23 @@ let hemAllRows = [];       // rows terakhir yang diambil dari server (sudah sesu
 let hemFilterOptions = {}; // {col: [nilai, ...]} dari server
 let hemActiveFilters = {}; // {col: Set(nilai)} -- filter yang SUDAH diterapkan (dipakai query berikutnya)
 const HEM_FILTER_COLS = [
+  ["status_wo_tif", "Status WO (TIF)"],
   ["new_region_ta", "New Region TA"],
   ["branch", "Branch"],
-  ["status_ihld", "Status iHLD"],
-  ["prioritas", "Prioritas"],
+  ["progress_jt_last_update", "Progress"],
+];
+const HEM_BREAKDOWN_COLS = [
+  ["status_wo_tif", "Status WO (TIF)"],
+  ["new_region_ta", "New Region TA"],
+  ["branch", "Branch"],
+  ["layanan", "Layanan"],
+  ["progress_jt_last_update", "Progress"],
 ];
 const HEM_DETAIL_COLS = [
   ["no_order", "No Order"], ["ihld_lop_id", "iHLD LoP ID"], ["nama_proyek", "Nama Proyek"],
-  ["new_region_ta", "Region"], ["branch", "Branch"], ["status_ihld", "Status iHLD"],
-  ["progress", "Progress"], ["nama_mitra", "Nama Mitra"], ["target_fi", "Target FI"],
-  ["tgl_go_live", "Tgl Go Live"],
+  ["new_region_ta", "Region"], ["branch", "Branch"], ["status_wo_tif", "Status WO (TIF)"],
+  ["layanan", "Layanan"], ["progress_jt_last_update", "Progress"], ["nama_mitra", "Nama Mitra"],
+  ["target_fi", "Target FI"], ["tgl_go_live", "Tgl Go Live"],
 ];
 
 function esc(v){
@@ -206,20 +213,12 @@ async function loadHemDashboard(){
 }
 
 function renderKpi(summary){
-  const cards = [
-    { label: 'Total Order', value: fmtNum(summary.total_order) },
-    { label: 'Total Nilai BOQ WO', value: fmtRp(summary.total_nilai_wo) },
-    { label: 'Total Nilai BOQ IHLD', value: fmtRp(summary.total_nilai_ihld) },
-    { label: 'Total Nilai UT', value: fmtRp(summary.total_ut) },
-    { label: 'Sudah Go Live', value: fmtNum(summary.golive_count) },
-    { label: 'Drop', value: fmtNum(summary.drop_count), warn: true },
-  ];
-  document.getElementById('hemKpiGrid').innerHTML = cards.map(c => `
-    <div class="kpi-card ${c.warn ? 'warn' : ''}">
-      <div class="kpi-label">${esc(c.label)}</div>
-      <div class="kpi-value">${esc(c.value)}</div>
+  document.getElementById('hemKpiGrid').innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Total Baris</div>
+      <div class="kpi-value">${fmtNum(summary.total_row)}</div>
     </div>
-  `).join('');
+  `;
 }
 
 function renderFilters(){
@@ -254,37 +253,24 @@ function renderFilters(){
 }
 
 function renderRekap(summary){
-  const statuses = summary.statuses;
-  const regions = summary.regions;
   const wrap = document.getElementById('hemRekapWrap');
-  if(!Object.keys(regions).length){
+  if(!summary.total_row){
     wrap.innerHTML = '<div class="empty-note">Tidak ada data untuk filter yang aktif.</div>';
     return;
   }
-
-  const grandTotal = { __total__: 0 };
-  statuses.forEach(s => grandTotal[s] = 0);
-  for(const bucket of Object.values(regions)){
-    grandTotal.__total__ += bucket.__total__;
-    statuses.forEach(s => { grandTotal[s] += (bucket[s] || 0); });
-  }
-
-  const sortedRegions = Object.keys(regions).sort((a, b) => a.localeCompare(b));
-
-  let html = '<table class="pivot"><thead><tr><th>New Region TA</th>';
-  statuses.forEach(s => { html += `<th>${esc(s)}</th>`; });
-  html += '<th>Total</th></tr></thead><tbody>';
-  sortedRegions.forEach(region => {
-    const bucket = regions[region];
-    html += `<tr><td>${esc(region)}</td>`;
-    statuses.forEach(s => { html += `<td>${fmtNum(bucket[s] || 0)}</td>`; });
-    html += `<td><strong>${fmtNum(bucket.__total__)}</strong></td></tr>`;
-  });
-  html += `<tr class="total-row"><td>Grand Total</td>`;
-  statuses.forEach(s => { html += `<td>${fmtNum(grandTotal[s])}</td>`; });
-  html += `<td>${fmtNum(grandTotal.__total__)}</td></tr>`;
-  html += '</tbody></table>';
-  wrap.innerHTML = html;
+  wrap.innerHTML = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px;">
+    ${HEM_BREAKDOWN_COLS.map(([col, label]) => {
+      const counts = summary[col] || {};
+      const entries = Object.entries(counts);
+      const rowsHtml = entries.length
+        ? entries.map(([v, n]) => `<tr><td>${esc(v)}</td><td>${fmtNum(n)}</td></tr>`).join('')
+        : '<tr><td colspan="2" class="empty-note">Tidak ada data</td></tr>';
+      return `<div>
+        <div class="filter-title"><span>${esc(label)}</span></div>
+        <table class="pivot"><tbody>${rowsHtml}</tbody></table>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 function renderDetail(rows){
