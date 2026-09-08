@@ -133,10 +133,6 @@
 
 <div class="hem-shell">
 
-  <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
-    <a href="/hem/dashboard" class="btn" style="text-decoration:none; display:inline-block;">&#128202; Lihat Dashboard</a>
-  </div>
-
   <div class="mode-switch">
     <button id="tab-ihld" class="active" onclick="setMode('ihld')">
       Upload IHLD
@@ -160,9 +156,13 @@
         <div style="font-size:12.5px;margin-top:4px;">Format: .csv, .xlsx, .xls — export List of Project (LOP)/iHLD, baris pertama nama kolom</div>
         <input type="file" id="fileInputIhld" accept=".csv,.xlsx,.xls">
       </div>
+      <div class="template-row">
+        <button class="btn primary" id="saveIhldDirect" disabled onclick="saveRowsDirectlyIhld()">Simpan ke Database</button>
+      </div>
       <div id="ihldStatus" class="status-line"></div>
+      <div id="ihldDbStatus" class="status-line"></div>
     </div>
-    <div class="hint">Data IHLD yang berhasil dimuat di sini dipakai buat auto-isi sebagian kolom di tab "Input manual" berdasarkan <strong>iHLD LoP ID</strong> yang diketik/dipilih di sana — kolom lain di luar itu (progress, target, keuangan aktual, dll.) tetap perlu diisi manual karena memang belum ada di data IHLD. Tidak memengaruhi tab "Upload file".</div>
+    <div class="hint">Data IHLD yang berhasil dimuat di sini dipakai buat auto-isi sebagian kolom di tab "Input manual" berdasarkan <strong>iHLD LoP ID</strong> yang diketik/dipilih di sana. Klik "Simpan ke Database" buat menyimpan SELURUH kolom file ini ke tabel <code>ihld</code> (upsert berdasar iHLD LoP ID) — baris "Data Semesta" yang iHLD LoP ID-nya cocok dengan yang sudah tersimpan di sini akan otomatis tertaut & tersebar ke tabel area/material/progress/dokumen terkait saat diimpor lewat tab "Upload file".</div>
   </section>
 
   <!-- ================= UPLOAD PANEL ================= -->
@@ -824,6 +824,8 @@ function processIhldParsed(data, headers){
     statusEl.textContent = `Gagal: kolom "${IHLD_KEY_HEADER}" tidak ditemukan di file ini.`;
     ihldRows = []; ihldIndex = {};
     updateIhldSuggestions();
+    const saveBtn = document.getElementById('saveIhldDirect');
+    if(saveBtn) saveBtn.disabled = true;
     return;
   }
 
@@ -843,7 +845,45 @@ function processIhldParsed(data, headers){
     statusEl.className = 'status-line ok';
     statusEl.textContent = `${ihldRows.length} baris IHLD berhasil dimuat. Sekarang ketik/pilih iHLD LoP ID di tab "Input manual" buat auto-isi.`;
   }
+  const saveBtn = document.getElementById('saveIhldDirect');
+  if(saveBtn) saveBtn.disabled = ihldRows.length === 0;
 }
+
+async function saveRowsDirectlyIhld(){
+  const statusEl = document.getElementById('ihldDbStatus');
+  const btn = document.getElementById('saveIhldDirect');
+  if(!ihldRows.length || !statusEl) return;
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Menyimpan...'; }
+  statusEl.className = 'status-line';
+  statusEl.textContent = 'Menyimpan ke database...';
+
+  try{
+    const res = await fetch('/api/hem/insert-ihld', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: ihldRows })
+    });
+    const data = await res.json().catch(() => null);
+    if(!data || !data.ok){
+      statusEl.className = 'status-line err';
+      statusEl.textContent = 'Gagal: ' + (data && data.error ? data.error : `HTTP ${res.status}`);
+      return;
+    }
+    let msg = `\u2713 ${data.inserted} dari ${ihldRows.length} baris berhasil disimpan ke tabel ihld.`;
+    if(data.errors && data.errors.length){
+      msg += ` ${data.errors.length} baris gagal -- ${data.errors.join('; ')}`;
+    }
+    statusEl.className = (data.errors && data.errors.length && data.inserted === 0) ? 'status-line err' : 'status-line ok';
+    statusEl.textContent = msg;
+  }catch(err){
+    statusEl.className = 'status-line err';
+    statusEl.textContent = 'Gagal terhubung ke server: ' + err.message;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Simpan ke Database'; }
+  }
+}
+
 
 function updateIhldSuggestions(){
   const dl = document.getElementById('ihldSuggestions');

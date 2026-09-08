@@ -13,7 +13,6 @@ WAJIB diupdate juga supaya tetap sinkron -- tidak ada mekanisme
 otomatis yang menjaga keduanya tetap sama.
 """
 import datetime
-import decimal
 import re
 
 import psycopg2
@@ -65,202 +64,6 @@ HEM_FIELDS = [
 ]
 HEM_FIELD_TYPE = dict(HEM_FIELDS)
 HEM_FIELD_KEYS = [k for k, _ in HEM_FIELDS]
-
-# Label tampilan per kolom -- DISALIN PERSIS dari LABEL_BY_KEY (COLUMN_GROUPS)
-# di templates/hem.html, sama alasannya dengan HEM_FIELDS di atas: dipakai
-# buat header export Excel & label kolom Detail di dashboard (hem_dashboard.html)
-# supaya labelnya konsisten dengan form input, BUKAN dijaga otomatis --
-# kalau salah satu sisi berubah, sisi yang lain wajib diupdate manual juga.
-HEM_FIELD_LABELS = {
-    "no": "No", "tahun": "Tahun", "no_order": "No Order",
-    "ihld_lop_id": "iHLD LoP ID", "nama_proyek": "Nama Proyek",
-    "status_ihld": "Status iHLD", "tipe_desain": "Tipe Desain", "prioritas": "Prioritas",
-
-    "status_wo_tif": "Status WO (TIF)", "new_region_ta": "New Region TA",
-    "region_tif": "Region TIF", "reg_lama": "Reg Lama", "witel_lama": "Witel Lama",
-    "branch": "Branch", "sto": "STO", "sc": "SC", "datek": "Datek",
-    "tipe_deploy_actual": "Tipe Deploy Actual",
-
-    "layanan": "Layanan", "nde_wo": "NDE WO", "tanggal_nde_wo": "Tanggal NDE/WO",
-    "nde_permohonan_ut": "NDE Permohonan UT",
-
-    "panjang_kabel_meter": "Panjang Kabel (meter)", "id_pr_material": "ID PR Material",
-    "pid": "PID", "sap": "SAP", "pr": "PR", "po": "PO",
-
-    "progress_w01": "Progress W-01", "progress_w02": "Progress W-02",
-    "progress_jt_last_update": "Progress JT Last Update", "progress": "Progress",
-    "keterangan_detail": "Keterangan / Detail", "umur_order": "Umur Order",
-    "grouping_umur_order": "Grouping Umur Order", "issue": "Issue",
-
-    "target_fi": "Target FI", "tanggal_fi": "Tanggal FI", "tgl_go_live": "Tgl Go Live",
-    "bulan_golive": "Bulan Golive", "tgl_ut": "Tgl UT",
-    "target_weekly_bast": "Target Weekly BAST",
-
-    "status_drop": "Status Drop", "status_ut": "Status UT", "status_rekon": "Status Rekon",
-    "bast": "BAST", "status_ba_drop": "Status BA Drop", "tanggal_ba_drop": "Tanggal BA Drop",
-    "ket_ba_drop": "Ket BA Drop", "ba_redesign": "BA Redesign", "lact": "LACT", "baut": "BAUT",
-
-    "total_boq_ihld": "Total BOQ IHLD", "total_boq_wo": "Total BOQ WO",
-    "total_drm": "Total DRM", "total_boq_actual_ut_rekon": "Total BOQ Actual UT - Rekon",
-    "material_ut": "Material UT", "jasa_ut": "Jasa UT", "total_ut": "Total UT",
-    "nilai_perizinan": "Nilai Perizinan", "kenaikan": "Kenaikan",
-    "selisih_nilai_wo_ihld": "Selisih Nilai WO & IHLD",
-    "persen_perubahan_nilai": "% Perub Nilai",
-
-    "nama_mitra": "Nama Mitra", "jumlah_manpower": "Jumlah Manpower",
-    "no_wo_smile": "No WO Smile", "nama_smile": "Nama Smile",
-    "persen_smile": "% Smile", "status_smile": "Status Smile",
-
-    "sp": "SP", "nomor_sp": "Nomor SP",
-}
-
-# Kolom yang dipakai sebagai filter/rekap di dashboard -- daftar nilai
-# uniknya diambil langsung dari data yang ada (get_filter_options), BUKAN
-# daftar tetap, supaya otomatis ikut kalau ada nilai baru masuk lewat
-# form/upload di hem.html.
-DASHBOARD_FILTER_COLS = ["new_region_ta", "branch", "status_ihld", "prioritas"]
-
-
-def _row_value_to_json_safe(v):
-    """Baris hasil query psycopg2 (RealDictCursor) bisa berisi
-    decimal.Decimal (kolom NUMERIC) atau datetime.date/datetime (kolom
-    DATE/TIMESTAMP) -- keduanya TIDAK bisa langsung di-jsonify Flask.
-    Konversi ke float/ISO-string di sini, sekali, dipakai semua fungsi
-    baca di bawah."""
-    if v is None:
-        return None
-    if isinstance(v, decimal.Decimal):
-        return float(v)
-    if isinstance(v, (datetime.datetime, datetime.date)):
-        return v.isoformat()
-    return v
-
-
-def get_dashboard_rows(filters: dict = None):
-    """Baca baris dari data_semesta buat dashboard. `filters` dict
-    opsional {col: [nilai, ...]} -- HANYA kolom di DASHBOARD_FILTER_COLS
-    yang diterima (kolom lain diabaikan diam-diam, jaga-jaga input dari
-    luar). Filter diterapkan di level SQL (WHERE ... IN (...)) supaya
-    tetap ringan walau baris di tabel banyak, bukan difilter belakangan
-    di Python. Return: list of dict {"id": ..., **HEM_FIELD_KEYS}, semua
-    value sudah JSON-safe (lihat _row_value_to_json_safe)."""
-    conn = get_connection()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cols_sql = ", ".join(f'"{k}"' for k in HEM_FIELD_KEYS)
-            where_clauses = []
-            params = []
-            if filters:
-                for col in DASHBOARD_FILTER_COLS:
-                    values = [v for v in (filters.get(col) or []) if v]
-                    if values:
-                        placeholders = ", ".join(["%s"] * len(values))
-                        where_clauses.append(f'"{col}" IN ({placeholders})')
-                        params.extend(values)
-            where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-            cur.execute(f'SELECT id, {cols_sql} FROM {TABLE_NAME} {where_sql} ORDER BY id', params)
-            raw_rows = cur.fetchall()
-    finally:
-        conn.close()
-
-    return [
-        {k: _row_value_to_json_safe(v) for k, v in dict(r).items()}
-        for r in raw_rows
-    ]
-
-
-def get_filter_options():
-    """Daftar nilai unik utk dropdown/checkbox filter dashboard (New
-    Region TA, Branch, Status iHLD, Prioritas), diambil langsung dari isi
-    tabel saat ini -- bukan daftar tetap yang bisa basi kalau ada nilai
-    baru masuk lewat form manual/upload di hem.html."""
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            options = {}
-            for col in DASHBOARD_FILTER_COLS:
-                cur.execute(
-                    f'SELECT DISTINCT "{col}" FROM {TABLE_NAME} '
-                    f'WHERE "{col}" IS NOT NULL AND TRIM("{col}") <> \'\' '
-                    f'ORDER BY 1'
-                )
-                options[col] = [r[0] for r in cur.fetchall()]
-    finally:
-        conn.close()
-    return options
-
-
-def _to_num(v):
-    try:
-        return float(v) if v not in (None, "") else 0.0
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def get_dashboard_summary(rows: list):
-    """Ringkasan KPI + rekap "New Region TA" x "Status iHLD" (baris x
-    kolom, kayak tabel Rekap Regional/Branch di dashboard PT3), dihitung
-    di Python dari `rows` yang SUDAH diambil get_dashboard_rows() (biar
-    tidak query ulang -- 1x baca dipakai buat rows mentah, summary, DAN
-    export sekaligus)."""
-    total = len(rows)
-    total_nilai_wo = sum(_to_num(r.get("total_boq_wo")) for r in rows)
-    total_nilai_ihld = sum(_to_num(r.get("total_boq_ihld")) for r in rows)
-    total_ut = sum(_to_num(r.get("total_ut")) for r in rows)
-    golive_count = sum(1 for r in rows if (r.get("tgl_go_live") or "").strip())
-    drop_count = sum(1 for r in rows if (r.get("status_drop") or "").strip())
-
-    regions = {}       # {region: {"__total__": n, status1: n, status2: n, ...}}
-    statuses_seen = []  # urutan kemunculan pertama, dipakai jadi kolom tabel rekap
-    for r in rows:
-        region = (r.get("new_region_ta") or "").strip() or "(Tanpa Region)"
-        status = (r.get("status_ihld") or "").strip() or "(Tanpa Status)"
-        if status not in statuses_seen:
-            statuses_seen.append(status)
-        bucket = regions.setdefault(region, {"__total__": 0})
-        bucket[status] = bucket.get(status, 0) + 1
-        bucket["__total__"] += 1
-
-    return {
-        "total_order": total,
-        "total_nilai_wo": total_nilai_wo,
-        "total_nilai_ihld": total_nilai_ihld,
-        "total_ut": total_ut,
-        "golive_count": golive_count,
-        "drop_count": drop_count,
-        "statuses": statuses_seen,
-        "regions": regions,
-    }
-
-
-def build_export_workbook(filters: dict = None):
-    """Export SEMUA kolom data_semesta (sesuai filter dashboard yang lagi
-    aktif, sama seperti Export Data A-AP di dashboard PT3) sebagai
-    .xlsx -- 1 baris = 1 record, header pakai HEM_FIELD_LABELS supaya
-    lebih enak dibaca daripada nama kolom mentah (snake_case)."""
-    import io
-    from openpyxl import Workbook
-    from openpyxl.utils import get_column_letter
-
-    rows = get_dashboard_rows(filters)
-    headers = ["ID"] + [HEM_FIELD_LABELS.get(k, k) for k in HEM_FIELD_KEYS]
-
-    wb = Workbook()
-    sheet = wb.active
-    sheet.title = "Data Semesta"
-    sheet.append(headers)
-    sheet.freeze_panes = "A2"
-
-    for r in rows:
-        sheet.append([r.get("id", "")] + [r.get(k, "") if r.get(k) is not None else "" for k in HEM_FIELD_KEYS])
-
-    for i in range(1, len(headers) + 1):
-        sheet.column_dimensions[get_column_letter(i)].width = 18
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return buf
 
 
 def get_connection():
@@ -463,45 +266,338 @@ def insert_rows(rows):
         return 0, ["Tidak ada kolom terisi di baris manapun."]
 
     values = []
+    row_dicts = []
     errors = []
     for i, r in enumerate(rows):
         try:
             row_values = []
+            row_dict = {}
             for k in used_keys:
                 try:
-                    row_values.append(_cast_value(HEM_FIELD_TYPE[k], r.get(k), key=k))
+                    v = _cast_value(HEM_FIELD_TYPE[k], r.get(k), key=k)
                 except ValueError as e:
                     raise ValueError(f"kolom '{k}': {e}") from None
+                row_values.append(v)
+                row_dict[k] = v
             values.append(row_values)
+            row_dicts.append(row_dict)
         except ValueError as e:
             errors.append(f"Baris {i + 1}: {e}")
-
 
     if not values:
         return 0, errors
 
     cols_sql = ", ".join(f'"{k}"' for k in used_keys)
-    query = f'INSERT INTO {TABLE_NAME} ({cols_sql}) VALUES %s'
+    query = f'INSERT INTO {TABLE_NAME} ({cols_sql}) VALUES %s RETURNING id_semesta, ihld_lop_id'
 
     conn = get_connection()
     try:
         with conn:
             with conn.cursor() as cur:
-                psycopg2.extras.execute_values(cur, query, values)
+                returned = psycopg2.extras.execute_values(cur, query, values, fetch=True)
+                # returned dijamin urutannya SAMA PERSIS dengan `values`/`row_dicts`
+                # (RETURNING pada satu statement INSERT...VALUES mengikuti urutan
+                # input; execute_values(fetch=True) menyambung hasil tiap halaman
+                # sesuai urutan juga).
+                for idx, ((id_semesta, ihld_lop_id), row_dict) in enumerate(zip(returned, row_dicts)):
+                    if not ihld_lop_id:
+                        continue  # baris ini tidak ada ihld_lop_id -- tidak bisa ditautkan
+                    savepoint = f"sp_fanout_{idx}"
+                    cur.execute(f"SAVEPOINT {savepoint}")
+                    try:
+                        cur.execute("SELECT 1 FROM ihld WHERE id_ihld = %s", (ihld_lop_id,))
+                        if cur.fetchone() is None:
+                            # File IHLD/LOP utk project ini belum pernah diimpor --
+                            # biarkan baris data_semesta ini tidak tertaut dulu
+                            # (keputusan pengguna), jangan bikin baris ihld/anak.
+                            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+                            continue
+                        cur.execute(
+                            "UPDATE ihld SET id_semesta = %s WHERE id_ihld = %s",
+                            (id_semesta, ihld_lop_id),
+                        )
+                        _fanout_children(cur, ihld_lop_id, row_dict)
+                        cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+                    except Exception as e:
+                        # Gagal menaut/menyebar utk SATU baris ini saja tidak boleh
+                        # membatalkan seluruh batch insert data_semesta yang sudah
+                        # berhasil -- rollback cuma sampai savepoint ini, lanjut ke
+                        # baris berikutnya.
+                        cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                        errors.append(
+                            f"ihld_lop_id={ihld_lop_id!r}: baris data_semesta berhasil "
+                            f"disimpan, TAPI gagal menautkan/menyebar ke ihld -- "
+                            f"{type(e).__name__}: {e}"
+                        )
     finally:
         conn.close()
 
     return len(values), errors
 
 
+# Pemetaan kolom data_semesta -> kolom di tiap tabel anak "ihld". Dipakai
+# oleh _fanout_children() setelah baris data_semesta berhasil diinsert
+# DAN ihld_lop_id-nya sudah cocok dengan baris ihld yang ada (lihat
+# insert_rows() di atas). Format: {kolom_tabel_anak: kolom_data_semesta}.
+# Kolom tabel anak yang TIDAK ada di sini (mis. data_area.tanggal_create_ihld,
+# data_progress.aging_wo_to_gl) memang tidak tersedia dari file Data
+# Semesta -- tetap NULL sampai ada sumber data lain utk itu.
+_DATA_AREA_MAP = {
+    "nomor": "no", "nama_proyek": "nama_proyek", "new_region_ta": "new_region_ta",
+    "status_wo_tif": "status_wo_tif", "region_tif": "region_tif", "reg_lama": "reg_lama",
+    "layanan": "layanan", "nde_wo": "nde_wo", "tanggal_nde_wo": "tanggal_nde_wo",
+    "no_order": "no_order", "tipe_deploy_actual": "tipe_deploy_actual", "sc": "sc",
+    "datek": "datek", "total_boq_ihld": "total_boq_ihld", "prioritas": "prioritas",
+    "umur_order": "umur_order", "grouping_umur_order": "grouping_umur_order",
+    "nde_permohonan_ut": "nde_permohonan_ut",
+}
+_DATA_MATERIAL_MAP = {
+    "panjang_kabel_meter": "panjang_kabel_meter", "id_pr_material": "id_pr_material",
+    "id_pid": "pid", "id_sap": "sap", "id_pr": "pr", "id_po": "po",
+}
+_DATA_PROGRESS_MAP = {
+    "nama_mitra": "nama_mitra", "jumlah_manpower": "jumlah_manpower",
+    "total_drm": "total_drm", "progress": "progress",
+    "keterangan_detail": "keterangan_detail", "target_fi": "target_fi",
+    "status_drop": "status_drop", "tanggal_fi": "tanggal_fi",
+    "tanggal_go_live": "tgl_go_live", "tanggal_ut": "tgl_ut", "issue": "issue",
+}
+_PROSES_DOKUMEN_MAP = {
+    "total_boq_wo": "total_boq_wo", "total_boq_actual_ut": "total_boq_actual_ut_rekon",
+    "status_ut": "status_ut", "material_ut": "material_ut", "jasa_ut": "jasa_ut",
+    "total_ut": "total_ut", "nilai_perizinan": "nilai_perizinan", "kenaikan": "kenaikan",
+    "status_lact": "lact", "ba_redesign": "ba_redesign", "status_baut": "baut",
+    "sp": "sp", "nomor_sp": "nomor_sp", "no_wo_smile": "no_wo_smile",
+    "nama_smile": "nama_smile", "persen_smile": "persen_smile", "status_smile": "status_smile",
+    "status_rekon": "status_rekon", "status_bast": "bast",
+    "target_weekly_bast": "target_weekly_bast",
+}
+_DOKUMEN_FILE_MAP = {
+    "status_ba_drop": "status_ba_drop", "tanggal_ba_drop": "tanggal_ba_drop",
+    "lact": "lact", "baut": "baut", "ba_redesign": "ba_redesign",
+}
+
+
+def _upsert_child(cur, table, pk_col, pk_val, fk_col, fk_val, col_map, source_row):
+    """INSERT ... ON CONFLICT DO UPDATE satu baris ke tabel anak `table`.
+    pk_val dibuat deterministik dari id_ihld (lihat _fanout_children) --
+    supaya import ulang project yang sama meng-UPDATE baris anak yang
+    sama, bukan menumpuk baris baru (konsisten dgn kebijakan upsert
+    ihld itu sendiri)."""
+    cols = [pk_col, fk_col] + list(col_map.keys())
+    vals = [pk_val, fk_val] + [source_row.get(src_key) for src_key in col_map.values()]
+    cols_sql = ", ".join(f'"{c}"' for c in cols)
+    placeholders = ", ".join(["%s"] * len(vals))
+    update_sql = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in col_map.keys())
+    query = (
+        f'INSERT INTO "{table}" ({cols_sql}) VALUES ({placeholders}) '
+        f'ON CONFLICT ("{pk_col}") DO UPDATE SET {update_sql}'
+    )
+    cur.execute(query, vals)
+
+
+def _fanout_children(cur, id_ihld, source_row):
+    """Sebar `source_row` (dict kolom data_semesta -> nilai, dari SATU
+    baris yang baru diinsert) ke 5 tabel anak ihld. ID tiap anak dibuat
+    deterministik ("<id_ihld>-AREA" dst) supaya 1 project = 1 baris per
+    tabel anak yang selalu ter-update saat diimpor ulang."""
+    _upsert_child(cur, "data_area", "id_data_area", f"{id_ihld}-AREA", "id_ihld", id_ihld, _DATA_AREA_MAP, source_row)
+    _upsert_child(cur, "data_material", "id_material", f"{id_ihld}-MTRL", "id_ihld", id_ihld, _DATA_MATERIAL_MAP, source_row)
+    _upsert_child(cur, "data_progress", "id_progress", f"{id_ihld}-PRG", "id_ihld", id_ihld, _DATA_PROGRESS_MAP, source_row)
+    _upsert_child(cur, "proses_dokumen", "id_proses_dokumen", f"{id_ihld}-DOK", "id_ihld", id_ihld, _PROSES_DOKUMEN_MAP, source_row)
+    _upsert_child(cur, "dokumen_file", "id_file", f"{id_ihld}-FILE", "id_ihld", id_ihld, _DOKUMEN_FILE_MAP, source_row)
+
+
 def build_create_table_sql():
     """DDL bantuan kalau tabel data_semesta BELUM ada di Postgres-nya --
     ditampilkan lewat /debug/hem-schema buat di-copy-paste manual ke tab
     Query Railway. Sengaja TIDAK dieksekusi otomatis oleh aplikasi (biar
-    perubahan schema tetap sepenuhnya keputusan/kontrol Anda)."""
+    perubahan schema tetap sepenuhnya keputusan/kontrol Anda).
+
+    CATATAN: skema produksi sebenarnya (tabel data_semesta + ihld + anak2-
+    nya) didefinisikan lengkap di file terpisah schema_ihld.sql, TERMASUK
+    kolom id_semesta sbg PK, relasi FK ke ihld, trigger updated_at, dst --
+    yang tidak semuanya direplikasi di fungsi generik ini. DDL di bawah
+    HANYA fallback minimal kalau tabelnya belum ada sama sekali; kalau
+    schema_ihld.sql sudah pernah dijalankan, JANGAN pakai DDL di bawah --
+    pakai schema_ihld.sql sebagai sumber kebenaran skemanya."""
     type_sql = {
         "number": "NUMERIC", "text": "TEXT", "textarea": "TEXT",
         "date": "DATE", "datetime": "TIMESTAMP",
     }
     cols = ",\n  ".join(f'"{k}" {type_sql[t]}' for k, t in HEM_FIELDS)
-    return f'CREATE TABLE IF NOT EXISTS {TABLE_NAME} (\n  id SERIAL PRIMARY KEY,\n  {cols}\n);'
+    return f'CREATE TABLE IF NOT EXISTS {TABLE_NAME} (\n  id_semesta BIGSERIAL PRIMARY KEY,\n  {cols}\n);'
+
+
+# =============================================================================
+# Import file "IHLD/LOP" (sumber terpisah dari "Data Semesta" di atas) --
+# ngisi tabel `ihld`, dipakai oleh endpoint /api/hem/insert-ihld di app.py.
+#
+# BEDA dengan HEM_FIELDS: key pertama di tiap tuple adalah HEADER ASLI di
+# file export LOP (mis. "iHLD LoP ID"), BUKAN nama kolom Postgres -- ini
+# dicocokkan langsung dengan header yang dikirim frontend (hem.html kirim
+# ihldRows apa adanya, key-nya = header asli file, SAMA seperti dipakai
+# IHLD_FIELD_MAP di sana buat auto-isi form manual). Kalau file sumbernya
+# ganti nama kolom, update di sini DAN di IHLD_FIELD_MAP/hem.html.
+IHLD_TABLE_NAME = "ihld"
+
+IHLD_FIELDS = [
+    ("Status Order", "status_order", "text"),
+    ("Tipe Desain", "tipe_desain", "text"),
+    ("Nama Proyek", "nama_proyek", "text"),
+    ("iHLD LoP ID", "ihld_lop_id", "text"),  # juga dipakai sbg id_ihld (PK)
+    ("Smart Planning Polygon ID", "smart_planning_polygon", "text"),
+    ("eProposal LoP ID", "eproposal_lop_id", "text"),
+    ("eProposal LoP Parent ID", "eproposal_lop_parent_id", "text"),
+    ("Kode Program", "kode_program", "text"),
+    ("Revenue Plan", "revenue_plan", "text"),
+    ("Nama CFU", "nama_cfu", "text"),
+    ("Kategori", "kategori", "text"),
+    ("Jenis Program", "jenis_program", "text"),
+    ("Batch Program", "batch_program", "text"),
+    ("Regional", "regional", "text"),
+    ("Witel", "witel", "text"),
+    ("Witel Lama", "witel_lama", "text"),
+    ("Datel", "datel", "text"),
+    ("STO", "sto", "text"),
+    ("WOK", "wok", "text"),
+    ("Telkomsel Area", "telkomsel_area", "text"),
+    ("Telkomsel Regional", "telkomsel_regional", "text"),
+    ("Telkomsel Branch", "telkomsel_branch", "text"),
+    ("Telkomsel Cluster", "telkomsel_cluster", "text"),
+    ("Durasi Desain", "durasi_desain", "duration"),
+    ("Total BOQ", "total_boq", "number"),
+    ("Capex per Port", "capex_per_port", "number"),
+    ("Tahun Program", "tahun_program", "number"),
+    ("ODP Plan", "odp_plan", "number"),
+    ("Odp Real", "odp_real", "number"),
+    ("Alpro MTEL", "alpro_mtel", "text"),
+    ("Jenis Kebutuhan OLT", "jenis_kebutuhan_olt", "text"),
+    ("Jenis Kebutuhan OTN", "jenis_kebutuhan_otn", "text"),
+    ("Site BTS CSF", "site_bts_csf", "text"),
+    ("Total Port", "total_port", "number"),
+    ("No PR", "no_pr", "text"),
+    ("No PO", "no_po", "text"),
+    ("Nilai PO", "nilai_po", "number"),
+    ("No GR", "no_gr", "text"),
+    ("Nilai GR", "nilai_gr", "number"),
+    ("No IR", "no_ir", "text"),
+    ("Nilai IR", "nilai_ir", "number"),
+    ("Status eProposal", "status_eproposal", "text"),
+    ("Status Tomps", "status_tomps", "text"),
+    ("Status Tomps - Last Activity", "status_tomps_last_activity", "datetime"),
+    ("Status SAP", "status_sap", "text"),
+    ("Status Proyek", "status_proyek", "text"),
+    ("Estimasi Go Live", "estimasi_go_live", "date"),
+    ("Kategori Mitra", "kategori_mitra", "text"),
+    ("Nama Mitra", "nama_mitra", "text"),
+    ("ODP Go Live", "odp_go_live", "date"),
+    ("Star Click ID", "star_click_id", "text"),
+    ("Dibuat Oleh", "dibuat_oleh", "text"),
+    ("Username / NIK Pembuat", "username_nik_pembuat", "text"),
+    ("Disubmit Pada", "disubmit_pada", "datetime"),
+    ("Dibuat", "dibuat", "datetime"),
+    ("Diperbarui Pada", "diperbarui_pada", "datetime"),
+]
+
+# File export LOP pakai "-" sebagai penanda "kosong" di SEMUA tipe kolom
+# (bukan cuma angka seperti di file Data Semesta) -- lihat contoh file
+# "LOP--REGIONAL-2-...csv" yang diperiksa manual.
+_IHLD_NULL_TOKEN = "-"
+
+_DURATION_RE = re.compile(r'(-?\d+(?:[.,]\d+)?)')
+
+
+def _parse_duration_number(val):
+    """Kolom 'Durasi Desain' formatnya '<angka> <satuan>' (mis. '0
+    Detik'). SENGAJA cuma angkanya yang diambil -- satuannya (Detik/
+    Jam/Hari, dll.) tidak dikonversi/diseragamkan karena belum jelas
+    satuan apa saja yang muncul di seluruh data, jadi disimpan apa
+    adanya sebagai angka mentah sesuai satuan aslinya di baris itu."""
+    m = _DURATION_RE.search(val)
+    if not m:
+        raise ValueError(f"'{val}' tidak mengandung angka durasi yang valid")
+    f = float(m.group(1).replace(",", "."))
+    return int(f) if f.is_integer() else f
+
+
+def _cast_ihld_value(field_type, raw):
+    if raw is None:
+        return None
+    val = str(raw).strip()
+    if val == "" or val == _IHLD_NULL_TOKEN:
+        return None
+    if field_type == "number":
+        return _parse_number(val)
+    if field_type == "duration":
+        return _parse_duration_number(val)
+    if field_type == "date":
+        return _parse_date(val)
+    if field_type == "datetime":
+        return _parse_datetime(val)
+    return val
+
+
+def insert_ihld_rows(rows):
+    """rows: list of dict {header_asli_file: value} (persis `ihldRows` di
+    hem.html, sebelum dipetakan IHLD_FIELD_MAP). Upsert berdasarkan
+    id_ihld = nilai kolom "iHLD LoP ID" -- import ulang project yang sama
+    akan MENIMPA (UPDATE) baris ihld yang sudah ada, bukan menumpuk baris
+    baru (keputusan pengguna).
+
+    Baris tanpa "iHLD LoP ID" terisi dilewati sebagai error (tidak bisa
+    upsert tanpa kunci utama). Baris lain yang gagal di-cast dilewati per
+    baris, tidak membatalkan baris lainnya."""
+    if not rows:
+        return 0, ["Tidak ada baris data yang dikirim."]
+
+    used = [
+        (header, col, typ) for header, col, typ in IHLD_FIELDS
+        if any(str(r.get(header, "") or "").strip() not in ("", _IHLD_NULL_TOKEN) for r in rows)
+    ]
+    if not used:
+        return 0, ["Tidak ada kolom terisi di baris manapun."]
+
+    values = []
+    errors = []
+    for i, r in enumerate(rows):
+        try:
+            row_values = {}
+            for header, col, typ in used:
+                try:
+                    row_values[col] = _cast_ihld_value(typ, r.get(header))
+                except ValueError as e:
+                    raise ValueError(f"kolom '{header}': {e}") from None
+            id_ihld = row_values.get("ihld_lop_id")
+            if not id_ihld:
+                raise ValueError("'iHLD LoP ID' kosong -- wajib diisi (dipakai sebagai kunci utama)")
+            values.append((str(id_ihld), row_values))
+        except ValueError as e:
+            errors.append(f"Baris {i + 1}: {e}")
+
+    if not values:
+        return 0, errors
+
+    db_cols = [col for _, col, _ in used]
+    all_cols = ["id_ihld"] + db_cols
+    rows_for_insert = [
+        [id_ihld] + [row_values.get(c) for c in db_cols]
+        for id_ihld, row_values in values
+    ]
+
+    cols_sql = ", ".join(f'"{c}"' for c in all_cols)
+    update_sql = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in db_cols)
+    query = (
+        f'INSERT INTO {IHLD_TABLE_NAME} ({cols_sql}) VALUES %s '
+        f'ON CONFLICT (id_ihld) DO UPDATE SET {update_sql}'
+    )
+
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(cur, query, rows_for_insert)
+    finally:
+        conn.close()
+
+    return len(values), errors

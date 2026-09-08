@@ -483,6 +483,38 @@ def api_hem_insert():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/hem/insert-ihld", methods=["POST"])
+def api_hem_insert_ihld():
+    """Dipanggil tombol "Simpan ke Database" di panel "Upload IHLD"
+    hem.html (lihat saveRowsDirectlyIhld()) -- body JSON: {"rows": [...]},
+    key tiap dict = HEADER ASLI file LOP/IHLD (mis. "iHLD LoP ID"), bukan
+    nama kolom Postgres (lihat IHLD_FIELDS di hem_db_service.py).
+
+    Upsert ke tabel ihld berdasar id_ihld (= "iHLD LoP ID"). Setelah ini,
+    baris data_semesta yang ihld_lop_id-nya cocok (lewat /api/hem/insert
+    di atas) akan otomatis tertaut & tersebar ke data_area/data_material/
+    data_progress/proses_dokumen/dokumen_file -- lihat insert_rows() di
+    hem_db_service.py."""
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get("rows") or []
+    try:
+        inserted, errors = hem_db_service.insert_ihld_rows(rows)
+        return jsonify({"ok": True, "inserted": inserted, "errors": errors})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/debug/hem-schema")
+def debug_hem_schema():
+    """Tampilkan DDL 'CREATE TABLE IF NOT EXISTS data_semesta (...)' buat
+    di-copy-paste manual ke tab Query Railway KALAU tabelnya belum ada --
+    TIDAK dieksekusi otomatis oleh endpoint ini. Skema produksi
+    sebenarnya (data_semesta + ihld + anak2-nya, FK, trigger) ada di
+    schema_ihld.sql terpisah -- lihat catatan di
+    hem_db_service.build_create_table_sql()."""
+    return Response(hem_db_service.build_create_table_sql(), mimetype="text/plain")
+
+
 @app.route("/hem/dashboard")
 def hem_dashboard_page():
     """Dashboard "Data Semesta" (data_semesta, Postgres) -- lihat

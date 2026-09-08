@@ -2,7 +2,7 @@
 {% block active_category %}{{ 'mbb' if request.args.get('view','mbb-all').startswith('mbb') else 'olo' }}{% endblock %}
 {% block menu_mbb %}{{ 'active' if request.args.get('view','mbb-all').startswith('mbb') else '' }}{% endblock %}
 {% block menu_olo %}{{ 'active' if request.args.get('view','mbb-all').startswith('olo') else '' }}{% endblock %}
-{% block page_title %}{{ 'MBB Monitoring' if request.args.get('view','mbb-all').startswith('mbb') else 'OLO Monitoring' }}{% endblock %}
+{% block page_title %}<span style="font-size:1.4em; font-weight:800;">{{ 'Dashboard Monitoring Project MBB' if request.args.get('view','mbb-all').startswith('mbb') else 'Dashboard Monitoring Project OLO' }}</span>{% endblock %}
 {% block page_sub %}Data langsung dari Google Sheets (Node B &amp; OLO) &mdash; <a href="https://docs.google.com/spreadsheets/d/1h1NBs7k4rCibwFvNVu9t0rIlq-TuF7sh6YZvxhu9VqQ" target="_blank" rel="noopener">buka spreadsheet &#8599;</a>{% endblock %}
 
 {% block content %}
@@ -46,6 +46,9 @@
   .mbb-notes-list .item{padding:7px 0; border-bottom:1px dashed #e2e8f0;}
   .mbb-notes-list .item:last-child{border-bottom:none;}
   .mbb-notes-list .item .site{font-weight:700; color:var(--text);}
+  .mbb-notes-pager{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; padding-top:8px; border-top:1px solid #e2e8f0;}
+  .mbb-notes-pager .hint{font-size:0.78rem; white-space:nowrap;}
+  .mbb-notes-pager button[disabled]{opacity:0.4; cursor:not-allowed;}
   /* Resume: sama style-nya kayak Notes, tapi TANPA scroll (tampil sampai
      bawah semua) -- tingginya cuma ikut nyamain Tree/Target lewat
      align-items:stretch di .mbb-dash-top di atas. */
@@ -70,11 +73,6 @@
      horizontal yang tidak perlu. */
   #mbb-pivot-wrap table.pivot th{white-space:normal; word-break:break-word; max-width:130px; vertical-align:bottom; line-height:1.3;}
 </style>
-
-<div class="section-title">
-  <span id="view-title">MBB &amp; OLO</span>
-  <span class="hint" id="view-sub"></span>
-</div>
 
 <div id="mbb-dashboard-wrap"></div>
 
@@ -253,6 +251,11 @@ const MBB_TREE_VIEW_LABEL = {
 
 let mbbSelectedBucket = null; // key bucket dashboard yang lagi diklik (null = semua)
 let mbbCurveChart = null;
+// Halaman aktif buat daftar "SITEID" (Notes) di bawah Tree Diagram --
+// 15 baris per halaman, direset ke 0 tiap kali kategori/filter aktif
+// berubah (lihat mbbSelectBucket & setMbbActiveFilter).
+let mbbNotesPage = 0;
+const MBB_NOTES_PAGE_SIZE = 15;
 // Toggle "Aktif" / "Tidak Aktif" -- filter Status Pekerjaan (kolom U) =
 // "0.3 Drop MoM". "aktif" = sembunyikan baris itu, "tidak-aktif" = cuma
 // tampilkan baris itu. Default "aktif".
@@ -619,15 +622,30 @@ function renderMbbDashboard(rowsForView, view){
     });
   // Urutan tampil per baris: nomor urut | SITE ID | Sub Sistem (kolom D)
   // | Tipe Order (kolom C) | Status Tsel (kolom Q) — lalu keterangan
-  // (Note Progress).
-  const notesHtml = notesRows.length ? notesRows.slice(0,15).map((r, i) => {
+  // (Note Progress). Ditampilkan 15 baris per halaman (MBB_NOTES_PAGE_SIZE)
+  // -- bukan cuma 15 baris pertama lalu berhenti seperti sebelumnya --
+  // dengan tombol Next/Prev di bawah list supaya sisanya tetap bisa
+  // dilihat, TANPA memperbesar ukuran list (mbb-notes-list tetap
+  // max-height 230px, sama seperti sebelumnya).
+  const notesTotalPages = Math.max(1, Math.ceil(notesRows.length / MBB_NOTES_PAGE_SIZE));
+  if (mbbNotesPage >= notesTotalPages) mbbNotesPage = notesTotalPages - 1; // clamp kalau data berkurang
+  if (mbbNotesPage < 0) mbbNotesPage = 0;
+  const notesPageStart = mbbNotesPage * MBB_NOTES_PAGE_SIZE;
+  const notesPageRows = notesRows.slice(notesPageStart, notesPageStart + MBB_NOTES_PAGE_SIZE);
+  const notesHtml = notesPageRows.length ? notesPageRows.map((r, i) => {
     const subSistem = getCol(r, "Sub Sistem") || "–";
     const tipeOrder = getCol(r, "Tipe Order") || "–";
     const statusTsel = getCol(r, "Status Tsel") || "–";
     return `
-    <div class="item"><span class="hint">${i + 1}.</span> <span class="site">${escapeHtml(getCol(r,"SITE ID"))}</span> <span class="hint">${escapeHtml(subSistem)}</span> <span class="hint">${escapeHtml(tipeOrder)}</span> <span class="hint">${escapeHtml(statusTsel)}</span> — ${escapeHtml(firstParagraph(getCol(r,"Note Progress")))}</div>
+    <div class="item"><span class="hint">${notesPageStart + i + 1}.</span> <span class="site">${escapeHtml(getCol(r,"SITE ID"))}</span> <span class="hint">${escapeHtml(subSistem)}</span> <span class="hint">${escapeHtml(tipeOrder)}</span> <span class="hint">${escapeHtml(statusTsel)}</span> — ${escapeHtml(firstParagraph(getCol(r,"Note Progress")))}</div>
   `;
   }).join("") : `<div class="empty-state" style="padding:16px 0;">Klik salah satu kategori di kiri untuk lihat catatan (Note Progress)-nya di sini.</div>`;
+  const notesPagerHtml = notesRows.length > MBB_NOTES_PAGE_SIZE ? `
+    <div class="mbb-notes-pager">
+      <button type="button" class="btn-sm" onclick="mbbNotesGoPage(${mbbNotesPage - 1})" ${mbbNotesPage <= 0 ? "disabled" : ""}>&#8592; Sebelumnya</button>
+      <span class="hint">Halaman ${mbbNotesPage + 1} / ${notesTotalPages} (${notesRows.length} baris)</span>
+      <button type="button" class="btn-sm" onclick="mbbNotesGoPage(${mbbNotesPage + 1})" ${mbbNotesPage >= notesTotalPages - 1 ? "disabled" : ""}>Selanjutnya &#8594;</button>
+    </div>` : "";
 
   // Resume: nama SITE ID saja (dipisah koma) buat status kolom U -- SELALU
   // dari rowsForView (view MBB aktif), tidak ikut kena filter klik tree di
@@ -669,6 +687,7 @@ function renderMbbDashboard(rowsForView, view){
           SITEID <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
         </div>
         <div class="mbb-notes-list">${notesHtml}</div>
+        ${notesPagerHtml}
       </div>
 
       <div class="card curve-card">
@@ -681,6 +700,12 @@ function renderMbbDashboard(rowsForView, view){
 
 function mbbSelectBucket(key){
   mbbSelectedBucket = (mbbSelectedBucket === key) ? null : key; // klik dua kali = batal pilih
+  mbbNotesPage = 0; // kategori ganti -> balik ke halaman 1 daftar SITEID
+  render();
+}
+
+function mbbNotesGoPage(page){
+  mbbNotesPage = page;
   render();
 }
 
@@ -883,6 +908,7 @@ function mbbActiveStatusFilter(r){
 
 function setMbbActiveFilter(mode){
   mbbActiveFilterMode = mode;
+  mbbNotesPage = 0; // filter aktif/tidak-aktif ganti -> balik ke halaman 1 daftar SITEID
   render();
 }
 
@@ -1048,8 +1074,9 @@ let showAllRows = false;
 
 function render(){
   const view = VIEWS[currentView];
-  document.getElementById("view-title").innerHTML = `${view.title} <span class="badge">${view.badge}</span>`;
-  document.getElementById("view-sub").textContent = view.sub;
+  // Baris "MBB Semua Data" / "Sheet: All Node B" (view-title & view-sub)
+  // sudah DIHAPUS dari HTML -- judul halaman sekarang cukup dari header
+  // "Dashboard Monitoring Project MBB/OLO" di atas (page_title block).
 
   const cols = view.source === "mbb" ? MBB_LABELS : OLO_LABELS;
   const statusLabel = view.source === "mbb" ? "Status Pekerjaan" : "STATUS PEKERJAAN";
