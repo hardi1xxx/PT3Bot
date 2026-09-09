@@ -7,94 +7,132 @@
 
 {% block content %}
 <style>
-  /* Sama seperti hem.html: semua style di-scope di bawah .hem-shell
-     (variabel warna sendiri, class generik sendiri) biar tidak bentrok
-     sama halaman lain yang pakai style.css bareng-bareng. Palet warna
-     SENGAJA disamakan dengan hem.html (hijau) supaya "identitas" fitur
-     HEM konsisten antara form input & dashboard-nya -- strukturnya
-     (KPI + rekap grouping + filter + detail table + export) yang
-     mengikuti pola dashboard PT3. */
+  /* Tema gelap navy-teal (glassmorphic) sesuai referensi desain --
+     variabel & class tetap sama namanya (cuma warnanya diganti) biar
+     JS yang manipulasi class/id tidak perlu berubah. */
   .hem-shell{
-    --bg:#F5F6F3; --surface:#FFFFFF; --ink:#1A1F1D; --ink-soft:#5B635E;
-    --ink-faint:#8A928C; --line:#DFE3DE; --line-strong:#C6CCC5;
-    --accent:#0E6E56; --accent-ink:#FFFFFF; --accent-soft:#E4F1EC;
-    --warn:#B3453A; --warn-soft:#FBEAE8;
-    --radius:10px; color:var(--ink);
+    --bg:#0A1220; --surface:#101B2D; --surface-2:#16223A;
+    --ink:#E8F1F5; --ink-soft:#9FB3C8; --ink-faint:#6B7F98;
+    --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.16);
+    --accent:#2DD4C8; --accent-ink:#08222A; --accent-soft:rgba(45,212,200,.15);
+    --warn:#FF6B6B; --warn-soft:rgba(255,107,107,.15);
+    --radius:14px; color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     line-height:1.5;
+    background:
+      radial-gradient(900px 500px at 15% -10%, rgba(45,212,200,.10), transparent 60%),
+      radial-gradient(700px 500px at 90% 0%, rgba(80,120,255,.10), transparent 60%),
+      var(--bg);
+    margin:-24px; padding:24px; min-height:100vh;
   }
   .hem-shell *{box-sizing:border-box;}
 
   .hem-shell .top-actions{display:flex; justify-content:flex-end; gap:8px; margin-bottom:14px;}
   .hem-shell a.btn-link, .hem-shell button.btn-ghost{
-    display:inline-flex; align-items:center; gap:6px; border-radius:8px; padding:8px 14px;
+    display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:8px 16px;
     font-size:13px; font-weight:500; cursor:pointer; border:1px solid var(--line-strong);
-    background:var(--surface); color:var(--ink); text-decoration:none;
+    background:var(--surface-2); color:var(--ink-soft); text-decoration:none;
   }
   .hem-shell button.btn-ghost:hover, .hem-shell a.btn-link:hover{border-color:var(--accent); color:var(--accent);}
   .hem-shell button.btn-ghost:disabled{opacity:.5; cursor:not-allowed;}
   .hem-shell button.btn-primary{
-    border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; cursor:pointer;
+    border-radius:999px; padding:8px 18px; font-size:13px; font-weight:600; cursor:pointer;
     border:1px solid var(--accent); background:var(--accent); color:var(--accent-ink);
   }
   .hem-shell button.btn-primary:hover{opacity:.92;}
 
   .hem-shell .kpi-grid{
-    display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:14px; margin-bottom:20px;
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:16px; margin-bottom:20px;
   }
   .hem-shell .kpi-card{
-    background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px;
+    position:relative; overflow:hidden; background:var(--surface);
+    border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; min-height:96px;
   }
-  .hem-shell .kpi-card .kpi-label{font-size:12px; color:var(--ink-faint); margin-bottom:6px;}
-  .hem-shell .kpi-card .kpi-value{font-size:22px; font-weight:600; color:var(--ink);}
+  /* Blob dekoratif blur di tiap kartu KPI (warna beda per kartu) --
+     murni CSS, bukan chart sungguhan, cuma buat kesan "abstrak" seperti
+     referensi desain. */
+  .hem-shell .kpi-card::before{
+    content:''; position:absolute; width:140px; height:140px; border-radius:50%;
+    right:-40px; bottom:-50px; filter:blur(28px); opacity:.55; pointer-events:none;
+  }
+  .hem-shell .kpi-card:nth-child(1)::before{background:radial-gradient(circle, #2DD4C8, transparent 70%);}
+  .hem-shell .kpi-card:nth-child(2)::before{background:radial-gradient(circle, #4C8DFF, transparent 70%);}
+  .hem-shell .kpi-card:nth-child(3)::before{background:radial-gradient(circle, #9B7BFF, transparent 70%);}
+  .hem-shell .kpi-card:nth-child(4)::before{background:radial-gradient(circle, #FF8BD0, transparent 70%);}
+  .hem-shell .kpi-card .kpi-label{position:relative; font-size:12px; color:var(--ink-faint); margin-bottom:8px;}
+  .hem-shell .kpi-card .kpi-value{position:relative; font-size:22px; font-weight:700; color:var(--ink);}
   .hem-shell .kpi-card.warn .kpi-value{color:var(--warn);}
 
   .hem-shell .card{
-    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
     padding:20px 22px; margin-bottom:20px;
   }
   .hem-shell .section-title{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:15px; font-weight:600;
-    margin:0 0 14px;
+    margin:0 0 14px; color:var(--ink);
   }
   .hem-shell .section-title .hint{font-size:12px; font-weight:400; color:var(--ink-faint);}
 
   .hem-shell .filter-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px;}
-  .hem-shell .filter-group{border:1px solid var(--line); border-radius:8px; padding:10px 12px;}
+  .hem-shell .filter-group{background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding:12px 14px;}
   .hem-shell .filter-group .filter-title{
     display:flex; justify-content:space-between; align-items:center;
-    font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:8px;
+    font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:10px;
   }
   .hem-shell .filter-group .filter-title button{
     border:none; background:none; color:var(--accent); font-size:11.5px; cursor:pointer; padding:0;
   }
-  .hem-shell .filter-options{max-height:150px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;}
+  .hem-shell .filter-options{max-height:150px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;}
+  /* Checkbox filter ditampilkan sbg "pill" bulat (bukan kotak default
+     browser) -- checked = terisi teal + centang putih. */
   .hem-shell .filter-options label{
-    display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink); cursor:pointer;
+    display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); cursor:pointer;
+    padding:5px 10px; border-radius:999px; background:rgba(255,255,255,.03);
+    border:1px solid transparent; transition:background .12s, border-color .12s, color .12s;
+  }
+  .hem-shell .filter-options label:has(input:checked){
+    background:var(--accent-soft); border-color:rgba(45,212,200,.35); color:var(--ink);
+  }
+  .hem-shell .filter-options input[type="checkbox"]{
+    appearance:none; -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
+    border:1.5px solid var(--line-strong); background:transparent; cursor:pointer; flex-shrink:0;
+    display:grid; place-content:center;
+  }
+  .hem-shell .filter-options input[type="checkbox"]:checked{background:var(--accent); border-color:var(--accent);}
+  .hem-shell .filter-options input[type="checkbox"]:checked::after{
+    content:'\2713'; font-size:10px; font-weight:700; color:var(--accent-ink); line-height:1;
   }
   .hem-shell .filter-actions{display:flex; gap:8px; margin-top:16px;}
 
   .hem-shell table.pivot{width:100%; border-collapse:collapse; font-size:12.5px;}
   .hem-shell table.pivot th, .hem-shell table.pivot td{
-    border-bottom:1px solid var(--line); padding:7px 10px; text-align:right; white-space:nowrap;
+    border-bottom:1px solid var(--line); padding:8px 12px; text-align:right; white-space:nowrap;
+    color:var(--ink-soft);
   }
   .hem-shell table.pivot th{
-    background:var(--bg); color:var(--ink-soft); font-weight:600; text-align:right; position:sticky; top:0;
+    background:var(--surface-2); color:var(--ink); font-weight:600; text-align:right;
+    position:sticky; top:0; z-index:1;
   }
-  .hem-shell table.pivot th:first-child, .hem-shell table.pivot td:first-child{text-align:left;}
-  .hem-shell table.pivot tr.total-row td{font-weight:700; border-top:2px solid var(--line-strong);}
-  .hem-shell .table-wrap{overflow:auto; max-height:420px; border:1px solid var(--line); border-radius:8px;}
+  .hem-shell table.pivot th:first-child, .hem-shell table.pivot td:first-child{
+    text-align:left; color:var(--ink); font-weight:500; position:sticky; left:0;
+    background:var(--surface); z-index:0;
+  }
+  .hem-shell table.pivot thead th:first-child{background:var(--surface-2); z-index:2;}
+  .hem-shell table.pivot tr.total-row td{font-weight:700; border-top:2px solid var(--line-strong); color:var(--ink);}
+  .hem-shell table.pivot tbody tr:hover td{background:rgba(255,255,255,.03);}
+  .hem-shell .table-wrap{overflow:auto; max-height:420px; border:1px solid var(--line); border-radius:12px;}
 
   .hem-shell .search-row{display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;}
   .hem-shell .search-row input[type="text"]{
-    flex:1; min-width:220px; border:1px solid var(--line-strong); border-radius:8px;
-    padding:8px 12px; font-size:13px; font-family:inherit;
+    flex:1; min-width:220px; border:1px solid var(--line-strong); border-radius:10px;
+    padding:9px 14px; font-size:13px; font-family:inherit; background:var(--surface-2); color:var(--ink);
   }
+  .hem-shell .search-row input[type="text"]::placeholder{color:var(--ink-faint);}
   .hem-shell .search-row input[type="text"]:focus{outline:none; border-color:var(--accent);}
   .hem-shell .row-count{font-size:12.5px; color:var(--ink-faint); white-space:nowrap;}
 
   .hem-shell .skeleton{color:var(--ink-faint); font-size:13px; padding:14px 4px;}
-  .hem-shell .flash{border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:10px;}
+  .hem-shell .flash{border-radius:10px; padding:10px 14px; font-size:13px; margin-bottom:10px;}
   .hem-shell .flash.error{background:var(--warn-soft); color:var(--warn);}
   .hem-shell .flash.success{background:var(--accent-soft); color:var(--accent);}
   .hem-shell .empty-note{color:var(--ink-faint); font-size:13px; padding:16px 4px; text-align:center;}
@@ -324,10 +362,10 @@ function renderPivotTabs(){
   });
 }
 
-function buildPivot(rows, colFn, rowField){
+function buildPivot(rows, rowFn, colFn){
   const rowVals = new Set(), colVals = new Set(), grid = {};
   rows.forEach(r => {
-    const rv = r[rowField] || '(kosong)';
+    const rv = rowFn(r);
     const cv = colFn(r);
     rowVals.add(rv); colVals.add(cv);
     grid[rv] = grid[rv] || {};
@@ -343,13 +381,17 @@ function renderRekap(){
     return;
   }
   const cfg = HEM_PIVOT_VIEWS[hemPivotView];
-  const { rowVals, colVals, grid } = buildPivot(hemAllRows, cfg.colFn, HEM_PIVOT_ROW_FIELD);
+  // Progress SELALU jadi kolom (atas), kategori tab aktif (Region/Batch
+  // Program/Layanan) jadi baris (bawah) -- kebalikan dari sebelumnya.
+  const { rowVals, colVals, grid } = buildPivot(hemAllRows, cfg.colFn, r => r[HEM_PIVOT_ROW_FIELD] || '(kosong)');
   if(!rowVals.length || !colVals.length){
     wrap.innerHTML = '<div class="empty-note">Tidak ada data.</div>';
     return;
   }
   const colTotals = {}; colVals.forEach(c => colTotals[c] = 0); let grand = 0;
-  let html = '<table class="pivot"><thead><tr><th>Progress</th>';
+  let maxCell = 0;
+  rowVals.forEach(rv => colVals.forEach(c => { maxCell = Math.max(maxCell, (grid[rv] && grid[rv][c]) || 0); }));
+  let html = `<table class="pivot"><thead><tr><th>${esc(cfg.label)}</th>`;
   colVals.forEach(c => { html += `<th>${esc(c)}</th>`; });
   html += '<th>Total</th></tr></thead><tbody>';
   rowVals.forEach(rv => {
@@ -358,7 +400,11 @@ function renderRekap(){
     colVals.forEach(c => {
       const n = (grid[rv] && grid[rv][c]) || 0;
       rowTotal += n; colTotals[c] += n; grand += n;
-      html += `<td>${fmtNum(n)}</td>`;
+      // Heatmap ringan: makin besar nilainya (relatif ke sel terbesar di
+      // tabel ini), makin pekat warna teal-nya -- murni kosmetik.
+      const intensity = maxCell ? n / maxCell : 0;
+      const style = n ? `background:rgba(45,212,200,${(intensity * 0.35).toFixed(2)});` : '';
+      html += `<td style="${style}">${fmtNum(n)}</td>`;
     });
     html += `<td><strong>${fmtNum(rowTotal)}</strong></td></tr>`;
   });
