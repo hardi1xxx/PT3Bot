@@ -7,23 +7,18 @@
 
 {% block content %}
 <style>
-  /* Tema gelap navy-teal (glassmorphic) sesuai referensi desain --
-     variabel & class tetap sama namanya (cuma warnanya diganti) biar
-     JS yang manipulasi class/id tidak perlu berubah. */
+  /* Tema terang -- pakai token warna yang SAMA dgn style.css situs (bg,
+     panel, border, text, accent hijau) biar konsisten & tidak bikin
+     gap/layout aneh seperti versi gelap sebelumnya. */
   .hem-shell{
-    --bg:#0A1220; --surface:#101B2D; --surface-2:#16223A;
-    --ink:#E8F1F5; --ink-soft:#9FB3C8; --ink-faint:#6B7F98;
-    --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.16);
-    --accent:#2DD4C8; --accent-ink:#08222A; --accent-soft:rgba(45,212,200,.15);
-    --warn:#FF6B6B; --warn-soft:rgba(255,107,107,.15);
-    --radius:14px; color:var(--ink);
+    --bg:#eef1f6; --surface:#ffffff; --surface-2:#f6f8fb;
+    --ink:#1c2536; --ink-soft:#4a5568; --ink-faint:#6b7488;
+    --line:#e2e6ee; --line-strong:#c9d0dd;
+    --accent:#16a34a; --accent-ink:#ffffff; --accent-soft:#e8f7ee;
+    --warn:#dc2626; --warn-soft:#fdecea;
+    --radius:12px; color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     line-height:1.5;
-    background:
-      radial-gradient(900px 500px at 15% -10%, rgba(45,212,200,.10), transparent 60%),
-      radial-gradient(700px 500px at 90% 0%, rgba(80,120,255,.10), transparent 60%),
-      var(--bg);
-    margin:-24px; padding:24px; min-height:100vh;
   }
   .hem-shell *{box-sizing:border-box;}
 
@@ -53,7 +48,7 @@
      referensi desain. */
   .hem-shell .kpi-card::before{
     content:''; position:absolute; width:140px; height:140px; border-radius:50%;
-    right:-40px; bottom:-50px; filter:blur(28px); opacity:.55; pointer-events:none;
+    right:-40px; bottom:-50px; filter:blur(28px); opacity:.3; pointer-events:none;
   }
   .hem-shell .kpi-card:nth-child(1)::before{background:radial-gradient(circle, #2DD4C8, transparent 70%);}
   .hem-shell .kpi-card:nth-child(2)::before{background:radial-gradient(circle, #4C8DFF, transparent 70%);}
@@ -91,7 +86,7 @@
     border:1px solid transparent; transition:background .12s, border-color .12s, color .12s;
   }
   .hem-shell .filter-options label:has(input:checked){
-    background:var(--accent-soft); border-color:rgba(45,212,200,.35); color:var(--ink);
+    background:var(--accent-soft); border-color:rgba(22,163,74,.35); color:var(--ink);
   }
   .hem-shell .filter-options input[type="checkbox"]{
     appearance:none; -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
@@ -121,6 +116,18 @@
   .hem-shell table.pivot tr.total-row td{font-weight:700; border-top:2px solid var(--line-strong); color:var(--ink);}
   .hem-shell table.pivot tbody tr:hover td{background:rgba(255,255,255,.03);}
   .hem-shell .table-wrap{overflow:auto; max-height:420px; border:1px solid var(--line); border-radius:12px;}
+  /* Khusus tabel Rekap Kategori: header boleh wrap 2 baris (bukan
+     nowrap) supaya kolom lebih sempit & seluruh tabel muat tanpa perlu
+     scroll ke samping. */
+  .hem-shell #hemRekapWrap{overflow-x:hidden; overflow-y:visible; max-height:none;}
+  .hem-shell #hemRekapWrap table.pivot{table-layout:fixed; width:100%;}
+  .hem-shell #hemRekapWrap table.pivot th{
+    white-space:normal; word-break:break-word; line-height:1.25; vertical-align:bottom;
+  }
+  .hem-shell #hemRekapWrap table.pivot td{white-space:normal; word-break:break-word;}
+  .hem-shell #hemRekapWrap table.pivot th, .hem-shell #hemRekapWrap table.pivot td{
+    padding:6px 6px; font-size:11.5px;
+  }
 
   .hem-shell .search-row{display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;}
   .hem-shell .search-row input[type="text"]{
@@ -403,7 +410,7 @@ function renderRekap(){
       // Heatmap ringan: makin besar nilainya (relatif ke sel terbesar di
       // tabel ini), makin pekat warna teal-nya -- murni kosmetik.
       const intensity = maxCell ? n / maxCell : 0;
-      const style = n ? `background:rgba(45,212,200,${(intensity * 0.35).toFixed(2)});` : '';
+      const style = n ? `background:rgba(22,163,74,${(intensity * 0.28).toFixed(2)});` : '';
       html += `<td style="${style}">${fmtNum(n)}</td>`;
     });
     html += `<td><strong>${fmtNum(rowTotal)}</strong></td></tr>`;
