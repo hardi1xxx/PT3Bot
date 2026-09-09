@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Dashboard Data Semesta{% endblock %}
+{% block title %}Dashboard HEM{% endblock %}
 {% block active_category %}hem{% endblock %}
 {% block menu_hem %}active{% endblock %}
-{% block page_title %}Dashboard Data Semesta{% endblock %}
-{% block page_sub %}Rekap & detail data_semesta (Postgres) -- data yang diinput lewat halaman Input Data Semesta.{% endblock %}
+{% block page_title %}Dashboard HEM{% endblock %}
+{% block page_sub %}Rekap & detail data{% endblock %}
 
 {% block content %}
 <style>
@@ -102,11 +102,6 @@
 
 <div class="hem-shell">
 
-  <div class="top-actions">
-    <button class="btn-ghost" id="hemRefreshBtn" title="Muat ulang data dari database">&#8635; Refresh</button>
-    <a class="btn-link" href="/hem">+ Input Data Semesta</a>
-  </div>
-
   <div id="hemErrorWrap"></div>
 
   <div class="kpi-grid" id="hemKpiGrid">
@@ -115,23 +110,29 @@
 
   <!-- ── Filter ────────────────────────────────────────────────── -->
   <div class="card">
-    <div class="section-title">Filter</div>
-    <div class="filter-grid" id="hemFilterGrid">
-      <div class="skeleton">Memuat opsi filter...</div>
+    <div class="section-title">
+      Filter
+      <span class="hint">Otomatis diterapkan -- hilangkan centang buat mengeluarkan nilai tertentu</span>
+      <button class="btn-ghost" id="hemToggleFilterBtn" style="margin-left:auto;">Sembunyikan</button>
     </div>
-    <div class="filter-actions">
-      <button class="btn-primary" id="hemApplyFilterBtn">Terapkan Filter</button>
-      <button class="btn-ghost" id="hemResetFilterBtn">Reset</button>
+    <div id="hemFilterBody">
+      <div class="filter-grid" id="hemFilterGrid">
+        <div class="skeleton">Memuat opsi filter...</div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn-ghost" id="hemResetFilterBtn">Reset (centang semua)</button>
+      </div>
     </div>
   </div>
 
-  <!-- ── Rekap New Region TA x Status iHLD ────────────────────────── -->
+  <!-- ── Rekap per kategori (pivot) ───────────────────────────────── -->
   <div class="card">
     <div class="section-title">
-      Rekap per Kategori
-      <span class="hint">Jumlah order per nilai (sesuai filter aktif)</span>
+      Rekap Kategori
+      <span class="hint">Jumlah order per Progress (sesuai filter aktif)</span>
       <button class="btn-ghost" id="hemExportBtn" style="margin-left:auto;" title="Download seluruh kolom data_semesta (sesuai filter aktif) sebagai file Excel">&#11015; Export Data</button>
     </div>
+    <div class="filter-actions" id="hemPivotTabs" style="margin:0 0 14px;"></div>
     <div class="table-wrap" id="hemRekapWrap">
       <div class="skeleton">Memuat rekap...</div>
     </div>
@@ -139,6 +140,10 @@
 
   <!-- ── Detail ────────────────────────────────────────────────── -->
   <div class="card">
+    <div class="top-actions" style="margin-bottom:14px;">
+      <button class="btn-ghost" id="hemRefreshBtn" title="Muat ulang data dari database">&#8635; Refresh</button>
+      <a class="btn-link" href="/hem">+ Input Data Semesta</a>
+    </div>
     <div class="section-title">Detail Order</div>
     <div class="search-row">
       <input type="text" id="hemSearchInput" placeholder="Cari No Order / iHLD LoP ID / Nama Proyek / Nama Mitra...">
@@ -153,20 +158,16 @@
 
 <script>
 // ── State ────────────────────────────────────────────────────────
-let hemAllRows = [];       // rows terakhir yang diambil dari server (sudah sesuai filter aktif)
+let hemAllRows = [];       // rows terakhir dari server (sudah sesuai filter aktif)
 let hemFilterOptions = {}; // {col: [nilai, ...]} dari server
-let hemActiveFilters = {}; // {col: Set(nilai)} -- filter yang SUDAH diterapkan (dipakai query berikutnya)
+let hemActiveFilters = {}; // {col: Set(nilai)} -- default: SEMUA nilai tercentang
+let hemFiltersInitialized = false;
+let hemPivotView = 'region';
+
 const HEM_FILTER_COLS = [
   ["status_wo_tif", "Status WO (TIF)"],
   ["new_region_ta", "New Region TA"],
   ["branch", "Branch"],
-  ["progress_jt_last_update", "Progress"],
-];
-const HEM_BREAKDOWN_COLS = [
-  ["status_wo_tif", "Status WO (TIF)"],
-  ["new_region_ta", "New Region TA"],
-  ["branch", "Branch"],
-  ["layanan", "Layanan"],
   ["progress_jt_last_update", "Progress"],
 ];
 const HEM_DETAIL_COLS = [
@@ -175,6 +176,14 @@ const HEM_DETAIL_COLS = [
   ["layanan", "Layanan"], ["progress_jt_last_update", "Progress"], ["nama_mitra", "Nama Mitra"],
   ["target_fi", "Target FI"], ["tgl_go_live", "Tgl Go Live"],
 ];
+// Konfigurasi 3 tab pivot "Rekap Kategori": row selalu Progress
+// (progress_jt_last_update), kolom beda2 tergantung tab.
+const HEM_PIVOT_VIEWS = {
+  region: { label: "Region", colFn: r => [r.new_region_ta, r.branch].filter(Boolean).join(' - ') || '(kosong)' },
+  batch: { label: "Batch Program", colFn: r => r.status_wo_tif || '(kosong)' },
+  layanan: { label: "Layanan", colFn: r => r.layanan || '(kosong)' },
+};
+const HEM_PIVOT_ROW_FIELD = 'progress_jt_last_update';
 
 function esc(v){
   const s = (v === null || v === undefined) ? '' : String(v);
@@ -203,24 +212,57 @@ async function loadHemDashboard(){
     }
     hemAllRows = json.rows;
     hemFilterOptions = json.options;
-    renderKpi(json.summary);
+    if(!hemFiltersInitialized){
+      // Default: semua nilai tercentang (sama efeknya dengan tidak difilter).
+      HEM_FILTER_COLS.forEach(([col]) => {
+        hemActiveFilters[col] = new Set(hemFilterOptions[col] || []);
+      });
+      hemFiltersInitialized = true;
+    }
+    renderKpi(hemAllRows);
     renderFilters();
-    renderRekap(json.summary);
+    renderPivotTabs();
+    renderRekap();
     renderDetail(hemAllRows);
   }catch(err){
     document.getElementById('hemErrorWrap').innerHTML = `<div class="flash error">Gagal terhubung ke server: ${esc(err)}</div>`;
   }
 }
 
-function renderKpi(summary){
-  document.getElementById('hemKpiGrid').innerHTML = `
-    <div class="kpi-card">
-      <div class="kpi-label">Total Baris</div>
-      <div class="kpi-value">${fmtNum(summary.total_row)}</div>
-    </div>
-  `;
+// ── KPI ──────────────────────────────────────────────────────────
+function extractBatchNumber(val){
+  if(!val) return null;
+  const m = String(val).match(/#\s*(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
 }
 
+function renderKpi(rows){
+  const batchNums = Array.from(new Set(rows.map(r => extractBatchNumber(r.status_wo_tif)).filter(n => n !== null)));
+  const batchValue = batchNums.length
+    ? `${batchNums.length} Batch | Batch ${Math.min(...batchNums)}-${Math.max(...batchNums)}`
+    : '-';
+
+  const boqRows = rows.filter(r => Number(r.total_boq_ihld || 0) !== 0);
+  const boqSum = boqRows.reduce((s, r) => s + Number(r.total_boq_ihld || 0), 0);
+
+  const utRows = rows.filter(r => Number(r.total_boq_actual_ut_rekon || 0) !== 0);
+  const utSum = utRows.reduce((s, r) => s + Number(r.total_boq_actual_ut_rekon || 0), 0);
+
+  const cards = [
+    { label: 'Total Order', value: fmtNum(rows.length) },
+    { label: 'Total Batch', value: batchValue },
+    { label: 'Total BOQ', value: `${fmtNum(boqRows.length)} LOP | ${fmtRp(boqSum)}` },
+    { label: 'Total BOQ UT', value: `${fmtNum(utRows.length)} LOP | ${fmtRp(utSum)}` },
+  ];
+  document.getElementById('hemKpiGrid').innerHTML = cards.map(c => `
+    <div class="kpi-card">
+      <div class="kpi-label">${esc(c.label)}</div>
+      <div class="kpi-value">${esc(c.value)}</div>
+    </div>
+  `).join('');
+}
+
+// ── Filter (auto-apply, semua tercentang default) ─────────────────
 function renderFilters(){
   const grid = document.getElementById('hemFilterGrid');
   grid.innerHTML = HEM_FILTER_COLS.map(([col, label]) => {
@@ -236,41 +278,95 @@ function renderFilters(){
       : '<div class="empty-note" style="padding:6px 0;">Tidak ada data</div>';
     return `
       <div class="filter-group">
-        <div class="filter-title">
-          <span>${esc(label)}</span>
-          <button type="button" data-clear-col="${esc(col)}">Bersihkan</button>
-        </div>
+        <div class="filter-title"><span>${esc(label)}</span></div>
         <div class="filter-options">${optionsHtml}</div>
       </div>
     `;
   }).join('');
 
-  grid.querySelectorAll('button[data-clear-col]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      grid.querySelectorAll(`input[data-filter-col="${btn.dataset.clearCol}"]`).forEach(cb => cb.checked = false);
+  grid.querySelectorAll('input[data-filter-col]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const col = cb.dataset.filterCol;
+      if(!hemActiveFilters[col]) hemActiveFilters[col] = new Set();
+      if(cb.checked) hemActiveFilters[col].add(cb.value);
+      else hemActiveFilters[col].delete(cb.value);
+      loadHemDashboard();
     });
   });
 }
 
-function renderRekap(summary){
+document.getElementById('hemResetFilterBtn').addEventListener('click', () => {
+  HEM_FILTER_COLS.forEach(([col]) => {
+    hemActiveFilters[col] = new Set(hemFilterOptions[col] || []);
+  });
+  loadHemDashboard();
+});
+
+document.getElementById('hemToggleFilterBtn').addEventListener('click', (e) => {
+  const body = document.getElementById('hemFilterBody');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  e.currentTarget.textContent = hidden ? 'Sembunyikan' : 'Tampilkan';
+});
+
+// ── Rekap Kategori (pivot: Progress x Region/Batch Program/Layanan) ─
+function renderPivotTabs(){
+  const wrap = document.getElementById('hemPivotTabs');
+  wrap.innerHTML = Object.entries(HEM_PIVOT_VIEWS).map(([key, cfg]) => `
+    <button type="button" class="${key === hemPivotView ? 'btn-primary' : 'btn-ghost'}" data-pivot-view="${key}">${esc(cfg.label)}</button>
+  `).join('');
+  wrap.querySelectorAll('button[data-pivot-view]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      hemPivotView = btn.dataset.pivotView;
+      renderPivotTabs();
+      renderRekap();
+    });
+  });
+}
+
+function buildPivot(rows, colFn, rowField){
+  const rowVals = new Set(), colVals = new Set(), grid = {};
+  rows.forEach(r => {
+    const rv = r[rowField] || '(kosong)';
+    const cv = colFn(r);
+    rowVals.add(rv); colVals.add(cv);
+    grid[rv] = grid[rv] || {};
+    grid[rv][cv] = (grid[rv][cv] || 0) + 1;
+  });
+  return { rowVals: Array.from(rowVals).sort(), colVals: Array.from(colVals).sort(), grid };
+}
+
+function renderRekap(){
   const wrap = document.getElementById('hemRekapWrap');
-  if(!summary.total_row){
+  if(!hemAllRows.length){
     wrap.innerHTML = '<div class="empty-note">Tidak ada data untuk filter yang aktif.</div>';
     return;
   }
-  wrap.innerHTML = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px;">
-    ${HEM_BREAKDOWN_COLS.map(([col, label]) => {
-      const counts = summary[col] || {};
-      const entries = Object.entries(counts);
-      const rowsHtml = entries.length
-        ? entries.map(([v, n]) => `<tr><td>${esc(v)}</td><td>${fmtNum(n)}</td></tr>`).join('')
-        : '<tr><td colspan="2" class="empty-note">Tidak ada data</td></tr>';
-      return `<div>
-        <div class="filter-title"><span>${esc(label)}</span></div>
-        <table class="pivot"><tbody>${rowsHtml}</tbody></table>
-      </div>`;
-    }).join('')}
-  </div>`;
+  const cfg = HEM_PIVOT_VIEWS[hemPivotView];
+  const { rowVals, colVals, grid } = buildPivot(hemAllRows, cfg.colFn, HEM_PIVOT_ROW_FIELD);
+  if(!rowVals.length || !colVals.length){
+    wrap.innerHTML = '<div class="empty-note">Tidak ada data.</div>';
+    return;
+  }
+  const colTotals = {}; colVals.forEach(c => colTotals[c] = 0); let grand = 0;
+  let html = '<table class="pivot"><thead><tr><th>Progress</th>';
+  colVals.forEach(c => { html += `<th>${esc(c)}</th>`; });
+  html += '<th>Total</th></tr></thead><tbody>';
+  rowVals.forEach(rv => {
+    let rowTotal = 0;
+    html += `<tr><td>${esc(rv)}</td>`;
+    colVals.forEach(c => {
+      const n = (grid[rv] && grid[rv][c]) || 0;
+      rowTotal += n; colTotals[c] += n; grand += n;
+      html += `<td>${fmtNum(n)}</td>`;
+    });
+    html += `<td><strong>${fmtNum(rowTotal)}</strong></td></tr>`;
+  });
+  html += '<tr class="total-row"><td>Grand Total</td>';
+  colVals.forEach(c => { html += `<td>${fmtNum(colTotals[c])}</td>`; });
+  html += `<td>${fmtNum(grand)}</td></tr>`;
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
 }
 
 function renderDetail(rows){
@@ -304,23 +400,6 @@ function applyDetailSearch(){
   });
   renderDetail(filtered);
 }
-
-// ── Filter apply/reset ───────────────────────────────────────────
-document.getElementById('hemApplyFilterBtn').addEventListener('click', () => {
-  const newFilters = {};
-  document.querySelectorAll('#hemFilterGrid input[type="checkbox"]:checked').forEach(cb => {
-    const col = cb.dataset.filterCol;
-    if(!newFilters[col]) newFilters[col] = new Set();
-    newFilters[col].add(cb.value);
-  });
-  hemActiveFilters = newFilters;
-  loadHemDashboard();
-});
-
-document.getElementById('hemResetFilterBtn').addEventListener('click', () => {
-  hemActiveFilters = {};
-  loadHemDashboard();
-});
 
 document.getElementById('hemRefreshBtn').addEventListener('click', loadHemDashboard);
 document.getElementById('hemSearchInput').addEventListener('input', applyDetailSearch);
