@@ -148,6 +148,42 @@
   .hem-shell .flash.error{background:var(--warn-soft); color:var(--warn);}
   .hem-shell .flash.success{background:var(--accent-soft); color:var(--accent);}
   .hem-shell .empty-note{color:var(--ink-faint); font-size:13px; padding:16px 4px; text-align:center;}
+
+  /* Modal (list & detail baris) */
+  .hem-modal-overlay{
+    position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .hem-modal{
+    background:var(--surface); border-radius:var(--radius); width:min(680px, 100%);
+    max-height:85vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(15,23,42,.25);
+  }
+  .hem-modal-head{
+    display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid var(--line);
+  }
+  .hem-modal-back{font-size:13px; color:var(--accent); cursor:pointer; font-weight:600; white-space:nowrap;}
+  .hem-modal-title{flex:1; font-size:15px; font-weight:600; color:var(--ink);}
+  .hem-modal-close{
+    border:none; background:none; font-size:22px; line-height:1; color:var(--ink-faint); cursor:pointer;
+    padding:0 4px;
+  }
+  .hem-modal-close:hover{color:var(--ink);}
+  .hem-modal-body{overflow:auto; padding:16px 20px;}
+  .hem-modal-list-item{
+    padding:10px 12px; border:1px solid var(--line); border-radius:10px; margin-bottom:8px;
+    cursor:pointer; transition:border-color .12s, background .12s;
+  }
+  .hem-modal-list-item:hover{border-color:var(--accent); background:var(--accent-soft);}
+  .hem-modal-list-item .title{font-weight:600; font-size:13.5px; color:var(--ink);}
+  .hem-modal-list-item .sub{font-size:12px; color:var(--ink-faint); margin-top:2px;}
+  .hem-detail-grid{display:grid; grid-template-columns:1fr 1.4fr; gap:10px 14px; font-size:13px;}
+  .hem-detail-grid .k{color:var(--ink-faint);}
+  .hem-detail-grid .v{color:var(--ink); font-weight:500; word-break:break-word;}
+
+  #hemRekapWrap table.pivot td[data-clickable]{cursor:pointer;}
+  #hemRekapWrap table.pivot td[data-clickable]:hover{outline:2px solid var(--accent); outline-offset:-2px;}
+  #hemDetailWrap table.pivot tbody tr{cursor:pointer;}
+  #hemDetailWrap table.pivot tbody tr:hover td{background:var(--accent-soft) !important;}
 </style>
 
 <div class="hem-shell">
@@ -201,6 +237,18 @@
     </div>
     <div class="table-wrap" id="hemDetailWrap" style="max-height:480px;">
       <div class="skeleton">Memuat data...</div>
+    </div>
+  </div>
+
+  <!-- Modal (dipakai utk 2 mode: list & detail 1 baris) -->
+  <div id="hemModalOverlay" class="hem-modal-overlay" style="display:none;">
+    <div class="hem-modal">
+      <div class="hem-modal-head">
+        <div id="hemModalBack" class="hem-modal-back" style="display:none;">&larr; Kembali</div>
+        <div id="hemModalTitle" class="hem-modal-title"></div>
+        <button type="button" id="hemModalClose" class="hem-modal-close">&times;</button>
+      </div>
+      <div id="hemModalBody" class="hem-modal-body"></div>
     </div>
   </div>
 
@@ -444,7 +492,8 @@ function renderRekap(){
       // tabel ini), makin pekat warna teal-nya -- murni kosmetik.
       const intensity = maxCell ? n / maxCell : 0;
       const style = n ? `background:rgba(22,163,74,${(intensity * 0.28).toFixed(2)});` : '';
-      html += `<td style="${style}">${fmtNum(n)}</td>`;
+      const clickAttr = n ? `data-clickable data-row-val="${esc(rv)}" data-col-val="${esc(c)}"` : '';
+      html += `<td style="${style}" ${clickAttr}>${fmtNum(n)}</td>`;
     });
     html += `<td><strong>${fmtNum(rowTotal)}</strong></td></tr>`;
   });
@@ -453,6 +502,16 @@ function renderRekap(){
   html += `<td>${fmtNum(grand)}</td></tr>`;
   html += '</tbody></table>';
   wrap.innerHTML = html;
+
+  wrap.querySelectorAll('td[data-clickable]').forEach(td => {
+    td.addEventListener('click', () => {
+      const rv = td.dataset.rowVal, cv = td.dataset.colVal;
+      const matches = hemAllRows.filter(r =>
+        (r[HEM_PIVOT_ROW_FIELD] || '(kosong)') === rv && cfg.colFn(r) === cv
+      );
+      openHemListModal(`${cfg.label}: ${rv} \u00d7 ${cv}`, matches);
+    });
+  });
 }
 
 function renderDetail(rows){
@@ -465,8 +524,8 @@ function renderDetail(rows){
   let html = '<table class="pivot"><thead><tr>';
   HEM_DETAIL_COLS.forEach(([, label]) => { html += `<th style="text-align:left;">${esc(label)}</th>`; });
   html += '</tr></thead><tbody>';
-  rows.forEach(r => {
-    html += '<tr>';
+  rows.forEach((r, i) => {
+    html += `<tr data-row-idx="${i}">`;
     HEM_DETAIL_COLS.forEach(([key]) => {
       const val = HEM_DATE_COLS.has(key) ? fmtDateShort(r[key]) : r[key];
       html += `<td style="text-align:left;">${esc(val || '-')}</td>`;
@@ -475,6 +534,12 @@ function renderDetail(rows){
   });
   html += '</tbody></table>';
   wrap.innerHTML = html;
+
+  wrap.querySelectorAll('tbody tr[data-row-idx]').forEach(tr => {
+    tr.addEventListener('click', () => {
+      openHemDetailModal(rows[Number(tr.dataset.rowIdx)]);
+    });
+  });
 }
 
 function applyDetailSearch(){
@@ -529,6 +594,66 @@ document.getElementById('hemExportBtn').addEventListener('click', async (e) => {
     btn.innerHTML = originalLabel;
   }
 });
+
+// ── Modal: list (klik sel Rekap) & detail 1 baris (klik baris Rekap
+// list ATAU baris Detail Order langsung) ───────────────────────────
+const HEM_LABEL_OVERRIDES = {
+  ihld_lop_id: 'iHLD LoP ID', no_order: 'No Order', nama_proyek: 'Nama Proyek',
+  new_region_ta: 'New Region TA', status_wo_tif: 'Status WO (TIF)',
+  progress_jt_last_update: 'Progress', nama_mitra: 'Nama Mitra',
+  target_fi: 'Target FI', tgl_go_live: 'Tgl Go Live',
+};
+const HEM_ACRONYMS = new Set(['boq','ut','wo','tif','sto','sc','sp','pr','po','pid','sap','drm','nde','ba','fi','ihld','lop','id','sq']);
+function prettyLabel(key){
+  if(HEM_LABEL_OVERRIDES[key]) return HEM_LABEL_OVERRIDES[key];
+  return key.split('_').map(w => HEM_ACRONYMS.has(w) ? w.toUpperCase() : (w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+}
+
+function closeHemModal(){
+  document.getElementById('hemModalOverlay').style.display = 'none';
+}
+document.getElementById('hemModalClose').addEventListener('click', closeHemModal);
+document.getElementById('hemModalOverlay').addEventListener('click', (e) => {
+  if(e.target.id === 'hemModalOverlay') closeHemModal();
+});
+
+function openHemListModal(title, rows){
+  document.getElementById('hemModalTitle').textContent = `${title} (${rows.length} baris)`;
+  document.getElementById('hemModalBack').style.display = 'none';
+  const body = document.getElementById('hemModalBody');
+  if(!rows.length){
+    body.innerHTML = '<div class="empty-note">Tidak ada baris.</div>';
+  }else{
+    body.innerHTML = rows.map((r, i) => `
+      <div class="hem-modal-list-item" data-idx="${i}">
+        <div class="title">${esc(r.nama_proyek || r.ihld_lop_id || '(tanpa nama)')}</div>
+        <div class="sub">${esc(r.ihld_lop_id || '-')} &bull; ${esc(r.new_region_ta || '-')} / ${esc(r.branch || '-')} &bull; ${esc(r.nama_mitra || '-')}</div>
+      </div>
+    `).join('');
+    body.querySelectorAll('.hem-modal-list-item').forEach(el => {
+      el.addEventListener('click', () => openHemDetailModal(rows[Number(el.dataset.idx)], () => openHemListModal(title, rows)));
+    });
+  }
+  document.getElementById('hemModalOverlay').style.display = 'flex';
+}
+
+function openHemDetailModal(row, onBack){
+  document.getElementById('hemModalTitle').textContent = row.nama_proyek || row.ihld_lop_id || 'Detail Order';
+  const backBtn = document.getElementById('hemModalBack');
+  if(onBack){
+    backBtn.style.display = '';
+    backBtn.onclick = onBack;
+  }else{
+    backBtn.style.display = 'none';
+  }
+  const body = document.getElementById('hemModalBody');
+  const keys = Object.keys(row).filter(k => k !== 'id_semesta');
+  body.innerHTML = `<div class="hem-detail-grid">${keys.map(k => {
+    const val = HEM_DATE_COLS.has(k) ? fmtDateShort(row[k]) : row[k];
+    return `<div class="k">${esc(prettyLabel(k))}</div><div class="v">${esc(val || '-')}</div>`;
+  }).join('')}</div>`;
+  document.getElementById('hemModalOverlay').style.display = 'flex';
+}
 
 loadHemDashboard();
 </script>
