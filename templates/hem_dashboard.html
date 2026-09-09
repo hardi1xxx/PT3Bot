@@ -125,6 +125,11 @@
     white-space:normal; word-break:break-word; line-height:1.25; vertical-align:bottom;
   }
   .hem-shell #hemRekapWrap table.pivot td{white-space:normal; word-break:break-word;}
+  .hem-shell #hemRekapWrap table.pivot th:first-child,
+  .hem-shell #hemRekapWrap table.pivot td:first-child{
+    white-space:nowrap; word-break:normal; overflow:hidden; text-overflow:ellipsis;
+    width:170px; max-width:170px;
+  }
   .hem-shell #hemRekapWrap table.pivot th, .hem-shell #hemRekapWrap table.pivot td{
     padding:6px 6px; font-size:11.5px;
   }
@@ -203,7 +208,8 @@
 
 <script>
 // ── State ────────────────────────────────────────────────────────
-let hemAllRows = [];       // rows terakhir dari server (sudah sesuai filter aktif)
+let hemRawRows = [];       // SELURUH baris dari server (belum difilter) -- diambil sekali
+let hemAllRows = [];       // baris SETELAH filter aktif diterapkan (dipakai KPI/rekap/detail)
 let hemFilterOptions = {}; // {col: [nilai, ...]} dari server
 let hemActiveFilters = {}; // {col: Set(nilai)} -- default: SEMUA nilai tercentang
 let hemFiltersInitialized = false;
@@ -216,10 +222,10 @@ const HEM_FILTER_COLS = [
   ["progress_jt_last_update", "Progress"],
 ];
 const HEM_DETAIL_COLS = [
-  ["no_order", "No Order"], ["ihld_lop_id", "iHLD LoP ID"], ["nama_proyek", "Nama Proyek"],
+  ["ihld_lop_id", "iHLD LoP ID"], ["nama_proyek", "Nama Proyek"],
   ["new_region_ta", "Region"], ["branch", "Branch"], ["status_wo_tif", "Status WO (TIF)"],
   ["layanan", "Layanan"], ["progress_jt_last_update", "Progress"], ["nama_mitra", "Nama Mitra"],
-  ["target_fi", "Target FI"], ["tgl_go_live", "Tgl Go Live"],
+  ["target_fi", "Target FI"], ["tgl_go_live", "Tgl Go Live"], ["no_order", "No Order"],
 ];
 // Konfigurasi 3 tab pivot "Rekap Kategori": row selalu Progress
 // (progress_jt_last_update), kolom beda2 tergantung tab.
@@ -240,22 +246,30 @@ function fmtNum(n){
 function fmtRp(n){
   return 'Rp ' + fmtNum(n);
 }
+const HEM_MONTHS_ID = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+function fmtDateShort(v){
+  if(!v) return '';
+  const d = new Date(v);
+  if(isNaN(d.getTime())) return String(v);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd} ${HEM_MONTHS_ID[d.getMonth()]} ${yy}`;
+}
+const HEM_DATE_COLS = new Set(['target_fi', 'tgl_go_live']);
 
-// ── Load dashboard ───────────────────────────────────────────────
+// ── Load dashboard (fetch SEMUA baris SEKALI -- filter selanjutnya
+// murni di browser, tidak fetch ulang ke server tiap centang berubah,
+// biar instan & tidak reset posisi scroll panel filter) ─────────────
 async function loadHemDashboard(){
   document.getElementById('hemErrorWrap').innerHTML = '';
-  const params = new URLSearchParams();
-  for(const [col, set] of Object.entries(hemActiveFilters)){
-    for(const v of set) params.append(col, v);
-  }
   try{
-    const res = await fetch('/api/hem-dashboard?' + params.toString());
+    const res = await fetch('/api/hem-dashboard');
     const json = await res.json();
     if(!json.ok){
       document.getElementById('hemErrorWrap').innerHTML = `<div class="flash error">${esc(json.error || 'Gagal memuat data.')}</div>`;
       return;
     }
-    hemAllRows = json.rows;
+    hemRawRows = json.rows;
     hemFilterOptions = json.options;
     if(!hemFiltersInitialized){
       // Default: semua nilai tercentang (sama efeknya dengan tidak difilter).
@@ -264,14 +278,30 @@ async function loadHemDashboard(){
       });
       hemFiltersInitialized = true;
     }
-    renderKpi(hemAllRows);
     renderFilters();
-    renderPivotTabs();
-    renderRekap();
-    renderDetail(hemAllRows);
+    applyFiltersAndRender();
   }catch(err){
     document.getElementById('hemErrorWrap').innerHTML = `<div class="flash error">Gagal terhubung ke server: ${esc(err)}</div>`;
   }
+}
+
+function matchesActiveFilters(row){
+  for(const [col, set] of Object.entries(hemActiveFilters)){
+    if(!set.size) return false; // semua di-uncheck utk kolom ini -> tidak ada yg cocok
+    if(!set.has(row[col] || '(kosong)')) return false;
+  }
+  return true;
+}
+
+// Dipanggil tiap kali centang filter berubah -- HANYA hitung ulang &
+// render KPI/rekap/detail (tidak sentuh panel filter itu sendiri),
+// jadi instan & posisi scroll checkbox tidak ke-reset.
+function applyFiltersAndRender(){
+  hemAllRows = hemRawRows.filter(matchesActiveFilters);
+  renderKpi(hemAllRows);
+  renderPivotTabs();
+  renderRekap();
+  renderDetail(hemAllRows);
 }
 
 // ── KPI ──────────────────────────────────────────────────────────
@@ -335,7 +365,7 @@ function renderFilters(){
       if(!hemActiveFilters[col]) hemActiveFilters[col] = new Set();
       if(cb.checked) hemActiveFilters[col].add(cb.value);
       else hemActiveFilters[col].delete(cb.value);
-      loadHemDashboard();
+      applyFiltersAndRender(); // client-side saja, TIDAK fetch ke server lagi
     });
   });
 }
@@ -344,7 +374,10 @@ document.getElementById('hemResetFilterBtn').addEventListener('click', () => {
   HEM_FILTER_COLS.forEach(([col]) => {
     hemActiveFilters[col] = new Set(hemFilterOptions[col] || []);
   });
-  loadHemDashboard();
+  // Tidak rebuild panel filter (renderFilters()) -- cukup re-check semua
+  // checkbox yang sudah ada di DOM, biar scroll list tidak ke-reset.
+  document.querySelectorAll('#hemFilterGrid input[data-filter-col]').forEach(cb => { cb.checked = true; });
+  applyFiltersAndRender();
 });
 
 document.getElementById('hemToggleFilterBtn').addEventListener('click', (e) => {
@@ -403,7 +436,7 @@ function renderRekap(){
   html += '<th>Total</th></tr></thead><tbody>';
   rowVals.forEach(rv => {
     let rowTotal = 0;
-    html += `<tr><td>${esc(rv)}</td>`;
+    html += `<tr><td title="${esc(rv)}">${esc(rv)}</td>`;
     colVals.forEach(c => {
       const n = (grid[rv] && grid[rv][c]) || 0;
       rowTotal += n; colTotals[c] += n; grand += n;
@@ -435,7 +468,8 @@ function renderDetail(rows){
   rows.forEach(r => {
     html += '<tr>';
     HEM_DETAIL_COLS.forEach(([key]) => {
-      html += `<td style="text-align:left;">${esc(r[key] ?? '-')}</td>`;
+      const val = HEM_DATE_COLS.has(key) ? fmtDateShort(r[key]) : r[key];
+      html += `<td style="text-align:left;">${esc(val || '-')}</td>`;
     });
     html += '</tr>';
   });
