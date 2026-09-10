@@ -102,6 +102,16 @@
   #table-wrap table tbody tr:hover{background:#f8fafc;}
   #olo-curve-chart, #mbb-curve-chart{cursor:pointer;}
 
+  /* Kalender Komit FI (Plan Golive) -- card di bawah Kurva S */
+  .olo-cal-dow{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:4px; font-size:0.72rem; font-weight:700; color:#64748b; text-align:center;}
+  .olo-cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
+  .olo-cal-cell{min-height:52px; border:1px solid #e2e8f0; border-radius:8px; padding:4px 6px; font-size:0.75rem; background:#f8fafc;}
+  .olo-cal-cell.empty{border:none; background:transparent;}
+  .olo-cal-cell .d{font-weight:700; color:#475569;}
+  .olo-cal-cell.has-commit{background:#eff6ff; border-color:#93c5fd; cursor:pointer;}
+  .olo-cal-cell.has-commit:hover{background:#dbeafe;}
+  .olo-cal-cell .c{margin-top:4px; display:inline-block; background:#0f4c81; color:#fff; font-weight:800; border-radius:20px; padding:1px 8px; font-size:0.72rem;}
+
   /* Modal popup generik -- dipakai buat detail baris tabel utama, sel
      tabel pivot OLO, dan titik Kurva S. */
   #app-modal{display:none; position:fixed; inset:0; z-index:1000;}
@@ -1140,16 +1150,17 @@ function oloTreeNodeRect(x, y, w, h, fill, textColor, label, value, key, valueSi
 }
 
 // Root "Total Order" -> 3 cabang (OA / Progress / Drop, posisi vertikal
-// sama seperti tree MBB: atas/tengah/bawah) -> 9 leaf total (2 leaf OA +
-// 7 leaf Progress) ditumpuk penuh dari atas ke bawah, garis cabangnya
-// nyambung dari node OA (2 leaf pertama) atau node Progress (7 leaf sisa).
-function renderOloTreeSvg(total, oa, progress, drop, oaSubCounts, progressSubCounts){
+// sama seperti tree MBB: atas/tengah/bawah). "OA" SEKARANG TANPA TURUNAN
+// sama sekali (cuma node tunggal, tidak dipecah leaf lagi) -- hanya
+// "Progress" yang masih punya 7 leaf turunan, garis cabangnya nyambung
+// dari node Progress saja.
+function renderOloTreeSvg(total, oa, progress, drop, progressSubCounts){
   const rootW = 105, rootH = 78, rootX = 6, rootCY = OLO_TREE_SVG_H/2;
   const midW = 120, midH = 68, midX = rootX + rootW + 26;
   const midCYs = [OLO_TREE_SVG_H*0.17, OLO_TREE_SVG_H/2, OLO_TREE_SVG_H*0.83];
   const leafW = 150, leafH = 34, leafX = midX + midW + 26;
 
-  const leafDefs = [...OLO_OA_SUB_BUCKETS, ...OLO_PROGRESS_SUB_BUCKETS]; // 2 + 7 = 9 leaf
+  const leafDefs = OLO_PROGRESS_SUB_BUCKETS; // 7 leaf, semuanya turunan Progress
   const leafSlot = OLO_TREE_SVG_H / leafDefs.length;
   const leafCYs = leafDefs.map((_,i) => leafSlot*i + leafSlot/2);
 
@@ -1165,17 +1176,14 @@ function renderOloTreeSvg(total, oa, progress, drop, oaSubCounts, progressSubCou
   let svg = `<svg viewBox="0 0 ${OLO_TREE_SVG_W} ${OLO_TREE_SVG_H}" width="100%" role="img" aria-label="Tree diagram progress OLO">`;
 
   midCYs.forEach(cy => { svg += treeConnector(rootRightX, rootCY, midX, cy, midBreakX); });
-  // 2 leaf pertama (OA) nyambung ke node OA, 7 leaf sisanya (Progress) nyambung ke node Progress.
-  leafCYs.forEach((cy,i) => {
-    const sourceCY = i < OLO_OA_SUB_BUCKETS.length ? midCYs[0] : midCYs[1];
-    svg += treeConnector(midRightX, sourceCY, leafX, cy, leafBreakX);
-  });
+  // Semua leaf nyambung dari node Progress (midCYs[1]) -- OA tidak
+  // punya leaf sama sekali.
+  leafCYs.forEach(cy => { svg += treeConnector(midRightX, midCYs[1], leafX, cy, leafBreakX); });
 
   svg += oloTreeNodeRect(rootX, rootCY - rootH/2, rootW, rootH, "#475569", "#fff", "Total Order", total, null, 24, 12);
   midDefs.forEach(m => { svg += oloTreeNodeRect(midX, m.cy - midH/2, midW, midH, m.fill, "#fff", m.label, m.value, m.key, 20, 12); });
   leafDefs.forEach((b,i) => {
-    const count = i < OLO_OA_SUB_BUCKETS.length ? (oaSubCounts[b.key]||0) : (progressSubCounts[b.key]||0);
-    svg += oloTreeNodeRect(leafX, leafCYs[i] - leafH/2, leafW, leafH, "#cfe8f5", "#0f2a3d", b.label, count, b.key, 15, 10);
+    svg += oloTreeNodeRect(leafX, leafCYs[i] - leafH/2, leafW, leafH, "#cfe8f5", "#0f2a3d", b.label, progressSubCounts[b.key]||0, b.key, 15, 10);
   });
 
   svg += `</svg>`;
@@ -1217,7 +1225,9 @@ function oloCurveYearOptions(rows){
 }
 
 // Plugin Chart.js inline (tanpa library tambahan) buat nampilin angka di
-// atas tiap titik kurva -- supaya Kurva S tidak cuma garis polos.
+// tiap titik kurva -- supaya Kurva S tidak cuma garis polos. Angka
+// diperbesar; khusus dataset REALISASI GOLIVE (golive), angkanya
+// ditaruh di TENGAH titik (bukan di atas seperti PLAN GOLIVE).
 const oloCurveDatalabelPlugin = {
   id: "oloCurveDatalabels",
   afterDatasetsDraw(chart){
@@ -1225,15 +1235,21 @@ const oloCurveDatalabelPlugin = {
     chart.data.datasets.forEach((dataset, dsIndex) => {
       const meta = chart.getDatasetMeta(dsIndex);
       if (meta.hidden) return;
+      const isGolive = dsIndex === 1; // dataset ke-2 = "REALISASI GOLIVE"
       meta.data.forEach((point, i) => {
         const value = dataset.data[i];
         if (value === null || value === undefined) return;
         ctx.save();
-        ctx.font = "700 10px sans-serif";
+        ctx.font = "800 14px sans-serif";
         ctx.fillStyle = dataset.borderColor || "#334155";
         ctx.textAlign = "center";
-        ctx.textBaseline = "bottom";
-        ctx.fillText(fmtN(value), point.x, point.y - 5);
+        if (isGolive){
+          ctx.textBaseline = "middle";
+          ctx.fillText(fmtN(value), point.x, point.y);
+        } else {
+          ctx.textBaseline = "bottom";
+          ctx.fillText(fmtN(value), point.x, point.y - 8);
+        }
         ctx.restore();
       });
     });
@@ -1346,7 +1362,7 @@ function renderOloCurve(rowsForView){
     },
     options: {
       responsive:true, maintainAspectRatio:false,
-      layout:{ padding:{ top:16 } },
+      layout:{ padding:{ top:22, bottom:6 } },
       plugins:{ legend:{ position:"bottom" } },
       scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } },
       onClick:(evt, elements)=>{
@@ -1359,6 +1375,83 @@ function renderOloCurve(rowsForView){
     },
     plugins: [oloCurveDatalabelPlugin],
   });
+}
+
+// ===================== KALENDER KOMIT FI (PLAN GOLIVE) =====================
+// Kartu di bawah Kurva S -- kalender bulanan yang nandain tanggal-tanggal
+// yang punya komitmen FI (dibaca dari kolom "PLAN GOLIVE", baris berstatus
+// Drop / isian "Drop" di tanggalnya dilewati, sama seperti Kurva S).
+// Navigasi bulan/tahunnya independen dari filter Kurva S di atas.
+let oloCalendarYear = new Date().getFullYear();
+let oloCalendarMonth = new Date().getMonth();
+let oloCalendarRowsByDay = {}; // day (1-31) -> rows[], diisi ulang tiap render
+
+function oloCalendarPrevMonth(){
+  oloCalendarMonth--;
+  if (oloCalendarMonth < 0){ oloCalendarMonth = 11; oloCalendarYear--; }
+  render();
+}
+function oloCalendarNextMonth(){
+  oloCalendarMonth++;
+  if (oloCalendarMonth > 11){ oloCalendarMonth = 0; oloCalendarYear++; }
+  render();
+}
+
+function renderOloCalendarHtml(rowsForView){
+  const year = oloCalendarYear, month = oloCalendarMonth;
+  const rows = rowsForView.filter(r => classifyOloRow(r).top !== "drop");
+
+  const byDay = {};
+  rows.forEach(r=>{
+    const raw = getCol(r, "PLAN GOLIVE");
+    if (oloIsDropText(raw)) return;
+    const d = parseLooseDate(raw);
+    if (d && d.getFullYear() === year && d.getMonth() === month){
+      const day = d.getDate();
+      (byDay[day] = byDay[day] || []).push(r);
+    }
+  });
+  oloCalendarRowsByDay = byDay;
+
+  const dowLabels = ["Min","Sen","Sel","Rab","Kam","Jum","Sab"];
+  const firstDow = new Date(year, month, 1).getDay(); // 0 = Minggu
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  let cells = "";
+  for (let i=0; i<firstDow; i++) cells += `<div class="olo-cal-cell empty"></div>`;
+  for (let day=1; day<=daysInMonth; day++){
+    const count = (byDay[day] || []).length;
+    if (count > 0){
+      cells += `<div class="olo-cal-cell has-commit" onclick="oloShowCalendarDayDetail(${day})">
+        <div class="d">${day}</div>
+        <div class="c">${fmtN(count)}</div>
+      </div>`;
+    } else {
+      cells += `<div class="olo-cal-cell"><div class="d">${day}</div></div>`;
+    }
+  }
+
+  return `
+    <div class="olo-cal-dow">${dowLabels.map(d=>`<div>${d}</div>`).join("")}</div>
+    <div class="olo-cal-grid">${cells}</div>`;
+}
+
+function oloShowCalendarDayDetail(day){
+  const rows = oloCalendarRowsByDay[day] || [];
+  const dateLabel = `${day} ${INDO_MONTHS[oloCalendarMonth]} ${oloCalendarYear}`;
+  const bodyRows = rows.length ? rows.map(r => `
+    <tr>${OLO_DETAIL_COLS.map(c=>{
+      const v = getCol(r, c);
+      return `<td>${v ? escapeHtml(v) : '<span class="cell-empty">–</span>'}</td>`;
+    }).join("")}</tr>`).join("") : `<tr><td colspan="${OLO_DETAIL_COLS.length}" class="empty-state">Tidak ada baris.</td></tr>`;
+  openModal(`Komit FI (Plan Golive) — ${escapeHtml(dateLabel)}`, `
+    <div class="hint" style="margin-bottom:8px;">${rows.length} baris</div>
+    <div class="olo-detail-list">
+      <table>
+        <thead><tr>${OLO_DETAIL_COLS.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`);
 }
 
 // ===================== DASHBOARD OLO (Tree + Kurva S) =====================
@@ -1398,13 +1491,12 @@ function renderOloDashboard(rowsForView){
     <div class="olo-dash-top">
       <div class="card tree-card">
         <div class="section-title" style="margin:0 0 8px;">Tree Diagram Progress OLO</div>
-        <div class="mbb-tree-svg-wrap">${renderOloTreeSvg(total, oa, progress, drop, oaSubCounts, progressSubCounts)}</div>
+        <div class="mbb-tree-svg-wrap">${renderOloTreeSvg(total, oa, progress, drop, progressSubCounts)}</div>
       </div>
 
       <div class="card curve-card">
         <div class="section-title" style="margin:0 0 8px;">Kurva S PLAN vs REALISASI Golive</div>
         <div class="olo-curve-filters">
-          <span class="hint">Tahun</span>
           <select id="olo-curve-year" onchange="setOloCurveYear(this.value)"></select>
           <div class="seg-toggle">
             <button type="button" class="${oloCurveMode==='bulanan'?'on':''}" onclick="setOloCurveMode('bulanan')">Bulanan</button>
@@ -1414,6 +1506,19 @@ function renderOloDashboard(rowsForView){
         </div>
         <div style="position:relative; height:230px;"><canvas id="olo-curve-chart"></canvas></div>
       </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="section-title" style="margin:0 0 8px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <span>Kalender Komit FI (Plan Golive)</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" class="btn-sm" onclick="oloCalendarPrevMonth()">&#8592;</button>
+          <span class="hint" style="min-width:130px; text-align:center; font-weight:700;">${escapeHtml(INDO_MONTHS[oloCalendarMonth])} ${oloCalendarYear}</span>
+          <button type="button" class="btn-sm" onclick="oloCalendarNextMonth()">&#8594;</button>
+        </div>
+      </div>
+      <div class="hint" style="margin-bottom:8px;">Tanggal dengan badge biru = ada komitmen FI (Plan Golive). Klik tanggal untuk lihat detail.</div>
+      ${renderOloCalendarHtml(rowsForView)}
     </div>
   `;
 
