@@ -91,7 +91,32 @@
   .olo-detail-list table{width:100%; border-collapse:collapse;}
   .olo-detail-list th, .olo-detail-list td{padding:5px 8px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; white-space:nowrap;}
   .olo-detail-list th{position:sticky; top:0; background:#fff;}
+
+  /* Filter Branch / Status Fisik OLO -- ditaruh di baris atas (reuse wrap
+     #mbb-active-toggle-wrap yang sama dipakai toggle Aktif/Tidak Aktif MBB). */
+  .olo-top-filters{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .olo-top-filters select{border:1px solid #cbd5e1; border-radius:8px; padding:6px 8px; font-size:0.82rem; color:#334155; max-width:220px;}
+
+  /* Baris tabel & titik kurva yang bisa diklik utk lihat detail (popup) */
+  #table-wrap table tbody tr{cursor:pointer;}
+  #table-wrap table tbody tr:hover{background:#f8fafc;}
+  #olo-curve-chart, #mbb-curve-chart{cursor:pointer;}
+
+  /* Modal popup generik -- dipakai buat detail baris tabel utama, sel
+     tabel pivot OLO, dan titik Kurva S. */
+  #app-modal{display:none; position:fixed; inset:0; z-index:1000;}
+  #app-modal.open{display:block;}
+  .app-modal-backdrop{position:absolute; inset:0; background:rgba(15,23,42,0.5);}
+  .app-modal-panel{position:relative; margin:5vh auto; max-width:900px; width:92%; max-height:88vh; background:#fff; border-radius:12px; box-shadow:0 20px 50px rgba(0,0,0,0.25); display:flex; flex-direction:column; overflow:hidden;}
+  .app-modal-header{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; border-bottom:1px solid #e2e8f0;}
+  .app-modal-title{font-weight:800; font-size:0.95rem; color:#0f172a;}
+  .app-modal-body{padding:14px 16px; overflow:auto;}
+  table.detail-kv{width:100%; border-collapse:collapse; font-size:0.84rem;}
+  table.detail-kv th{width:230px; text-align:left; color:#475569; font-weight:700; padding:6px 10px 6px 0; vertical-align:top; border-bottom:1px dashed #e2e8f0;}
+  table.detail-kv td{padding:6px 0; border-bottom:1px dashed #e2e8f0; vertical-align:top;}
 </style>
+
+<div id="app-modal"></div>
 
 <div id="mbb-dashboard-wrap"></div>
 
@@ -1006,8 +1031,8 @@ function renderMbbCurve(rowsForView){
 
 /* ===================== OLO: KLASIFIKASI STATUS PEKERJAAN (Tree Diagram) ===
    Top-level: OA / Progress / Drop (bukan L1-ON AIR/Aktif/Drop kayak MBB).
-   "Progress" pecah jadi 7 leaf, "OA" pecah jadi 2 leaf ("15. OA (JT)" &
-   "16. OA (PT1)"). Status yang tidak match leaf Progress manapun otomatis
+   "Progress" pecah jadi 7 leaf, "OA" cuma 1 leaf gabungan ("15. OA" &
+   "16. OA" digabung, tidak dipecah lagi). Status yang tidak match leaf Progress manapun otomatis
    digabung ke leaf HOLD (pola sama kayak MBB_SUB_BUCKETS -- supaya total
    leaf Progress selalu pas dengan angka kotak "Progress"). */
 const OLO_PROGRESS_SUB_BUCKETS = [
@@ -1019,11 +1044,16 @@ const OLO_PROGRESS_SUB_BUCKETS = [
   { key:"instalasi",        label:"Instalasi",        match:(s)=> s.includes("06. instalasi") },
   { key:"finish-instalasi", label:"Finish Instalasi", match:(s)=> s.includes("07. finish instalasi") },
 ];
+// "OA" sekarang SATU leaf saja (gabungan "15. OA" & "16. OA") -- sebelumnya
+// dipecah jadi 2 leaf terpisah (OA (JT) / OA (PT1)), sesuai permintaan
+// tidak perlu dipecah lagi.
 const OLO_OA_SUB_BUCKETS = [
-  { key:"oa-jt",  label:"OA (JT)",  match:(s)=> s.includes("15. oa") },
-  { key:"oa-pt1", label:"OA (PT1)", match:(s)=> s.includes("16. oa") },
+  { key:"oa", label:"OA", match:(s)=> s.includes("15. oa") || s.includes("16. oa") },
 ];
-const OLO_DROP_MATCH = (s)=> s.includes("01. drop");
+// "00.3 Drop MoM" ikut dihitung sebagai DROP juga (sebelumnya cuma "01. Drop"
+// yang kehitung drop, "00.3 Drop MoM" numpuk ke HOLD karena tidak match
+// leaf manapun).
+const OLO_DROP_MATCH = (s)=> s.includes("01. drop") || s.includes("drop mom");
 
 function classifyOloRow(row){
   const s = getCol(row, "STATUS PEKERJAAN").toLowerCase();
@@ -1039,6 +1069,43 @@ function classifyOloRow(row){
 }
 
 let oloSelectedBucket = null; // key bucket Tree Diagram OLO yang lagi diklik (null = semua)
+
+// Filter Branch & Status Fisik (STATUS PEKERJAAN) di baris atas (reuse
+// wrap #mbb-active-toggle-wrap) -- "" = semua (tidak difilter).
+let oloBranchFilter = "";
+let oloStatusFisikFilter = "";
+
+function oloBranchStatusFilter(row){
+  if (oloBranchFilter && getCol(row, "BRANCH") !== oloBranchFilter) return false;
+  if (oloStatusFisikFilter && getCol(row, "STATUS PEKERJAAN") !== oloStatusFisikFilter) return false;
+  return true;
+}
+
+function setOloBranchFilter(v){ oloBranchFilter = v; render(); }
+function setOloStatusFisikFilter(v){ oloStatusFisikFilter = v; render(); }
+
+// Opsi dropdown dihitung dari rows SEBELUM filter branch/status ini
+// sendiri diterapkan (supaya pilihan tidak menyusut waktu salah satu
+// filter sudah dipilih).
+function renderOloTopFilters(rowsForOptions){
+  const wrap = document.getElementById("mbb-active-toggle-wrap");
+  if (!wrap) return;
+  const branches = Array.from(new Set(rowsForOptions.map(r=>getCol(r,"BRANCH")).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'id'));
+  const statuses = Array.from(new Set(rowsForOptions.map(r=>getCol(r,"STATUS PEKERJAAN")).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'id'));
+  wrap.innerHTML = `
+    <div class="olo-top-filters">
+      <span class="hint">Branch</span>
+      <select onchange="setOloBranchFilter(this.value)">
+        <option value="">Semua</option>
+        ${branches.map(b=>`<option value="${escapeHtml(b)}" ${b===oloBranchFilter?'selected':''}>${escapeHtml(b)}</option>`).join("")}
+      </select>
+      <span class="hint">Status Fisik</span>
+      <select onchange="setOloStatusFisikFilter(this.value)">
+        <option value="">Semua</option>
+        ${statuses.map(s=>`<option value="${escapeHtml(s)}" ${s===oloStatusFisikFilter?'selected':''}>${escapeHtml(s)}</option>`).join("")}
+      </select>
+    </div>`;
+}
 
 function oloDashboardFilter(row){
   if (!oloSelectedBucket) return true;
@@ -1149,49 +1216,101 @@ function oloCurveYearOptions(rows){
   return Array.from(years).sort((a,b)=>a-b);
 }
 
+// Plugin Chart.js inline (tanpa library tambahan) buat nampilin angka di
+// atas tiap titik kurva -- supaya Kurva S tidak cuma garis polos.
+const oloCurveDatalabelPlugin = {
+  id: "oloCurveDatalabels",
+  afterDatasetsDraw(chart){
+    const { ctx } = chart;
+    chart.data.datasets.forEach((dataset, dsIndex) => {
+      const meta = chart.getDatasetMeta(dsIndex);
+      if (meta.hidden) return;
+      meta.data.forEach((point, i) => {
+        const value = dataset.data[i];
+        if (value === null || value === undefined) return;
+        ctx.save();
+        ctx.font = "700 10px sans-serif";
+        ctx.fillStyle = dataset.borderColor || "#334155";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(fmtN(value), point.x, point.y - 5);
+        ctx.restore();
+      });
+    });
+  }
+};
+
+// Baris data mentah di balik tiap titik PLAN/REALISASI (per bulan/hari,
+// TIDAK kumulatif) -- disimpan supaya klik titik kurva bisa nampilin
+// detail baris apa saja di popup.
+let oloCurvePlanRowsByIndex = [];
+let oloCurveRealRowsByIndex = [];
+let oloCurvePeriodLabels = [];
+
+function oloShowCurvePointDetail(datasetIndex, index){
+  const rows = (datasetIndex === 0 ? oloCurvePlanRowsByIndex : oloCurveRealRowsByIndex)[index] || [];
+  const dsLabel = datasetIndex === 0 ? "PLAN GOLIVE" : "REALISASI GOLIVE";
+  const periodLabel = oloCurvePeriodLabels[index] || "";
+  const bodyRows = rows.length ? rows.map(r => `
+    <tr>${OLO_DETAIL_COLS.map(c=>{
+      const v = getCol(r, c);
+      return `<td>${v ? escapeHtml(v) : '<span class="cell-empty">–</span>'}</td>`;
+    }).join("")}</tr>`).join("") : `<tr><td colspan="${OLO_DETAIL_COLS.length}" class="empty-state">Tidak ada baris.</td></tr>`;
+  openModal(`Detail ${escapeHtml(dsLabel)} — ${escapeHtml(periodLabel)}`, `
+    <div class="hint" style="margin-bottom:8px;">${rows.length} baris</div>
+    <div class="olo-detail-list">
+      <table>
+        <thead><tr>${OLO_DETAIL_COLS.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`);
+}
+
 function renderOloCurve(rowsForView){
   const canvas = document.getElementById("olo-curve-chart");
   if (!canvas) return;
 
   const rows = rowsForView.filter(r => classifyOloRow(r).top !== "drop");
   const year = oloCurveYear;
-  let labels, planSeries, realSeries;
+  let labels, planSeries, realSeries, planRowsBy, realRowsBy, periodLabels;
 
   if (oloCurveMode === "bulanan"){
-    const planByMonth = new Array(12).fill(0);
-    const realByMonth = new Array(12).fill(0);
+    const planRowsByMonth = Array.from({length:12}, () => []);
+    const realRowsByMonth = Array.from({length:12}, () => []);
     rows.forEach(r=>{
       const planRaw = getCol(r, "PLAN GOLIVE");
       if (!oloIsDropText(planRaw)){
         const pd = parseLooseDate(planRaw);
-        if (pd && pd.getFullYear() === year) planByMonth[pd.getMonth()]++;
+        if (pd && pd.getFullYear() === year) planRowsByMonth[pd.getMonth()].push(r);
       }
       const realRaw = getCol(r, "REALISASI GOLIVE");
       if (!oloIsDropText(realRaw)){
         const rd = parseLooseDate(realRaw);
-        if (rd && rd.getFullYear() === year) realByMonth[rd.getMonth()]++;
+        if (rd && rd.getFullYear() === year) realRowsByMonth[rd.getMonth()].push(r);
       }
     });
     let cp = 0, cr = 0;
     const now = new Date(), nowY = now.getFullYear(), nowM = now.getMonth();
-    planSeries = planByMonth.map(v => (cp += v));
-    realSeries = realByMonth.map((v,i) => (year < nowY || (year === nowY && i <= nowM)) ? (cr += v) : null);
+    planSeries = planRowsByMonth.map(arr => (cp += arr.length));
+    realSeries = realRowsByMonth.map((arr,i) => (year < nowY || (year === nowY && i <= nowM)) ? (cr += arr.length) : null);
     labels = INDO_MONTHS.map(m => m.slice(0,3));
+    planRowsBy = planRowsByMonth; realRowsBy = realRowsByMonth;
+    periodLabels = INDO_MONTHS.map(m => `${m} ${year}`);
   } else {
     const month = oloCurveMonth;
     const daysInMonth = new Date(year, month+1, 0).getDate();
-    const planByDay = new Array(daysInMonth).fill(0);
-    const realByDay = new Array(daysInMonth).fill(0);
+    const planRowsByDay = Array.from({length:daysInMonth}, () => []);
+    const realRowsByDay = Array.from({length:daysInMonth}, () => []);
     rows.forEach(r=>{
       const planRaw = getCol(r, "PLAN GOLIVE");
       if (!oloIsDropText(planRaw)){
         const pd = parseLooseDate(planRaw);
-        if (pd && pd.getFullYear() === year && pd.getMonth() === month) planByDay[pd.getDate()-1]++;
+        if (pd && pd.getFullYear() === year && pd.getMonth() === month) planRowsByDay[pd.getDate()-1].push(r);
       }
       const realRaw = getCol(r, "REALISASI GOLIVE");
       if (!oloIsDropText(realRaw)){
         const rd = parseLooseDate(realRaw);
-        if (rd && rd.getFullYear() === year && rd.getMonth() === month) realByDay[rd.getDate()-1]++;
+        if (rd && rd.getFullYear() === year && rd.getMonth() === month) realRowsByDay[rd.getDate()-1].push(r);
       }
     });
     let cp = 0, cr = 0;
@@ -1204,10 +1323,16 @@ function renderOloCurve(rowsForView){
     let cutoffDay = null;
     if (selMonthStart === nowMonthStart) cutoffDay = now.getDate();
     else if (selMonthStart > nowMonthStart) cutoffDay = 0;
-    planSeries = planByDay.map(v => (cp += v));
-    realSeries = realByDay.map((v,i) => (cutoffDay === null || i < cutoffDay) ? (cr += v) : null);
-    labels = planByDay.map((_,i) => String(i+1));
+    planSeries = planRowsByDay.map(arr => (cp += arr.length));
+    realSeries = realRowsByDay.map((arr,i) => (cutoffDay === null || i < cutoffDay) ? (cr += arr.length) : null);
+    labels = planRowsByDay.map((_,i) => String(i+1));
+    planRowsBy = planRowsByDay; realRowsBy = realRowsByDay;
+    periodLabels = planRowsByDay.map((_,i) => `${i+1} ${INDO_MONTHS[month]} ${year}`);
   }
+
+  oloCurvePlanRowsByIndex = planRowsBy;
+  oloCurveRealRowsByIndex = realRowsBy;
+  oloCurvePeriodLabels = periodLabels;
 
   if (oloCurveChart) oloCurveChart.destroy();
   oloCurveChart = new Chart(canvas.getContext("2d"), {
@@ -1221,9 +1346,18 @@ function renderOloCurve(rowsForView){
     },
     options: {
       responsive:true, maintainAspectRatio:false,
+      layout:{ padding:{ top:16 } },
       plugins:{ legend:{ position:"bottom" } },
       scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } },
+      onClick:(evt, elements)=>{
+        if (!elements.length) return;
+        oloShowCurvePointDetail(elements[0].datasetIndex, elements[0].index);
+      },
+      onHover:(evt, elements)=>{
+        evt.native.target.style.cursor = elements.length ? "pointer" : "default";
+      },
     },
+    plugins: [oloCurveDatalabelPlugin],
   });
 }
 
@@ -1245,7 +1379,22 @@ function renderOloDashboard(rowsForView){
 
   const monthOptions = INDO_MONTHS.map((m,i)=>`<option value="${i}" ${i===oloCurveMonth?"selected":""}>${escapeHtml(m)}</option>`).join("");
 
+  // 3 kotak nilai (Resume) -- Total Nilai PO (kolom NILAI PO), Nilai BoQ
+  // Survey (kolom "NILAI SURVEY ( ONSITE )"), total Nilai Comcase (kolom
+  // "Nilai Comcase") -- filter SAMA dengan rowsForView (setelah filter
+  // Branch/Status Fisik di atas, belum kena klik Tree Diagram). Ukuran
+  // kotak SAMA dengan MBB karena pakai class CSS yang sama (.mbb-value-cards).
+  const oloNilaiPoTotal = rowsForView.reduce((acc,r)=>acc+parseIdrNumber(getCol(r,"NILAI PO")), 0);
+  const oloNilaiBoqTotal = rowsForView.reduce((acc,r)=>acc+parseIdrNumber(getCol(r,"NILAI SURVEY ( ONSITE )")), 0);
+  const oloNilaiComcaseTotal = rowsForView.reduce((acc,r)=>acc+parseIdrNumber(getCol(r,"Nilai Comcase")), 0);
+
   wrap.innerHTML = `
+    <div class="mbb-value-cards">
+      <div class="mbb-value-box"><div class="l">Total Nilai PO</div><div class="n">${escapeHtml(fmtCompactIdr(oloNilaiPoTotal))}</div></div>
+      <div class="mbb-value-box"><div class="l">Nilai BoQ Survey</div><div class="n">${escapeHtml(fmtCompactIdr(oloNilaiBoqTotal))}</div></div>
+      <div class="mbb-value-box"><div class="l">Total Nilai Comcase</div><div class="n">${escapeHtml(fmtCompactIdr(oloNilaiComcaseTotal))}</div></div>
+    </div>
+
     <div class="olo-dash-top">
       <div class="card tree-card">
         <div class="section-title" style="margin:0 0 8px;">Tree Diagram Progress OLO</div>
@@ -1282,22 +1431,11 @@ function renderOloDashboard(rowsForView){
 // unik STATUS PEKERJAAN yang ada di data. Klik sel angka pada baris BRANCH
 // -> tampil panel Detail per baris di bawah tabel.
 let oloPivotExpanded = null; // Set nama REGION yang lagi expanded (diisi pertama kali render, default semua expanded)
-let oloPivotDetailKey = null; // {region, branch, status} lagi dipilih, null = tidak ada panel detail
+let oloLastPivotDataMap = null; // dataMap tabel pivot terakhir dirender -- dipakai buat isi popup detail tanpa perlu render ulang tabel
 
 function oloTogglePivotRegion(region){
   if (oloPivotExpanded.has(region)) oloPivotExpanded.delete(region);
   else oloPivotExpanded.add(region);
-  render();
-}
-
-function oloShowPivotDetail(region, branch, status){
-  oloPivotDetailKey = { region, branch, status };
-  render();
-  setTimeout(()=>{ const el = document.getElementById("olo-detail-card"); if (el) el.scrollIntoView({behavior:"smooth", block:"nearest"}); }, 50);
-}
-
-function oloCloseDetail(){
-  oloPivotDetailKey = null;
   render();
 }
 
@@ -1307,9 +1445,10 @@ function oloJsStr(s){
   return s.replace(/\\/g,"\\\\").replace(/'/g,"\\'");
 }
 
-function renderOloPivotDetailHtml(dataMap){
-  const { region, branch, status } = oloPivotDetailKey;
-  const regionMap = dataMap.get(region);
+// Klik sel angka pada tabel pivot Region/Branch -> popup detail (bukan
+// lagi kartu inline di bawah tabel).
+function oloShowPivotDetail(region, branch, status){
+  const regionMap = oloLastPivotDataMap ? oloLastPivotDataMap.get(region) : null;
   const branchMap = regionMap ? regionMap.get(branch) : null;
   const rows = branchMap ? (branchMap.get(status) || []) : [];
 
@@ -1319,20 +1458,14 @@ function renderOloPivotDetailHtml(dataMap){
       return `<td>${v ? escapeHtml(v) : '<span class="cell-empty">–</span>'}</td>`;
     }).join("")}</tr>`).join("") : `<tr><td colspan="${OLO_DETAIL_COLS.length}" class="empty-state">Tidak ada baris.</td></tr>`;
 
-  return `
-    <div class="card olo-detail-card" id="olo-detail-card">
-      <div class="section-title" style="margin:0 0 4px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
-        <span>Detail: ${escapeHtml(region)} / ${escapeHtml(branch)} — ${escapeHtml(status)}</span>
-        <button type="button" class="btn-sm" onclick="oloCloseDetail()">&times; Tutup</button>
-      </div>
-      <div class="hint" style="margin-bottom:8px;">${rows.length} baris</div>
-      <div class="olo-detail-list">
-        <table>
-          <thead><tr>${OLO_DETAIL_COLS.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
-          <tbody>${bodyRows}</tbody>
-        </table>
-      </div>
-    </div>`;
+  openModal(`Detail: ${escapeHtml(region)} / ${escapeHtml(branch)} — ${escapeHtml(status)}`, `
+    <div class="hint" style="margin-bottom:8px;">${rows.length} baris</div>
+    <div class="olo-detail-list">
+      <table>
+        <thead><tr>${OLO_DETAIL_COLS.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`);
 }
 
 function renderOloPivotTable(rowsForView){
@@ -1356,6 +1489,8 @@ function renderOloPivotTable(rowsForView){
 
   const statuses = Array.from(statusSet).sort((a,b)=>a.localeCompare(b, 'id'));
   const regions = Array.from(dataMap.keys()).sort((a,b)=>a.localeCompare(b, 'id'));
+
+  oloLastPivotDataMap = dataMap; // dipakai oloShowPivotDetail() saat sel diklik
 
   if (!regions.length){
     wrap.innerHTML = `
@@ -1414,12 +1549,10 @@ function renderOloPivotTable(rowsForView){
 
   const footRow = `<tr style="font-weight:700; background:#f8fafc;"><td>Grand Total</td>${statuses.map(s => `<td class="num">${fmtN(colTotals[s])}</td>`).join("")}<td class="num">${fmtN(grandTotal)}</td></tr>`;
 
-  const detailHtml = oloPivotDetailKey ? renderOloPivotDetailHtml(dataMap) : "";
-
   wrap.innerHTML = `
     <div class="card" style="margin-bottom:14px;">
       <div class="section-title" style="margin:0 0 8px;">Status Pekerjaan per Region / Branch</div>
-      <div class="hint" style="margin-bottom:8px;">Klik nama Region untuk expand/collapse Branch. Klik angka pada baris Branch untuk lihat detail per baris.</div>
+      <div class="hint" style="margin-bottom:8px;">Klik nama Region untuk expand/collapse Branch. Klik angka pada baris Branch untuk lihat detail per baris (popup).</div>
       <div style="overflow-x:auto;">
         <table class="pivot">
           <thead><tr><th>REGION / BRANCH</th>${statuses.map(s => `<th>${escapeHtml(s)}</th>`).join("")}<th>Grand Total</th></tr></thead>
@@ -1427,7 +1560,6 @@ function renderOloPivotTable(rowsForView){
         </table>
       </div>
     </div>
-    ${detailHtml}
   `;
 }
 
@@ -1515,6 +1647,44 @@ function escapeHtml(s){
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
+/* ===================== MODAL POPUP GENERIK =====================
+   Dipakai buat: klik baris di tabel utama, klik sel tabel pivot OLO, dan
+   klik titik di Kurva S -- semuanya nampilin detail di popup yang sama. */
+function openModal(title, bodyHtml){
+  const modal = document.getElementById("app-modal");
+  if (!modal) return;
+  modal.innerHTML = `
+    <div class="app-modal-backdrop" onclick="closeModal()"></div>
+    <div class="app-modal-panel" role="dialog" aria-modal="true">
+      <div class="app-modal-header">
+        <div class="app-modal-title">${title}</div>
+        <button type="button" class="btn-sm" onclick="closeModal()">&times; Tutup</button>
+      </div>
+      <div class="app-modal-body">${bodyHtml}</div>
+    </div>`;
+  modal.classList.add("open");
+}
+function closeModal(){
+  const modal = document.getElementById("app-modal");
+  if (!modal) return;
+  modal.classList.remove("open");
+  modal.innerHTML = "";
+}
+document.addEventListener("keydown", (e)=>{ if (e.key === "Escape") closeModal(); });
+
+// Detail baris tabel utama (semua kolom label:value) -- dipanggil dari
+// klik <tr> di tabel #table-wrap (lihat render()).
+function showRowDetailModal(idx){
+  const r = (window.__currentTableRows || [])[idx];
+  const cols = window.__currentTableCols || [];
+  if (!r) return;
+  const bodyRows = cols.map(label=>{
+    const raw = (r[label] || "").toString().trim();
+    return `<tr><th>${escapeHtml(label)}</th><td>${raw ? escapeHtml(raw) : '<span class="cell-empty">–</span>'}</td></tr>`;
+  }).join("");
+  openModal("Detail Baris", `<table class="detail-kv"><tbody>${bodyRows}</tbody></table>`);
+}
+
 const ROWS_PER_PAGE_DEFAULT = 200; // render awal dibatasi -- ribuan <tr> sekaligus yang bikin halaman "berat"
 let showAllRows = false;
 
@@ -1538,15 +1708,15 @@ function render(){
   const toggleWrap = document.getElementById("mbb-active-toggle-wrap");
   if (view.source === "mbb"){
     oloSelectedBucket = null;
-    oloPivotDetailKey = null;
     renderMbbActiveToggle();
     renderMbbDashboard(rows, view);
     renderMbbCurve(rows);
     renderMbbPivotTable(rows);
     rows = rows.filter(mbbDashboardFilter);
   } else {
-    toggleWrap.innerHTML = "";
     mbbSelectedBucket = null;
+    renderOloTopFilters(rows); // opsi dropdown dari data SEBELUM filter branch/status
+    rows = rows.filter(oloBranchStatusFilter);
     renderOloDashboard(rows);
     renderOloPivotTable(rows);
     rows = rows.filter(oloDashboardFilter);
@@ -1570,7 +1740,12 @@ function render(){
 
   const thead = `<thead><tr>${cols.map(label=>`<th>${escapeHtml(label)}</th>`).join("")}</tr></thead>`;
 
-  const bodyRows = visibleRows.map(r=>{
+  // Disimpan global supaya bisa dibaca showRowDetailModal() saat baris
+  // diklik (menampilkan semua kolom baris itu di popup).
+  window.__currentTableRows = visibleRows;
+  window.__currentTableCols = cols;
+
+  const bodyRows = visibleRows.map((r,idx)=>{
     const tds = cols.map(label=>{
       const raw = (r[label] || "").toString().trim();
       if(label === statusLabel){
@@ -1581,7 +1756,7 @@ function render(){
       const title = raw.length > 60 ? ` title="${escapeHtml(raw)}"` : "";
       return `<td class="${isNum?'num':''}"${title}>${escapeHtml(raw)}</td>`;
     }).join("");
-    return `<tr>${tds}</tr>`;
+    return `<tr onclick="showRowDetailModal(${idx})">${tds}</tr>`;
   }).join("");
 
   const truncNotice = truncated ? `
