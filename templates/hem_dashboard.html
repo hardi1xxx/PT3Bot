@@ -174,8 +174,13 @@
     cursor:pointer; transition:border-color .12s, background .12s;
   }
   .hem-modal-list-item:hover{border-color:var(--accent); background:var(--accent-soft);}
-  .hem-modal-list-item .title{font-weight:600; font-size:13.5px; color:var(--ink);}
-  .hem-modal-list-item .sub{font-size:12px; color:var(--ink-faint); margin-top:2px;}
+  .hem-modal-list-item .hem-list-row{
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:13px; color:var(--ink);
+    font-weight:600;
+  }
+  .hem-modal-list-item .hem-list-row.sub{
+    font-weight:400; color:var(--ink-faint); font-size:12px; margin-top:4px;
+  }
   .hem-detail-grid{display:grid; grid-template-columns:1fr 1.4fr; gap:10px 14px; font-size:13px;}
   .hem-detail-grid .k{color:var(--ink-faint);}
   .hem-detail-grid .v{color:var(--ink); font-weight:500; word-break:break-word;}
@@ -451,13 +456,17 @@ function renderPivotTabs(){
 }
 
 function buildPivot(rows, rowFn, colFn){
+  // grid[rv][cv] = ARRAY baris yang cocok (bukan cuma angka) -- supaya
+  // saat sel diklik, daftar yang ditampilkan dijamin PERSIS sama dgn
+  // yang dipakai menghitung angkanya (tidak ada hitung ulang terpisah
+  // yang bisa beda hasil).
   const rowVals = new Set(), colVals = new Set(), grid = {};
   rows.forEach(r => {
     const rv = rowFn(r);
     const cv = colFn(r);
     rowVals.add(rv); colVals.add(cv);
     grid[rv] = grid[rv] || {};
-    grid[rv][cv] = (grid[rv][cv] || 0) + 1;
+    (grid[rv][cv] = grid[rv][cv] || []).push(r);
   });
   return { rowVals: Array.from(rowVals).sort(), colVals: Array.from(colVals).sort(), grid };
 }
@@ -476,39 +485,41 @@ function renderRekap(){
     wrap.innerHTML = '<div class="empty-note">Tidak ada data.</div>';
     return;
   }
-  const colTotals = {}; colVals.forEach(c => colTotals[c] = 0); let grand = 0;
+  const colTotals = colVals.map(() => 0); let grand = 0;
   let maxCell = 0;
-  rowVals.forEach(rv => colVals.forEach(c => { maxCell = Math.max(maxCell, (grid[rv] && grid[rv][c]) || 0); }));
+  rowVals.forEach(rv => colVals.forEach(c => { maxCell = Math.max(maxCell, ((grid[rv] || {})[c] || []).length); }));
   let html = `<table class="pivot"><thead><tr><th>${esc(cfg.label)}</th>`;
   colVals.forEach(c => { html += `<th>${esc(c)}</th>`; });
   html += '<th>Total</th></tr></thead><tbody>';
-  rowVals.forEach(rv => {
+  rowVals.forEach((rv, ri) => {
     let rowTotal = 0;
     html += `<tr><td title="${esc(rv)}">${esc(rv)}</td>`;
-    colVals.forEach(c => {
-      const n = (grid[rv] && grid[rv][c]) || 0;
-      rowTotal += n; colTotals[c] += n; grand += n;
+    colVals.forEach((c, ci) => {
+      const cellRows = ((grid[rv] || {})[c]) || [];
+      const n = cellRows.length;
+      rowTotal += n; colTotals[ci] += n; grand += n;
       // Heatmap ringan: makin besar nilainya (relatif ke sel terbesar di
       // tabel ini), makin pekat warna teal-nya -- murni kosmetik.
       const intensity = maxCell ? n / maxCell : 0;
       const style = n ? `background:rgba(22,163,74,${(intensity * 0.28).toFixed(2)});` : '';
-      const clickAttr = n ? `data-clickable data-row-val="${esc(rv)}" data-col-val="${esc(c)}"` : '';
+      // data-ri/data-ci: index (angka polos), BUKAN nilai string -- biar
+      // tidak ada risiko encode/decode meleset saat dibaca lagi.
+      const clickAttr = n ? `data-clickable data-ri="${ri}" data-ci="${ci}"` : '';
       html += `<td style="${style}" ${clickAttr}>${fmtNum(n)}</td>`;
     });
     html += `<td><strong>${fmtNum(rowTotal)}</strong></td></tr>`;
   });
   html += '<tr class="total-row"><td>Grand Total</td>';
-  colVals.forEach(c => { html += `<td>${fmtNum(colTotals[c])}</td>`; });
+  colVals.forEach((c, ci) => { html += `<td>${fmtNum(colTotals[ci])}</td>`; });
   html += `<td>${fmtNum(grand)}</td></tr>`;
   html += '</tbody></table>';
   wrap.innerHTML = html;
 
   wrap.querySelectorAll('td[data-clickable]').forEach(td => {
     td.addEventListener('click', () => {
-      const rv = td.dataset.rowVal, cv = td.dataset.colVal;
-      const matches = hemAllRows.filter(r =>
-        (r[HEM_PIVOT_ROW_FIELD] || '(kosong)') === rv && cfg.colFn(r) === cv
-      );
+      const rv = rowVals[Number(td.dataset.ri)];
+      const cv = colVals[Number(td.dataset.ci)];
+      const matches = grid[rv][cv]; // data PERSIS yg dipakai hitung angka di sel ini
       openHemListModal(`${cfg.label}: ${rv} \u00d7 ${cv}`, matches);
     });
   });
@@ -609,6 +620,22 @@ function prettyLabel(key){
   return key.split('_').map(w => HEM_ACRONYMS.has(w) ? w.toUpperCase() : (w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
 }
 
+// Urutan tampil field di modal detail -- field yg tidak disebutkan
+// (mis. target_fi) TETAP muncul, ditambahkan di akhir (lihat
+// openHemDetailModal) supaya tidak ada data yang hilang.
+const HEM_DETAIL_FIELD_ORDER = [
+  'no','ihld_lop_id','tahun','status_wo_tif','sto','no_wo_smile','nama_smile','nama_proyek',
+  'new_region_ta','region_tif','witel_lama','branch','nde_wo','tanggal_nde_wo','nde_permohonan_ut',
+  'sp','nomor_sp','reg_lama','umur_order','layanan','no_order','nama_mitra','keterangan_detail',
+  'sap','pid','id_pr_material','po','pr','prioritas','progress','progress_jt_last_update',
+  'progress_w01','progress_w02','datek','panjang_kabel_meter','material_ut','nilai_perizinan',
+  'persen_perubahan_nilai','tanggal_fi','tgl_go_live','bulan_golive','tgl_ut','baut','bast','sc',
+  'selisih_nilai_wo_ihld','status_drop','status_ihld','status_rekon','status_smile','status_ut',
+  'tanggal_ba_drop','tipe_deploy_actual','tipe_desain','total_boq_actual_ut_rekon','total_boq_ihld',
+  'total_boq_wo','total_drm','total_ut','target_weekly_bast','persen_smile','lact',
+  'grouping_umur_order','ba_redesign','issue','jasa_ut','jumlah_manpower','kenaikan','ket_ba_drop',
+];
+
 function closeHemModal(){
   document.getElementById('hemModalOverlay').style.display = 'none';
 }
@@ -626,8 +653,16 @@ function openHemListModal(title, rows){
   }else{
     body.innerHTML = rows.map((r, i) => `
       <div class="hem-modal-list-item" data-idx="${i}">
-        <div class="title">${esc(r.nama_proyek || r.ihld_lop_id || '(tanpa nama)')}</div>
-        <div class="sub">${esc(r.ihld_lop_id || '-')} &bull; ${esc(r.new_region_ta || '-')} / ${esc(r.branch || '-')} &bull; ${esc(r.nama_mitra || '-')}</div>
+        <div class="hem-list-row">
+          <span>${esc(r.ihld_lop_id || '-')}</span>
+          <span>${esc(r.tahun || '-')}</span>
+          <span>${esc(r.status_wo_tif || '-')}</span>
+        </div>
+        <div class="hem-list-row sub">
+          <span>${esc(r.nama_proyek || '-')}</span>
+          <span>${esc(r.progress_jt_last_update || '-')}</span>
+          <span>${esc(r.umur_order ?? '-')}</span>
+        </div>
       </div>
     `).join('');
     body.querySelectorAll('.hem-modal-list-item').forEach(el => {
@@ -647,7 +682,10 @@ function openHemDetailModal(row, onBack){
     backBtn.style.display = 'none';
   }
   const body = document.getElementById('hemModalBody');
-  const keys = Object.keys(row).filter(k => k !== 'id_semesta');
+  const allKeys = Object.keys(row).filter(k => k !== 'id_semesta');
+  const ordered = HEM_DETAIL_FIELD_ORDER.filter(k => allKeys.includes(k));
+  const remaining = allKeys.filter(k => !HEM_DETAIL_FIELD_ORDER.includes(k));
+  const keys = [...ordered, ...remaining];
   body.innerHTML = `<div class="hem-detail-grid">${keys.map(k => {
     const val = HEM_DATE_COLS.has(k) ? fmtDateShort(row[k]) : row[k];
     return `<div class="k">${esc(prettyLabel(k))}</div><div class="v">${esc(val || '-')}</div>`;
