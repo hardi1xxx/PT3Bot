@@ -685,80 +685,6 @@ function pt2RenderNotif(data) {
   if (typeof window.pt2RefreshNotifBell === 'function') window.pt2RefreshNotifBell();
 }
 
-(function () {
-  const bellBtn = document.getElementById('notifBellBtn');
-  const badge = document.getElementById('notifBadge');
-  const overlay = document.getElementById('notifModalOverlay');
-  const box = document.getElementById('notifModalBox');
-  if (!bellBtn || !badge || !overlay || !box) return; // topbar loceng tidak tersedia di layout ini
-
-  bellBtn.title = 'Onprogress PT2 (status 3.OGP DEPLOY)';
-
-  function closeModal() { overlay.classList.remove('open'); }
-
-  function renderListView() {
-    const items = (pt2Cache && pt2Cache.notif_branches) || [];
-    if (!items.length) {
-      box.innerHTML = `
-        <div class="modal-header">
-          <div class="modal-title">Onprogress PT2 (3.OGP DEPLOY)</div>
-          <button class="btn-ghost modal-close" id="pt2NotifCloseBtn">Tutup &#10005;</button>
-        </div>
-        <div class="empty-state">Tidak ada lokasi PT2 yang sedang onprogress &#127881;</div>
-      `;
-      document.getElementById('pt2NotifCloseBtn').addEventListener('click', closeModal);
-      return;
-    }
-    const totalLop = items.reduce((a, b) => a + b.lop, 0);
-    box.innerHTML = `
-      <div class="modal-header">
-        <div class="modal-title">Onprogress PT2 <span class="badge">${pt2FmtNum(totalLop)} LOP</span></div>
-        <button class="btn-ghost modal-close" id="pt2NotifCloseBtn">Tutup &#10005;</button>
-      </div>
-      <p style="color:var(--muted,#64748b); font-size:0.82rem; margin:6px 0 10px;">Status ${pt2Esc(PT2_PROGRESS_STATUS)} — klik branch untuk lihat daftar lokasi &amp; download.</p>
-      <div class="loc-list" style="margin-top:4px;" id="pt2NotifListBody">
-        ${items.map((it, i) => `
-          <div class="result-item" data-notif-index="${i}">
-            <div class="ihld">${pt2Esc(it.branch)}</div>
-            <div class="meta">
-              <span class="badge">${pt2Esc(it.regional) || '-'}</span>
-              <span class="badge">${pt2FmtNum(it.lop)} LOP</span>
-              <span class="badge">${pt2FmtNum(it.port)} Port</span>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-    document.getElementById('pt2NotifCloseBtn').addEventListener('click', closeModal);
-    document.getElementById('pt2NotifListBody').addEventListener('click', (e) => {
-      const item = e.target.closest('.result-item');
-      if (!item) return;
-      const entry = items[parseInt(item.dataset.notifIndex, 10)];
-      if (!entry) return;
-      closeModal();
-      pt2OpenFilteredList(`Onprogress PT2 — ${entry.branch}`, entry.rows, { branch: entry.branch, status: PT2_PROGRESS_STATUS });
-    });
-  }
-
-  bellBtn.addEventListener('click', () => {
-    overlay.classList.add('open');
-    renderListView();
-  });
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
-
-  window.pt2RefreshNotifBell = function () {
-    const items = (pt2Cache && pt2Cache.notif_branches) || [];
-    const totalLop = items.reduce((a, b) => a + b.lop, 0);
-    if (totalLop > 0) {
-      badge.style.display = 'flex';
-      badge.textContent = totalLop > 99 ? '99+' : totalLop;
-    } else {
-      badge.style.display = 'none';
-    }
-    if (overlay.classList.contains('open')) renderListView();
-  };
-})();
-
 function pt2EmptySimpleAgg() { return { lop: 0, port: 0 }; }
 
 function pt2BuildProgressPivot(data, grouping) {
@@ -1428,5 +1354,85 @@ async function loadPt2Dashboard() {
 }
 
 loadPt2Dashboard();
+</script>
+{% endblock %}
+
+{% block notif_script %}
+<script>
+(function () {
+  const bellBtn = document.getElementById('notifBellBtn');
+  const badge = document.getElementById('notifBadge');
+  const overlay = document.getElementById('notifModalOverlay');
+  const box = document.getElementById('notifModalBox');
+  if (!bellBtn || !badge || !overlay || !box) return; // topbar loceng tidak tersedia di layout ini
+
+  bellBtn.title = 'Onprogress PT2 (status 3.OGP DEPLOY)';
+
+  function closeModal() { overlay.classList.remove('open'); }
+
+  function renderListView() {
+    const items = (typeof pt2Cache !== 'undefined' && pt2Cache && pt2Cache.notif_branches) || [];
+    if (!items.length) {
+      box.innerHTML = `
+        <div class="modal-header">
+          <div class="modal-title">Onprogress PT2 (3.OGP DEPLOY)</div>
+          <button class="btn-ghost modal-close" id="pt2NotifCloseBtn">Tutup &#10005;</button>
+        </div>
+        <div class="empty-state">Tidak ada lokasi PT2 yang sedang onprogress &#127881;</div>
+      `;
+      document.getElementById('pt2NotifCloseBtn').addEventListener('click', closeModal);
+      return;
+    }
+    const totalLop = items.reduce((a, b) => a + b.lop, 0);
+    box.innerHTML = `
+      <div class="modal-header">
+        <div class="modal-title">Onprogress PT2 <span class="badge">${totalLop} LOP</span></div>
+        <button class="btn-ghost modal-close" id="pt2NotifCloseBtn">Tutup &#10005;</button>
+      </div>
+      <p style="color:var(--muted,#64748b); font-size:0.82rem; margin:6px 0 10px;">Status 3.OGP DEPLOY — klik branch untuk lihat daftar lokasi &amp; download.</p>
+      <div class="loc-list" style="margin-top:4px;" id="pt2NotifListBody">
+        ${items.map((it, i) => `
+          <div class="result-item" data-notif-index="${i}">
+            <div class="ihld">${it.branch}</div>
+            <div class="meta">
+              <span class="badge">${it.regional || '-'}</span>
+              <span class="badge">${it.lop} LOP</span>
+              <span class="badge">${it.port} Port</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    document.getElementById('pt2NotifCloseBtn').addEventListener('click', closeModal);
+    document.getElementById('pt2NotifListBody').addEventListener('click', (e) => {
+      const item = e.target.closest('.result-item');
+      if (!item) return;
+      const entry = items[parseInt(item.dataset.notifIndex, 10)];
+      if (!entry) return;
+      closeModal();
+      if (typeof window.pt2OpenFilteredList === 'function') {
+        window.pt2OpenFilteredList(`Onprogress PT2 — ${entry.branch}`, entry.rows, { branch: entry.branch, status: '3.OGP DEPLOY' });
+      }
+    });
+  }
+
+  bellBtn.addEventListener('click', () => {
+    overlay.classList.add('open');
+    renderListView();
+  });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+  window.pt2RefreshNotifBell = function () {
+    const items = (typeof pt2Cache !== 'undefined' && pt2Cache && pt2Cache.notif_branches) || [];
+    const totalLop = items.reduce((a, b) => a + b.lop, 0);
+    if (totalLop > 0) {
+      badge.style.display = 'flex';
+      badge.textContent = totalLop > 99 ? '99+' : totalLop;
+    } else {
+      badge.style.display = 'none';
+    }
+    if (overlay.classList.contains('open')) renderListView();
+  };
+})();
 </script>
 {% endblock %}
