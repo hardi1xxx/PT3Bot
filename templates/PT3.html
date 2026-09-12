@@ -350,6 +350,18 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script>
+// Daftarkan plugin datalabels secara eksplisit -- SEBELUMNYA plugin ini
+// cuma di-<script src>, tanpa Chart.register(). Kadang auto-register
+// bawaan plugin ini gagal kalau urutan load <script> Chart.js inti (dari
+// base.html) vs plugin ini tidak sesuai ekspektasi plugin, sehingga angka
+// datalabels di chart (Trend Golive, Distribusi Status Pekerjaan) cuma
+// muncul lewat tooltip pas cursor nyentuh titik/bar, bukan tertampil
+// permanen. Panggil register() manual di sini supaya PASTI aktif,
+// apapun urutan <script>-nya.
+if (window.Chart && window.ChartDataLabels) {
+  Chart.register(ChartDataLabels);
+}
+
 const STATUS_COLORS = {
   '01. PERIJINAN': '#e30613',
   '02. PERSIAPAN': '#d97706',
@@ -1247,12 +1259,23 @@ function renderChart(lopTable, portTable, statuses) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        datalabels: { display: false },
+        datalabels: {
+          display: true,
+          anchor: 'end',
+          align: 'top',
+          offset: 4,
+          color: '#1f2937',
+          font: { weight: 800, size: 11 },
+          formatter: (v) => fmtNum(v),
+        },
         tooltip: {
           callbacks: {
             label: (ctx2) => ` ${fmtNum(ctx2.raw)} LOP | ${fmtNum(portValues[ctx2.dataIndex])} Port`,
           },
         },
+      },
+      layout: {
+        padding: { top: 20 },
       },
       scales: {
         y: { beginAtZero: true, ticks: { precision: 0 } },
