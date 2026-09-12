@@ -1512,7 +1512,7 @@ function openGoliveTrendBucket(bucketKey) {
               <td>${esc(r.branch) || '(Tanpa Branch)'}</td>
               <td>${esc(r.ihld) || '-'}</td>
               <td>${esc(r.lokasi) || '-'}</td>
-              <td>${esc(r.odp_bo) || '-'}</td>
+              <td style="white-space:normal; word-break:break-word; max-width:220px;">${esc(r.odp_bo) || '-'}</td>
               <td>${r.odp_real ? fmtNum(r.odp_real) : '-'}</td>
               <td>${esc(r.golive_date_display) || '-'}</td>
             </tr>
