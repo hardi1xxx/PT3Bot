@@ -139,12 +139,12 @@
   <div class="stat-card">
     <div class="stat-label">Total Order</div>
     <div class="stat-value" id="statTotalOrder">–</div>
-    <div class="stat-foot">Jumlah baris terisi (kolom A)</div>
+    <div class="stat-foot">Jumlah baris terisi</div>
   </div>
   <div class="stat-card alt">
     <div class="stat-label">Total Port</div>
     <div class="stat-value" id="statTotalPort">–</div>
-    <div class="stat-foot">Jumlah port (kolom AG)</div>
+    <div class="stat-foot">Jumlah port</div>
   </div>
   <div class="stat-card green">
     <div class="stat-label">Lokasi Sedang Berjalan</div>
@@ -154,19 +154,19 @@
   <div class="stat-card amber">
     <div class="stat-label">Progress Finish Instalasi</div>
     <div class="stat-value" id="statProgress">–</div>
-    <div class="stat-foot">% lokasi aktif yang sudah Finish Instalasi</div>
+    <div class="stat-foot" id="statProgressFoot">–</div>
   </div>
 </div>
 
 <!-- Branch filter (collapsible), mempengaruhi SEMUA bagian di bawah -->
 <div class="card" style="margin-bottom:14px;">
   <div class="branch-filter-head" id="filterCardHeader" style="cursor:pointer; margin-bottom:0;">
-    <label style="cursor:pointer;">Filter Branch (kolom S) — <span id="filterSummary">memuat...</span></label>
+    <label style="cursor:pointer;">Filter Branch — <span id="filterSummary">memuat...</span></label>
     <div class="branch-filter-actions">
       <label class="priority-filter-toggle" id="priorityFilterWrap" onclick="event.stopPropagation();">
         <input type="checkbox" id="priorityFilterCheckbox">
         <span class="priority-filter-switch"></span>
-        <span>&#9888; Hanya Order Priority <span class="hint" style="font-weight:400;">(kolom BX)</span></span>
+        <span>&#9888; Hanya Order Priority</span>
         <span class="badge" id="priorityFilterCount" style="background:#dc2626;">0</span>
       </label>
       <button type="button" class="btn-ghost btn-sm" id="filterToggleBtn">Tampilkan &#9662;</button>
@@ -186,7 +186,7 @@
 <!-- Batch filter (collapsible), mempengaruhi SEMUA bagian di bawah -->
 <div class="card" style="margin-bottom:14px;">
   <div class="branch-filter-head" id="filterCardHeaderBatch" style="cursor:pointer; margin-bottom:0;">
-    <label style="cursor:pointer;">Filter Batch (kolom C) — <span id="filterSummaryBatch">memuat...</span></label>
+    <label style="cursor:pointer;">Filter Batch — <span id="filterSummaryBatch">memuat...</span></label>
     <div class="branch-filter-actions">
       <button type="button" class="btn-ghost btn-sm" id="filterToggleBtnBatch">Tampilkan &#9662;</button>
     </div>
@@ -206,7 +206,7 @@
      terlalu panjang ke bawah -->
 <div class="section-title">
   Rekap Port &amp; LOP
-  <span class="hint" id="rekapTableHint">baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya</span>
+  <span class="hint" id="rekapTableHint">baris = Regional &amp; Branch &middot; kolom = jumlah LOP per status &middot; klik angka untuk lihat &amp; download daftar lokasinya</span>
   <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">&#8635; Refresh</button>
 </div>
 <div class="card" style="margin-bottom:22px;">
@@ -215,7 +215,7 @@
     <button type="button" class="rekap-tab-btn" data-rekap-view="batch">Per Batch</button>
     <button type="button" class="rekap-tab-btn" data-rekap-view="progress">Progress</button>
     <button type="button" class="rekap-tsel-btn" id="tselGroupBtn" title="Gabungkan baris Regional BANTEN &amp; JAKARTA jadi satu baris (TSEL)">Grouping (TSEL)</button>
-    <button type="button" class="btn-ghost btn-sm" id="pt3ExportDataBtn" style="margin-left:8px;" title="Download data kolom A-AP (sesuai filter Branch/Batch/Priority yang sedang aktif) sebagai file Excel">&#11015; Export Data</button>
+    <button type="button" class="btn-ghost btn-sm" id="pt3ExportDataBtn" style="margin-left:8px;" title="Download seluruh data (sesuai filter Branch/Batch/Priority yang sedang aktif) sebagai file Excel">&#11015; Export Data</button>
   </div>
   <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="pivotTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
@@ -234,7 +234,7 @@
 
     <div class="card trend-golive-card">
       <div class="mini-chart-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
-        <span>Trend Golive <span class="hint" style="font-weight:400;">(kolom BD)</span></span>
+        <span>Trend Golive</span>
         <div class="golive-trend-gran" id="goliveTrendGranButtons">
           <button type="button" data-gran="year" class="btn-ghost btn-sm">Tahun</button>
           <button type="button" data-gran="month" class="btn-ghost btn-sm">Bulan</button>
@@ -248,7 +248,7 @@
 
   <div class="card fi-cal-card">
     <div class="fi-cal-head">
-      <div class="fi-cal-title">Kalender Target FI &amp; Golive <span class="hint" style="font-weight:400;">(AK / AL / BD)</span></div>
+      <div class="fi-cal-title">Kalender Target FI &amp; Golive</div>
       <div class="fi-cal-nav">
         <button type="button" id="fiCalPrevBtn" title="Bulan sebelumnya">&#8249;</button>
         <div class="fi-cal-month-label" id="fiCalMonthLabel">–</div>
@@ -259,7 +259,7 @@
     <div class="fi-cal-legend">
       <span><span class="dot" style="background:#dc2626;"></span>Lewat Target FI/Golive, belum Golive</span>
       <span><span class="dot" style="background:var(--brand-blue,#29467a);"></span>Terjadwal (Target FI)</span>
-      <span><span class="dot" style="background:#7c3aed;"></span>Terjadwal (Target Golive) <span class="hint" style="font-weight:400;">(AL)</span></span>
+      <span><span class="dot" style="background:#7c3aed;"></span>Terjadwal (Target Golive)</span>
       <span><span class="dot" style="background:#16a34a;"></span>Sudah Golive (GOLIVE/UT/REKON/BAST)</span>
       <span style="color:var(--muted);">Angka di badge: jumlah LOP &middot; jumlah Port</span>
     </div>
@@ -271,7 +271,7 @@
 <!-- Detail Lokasi table (di bawah chart) -->
 <div class="section-title">
   Detail Lokasi Sedang Berjalan
-  <span class="hint">IHLD, Lokasi, Batch, Nama Mitra &amp; kolom L–O (ODP/PORT/BoQ/CPP)</span>
+  <span class="hint">IHLD, Lokasi, Batch, Nama Mitra, ODP/PORT/BoQ/CPP</span>
   <button type="button" class="btn-ghost btn-sm" id="pt3DownloadTemplateBtn" style="margin-left:auto;" title="Download format update (Excel) untuk lokasi yang sedang tampil di tabel ini -- isi lalu upload lewat Import Data">&#11015; Format Update</button>
   <button type="button" class="btn-ghost btn-sm" id="pt3ImportBtn" title="Upload file Excel Format Update (hasil isian) untuk update banyak lokasi sekaligus, tanpa update satu-satu">&#11014; Import Data</button>
   <input type="file" id="pt3ImportFileInput" accept=".xlsx" style="display:none;">
@@ -416,8 +416,8 @@ function fmtDateISO(iso) {
 // tooltip kolom asal, biar user yang paham sheet tetap bisa cross-check.
 function renderRowHeader(rowNum, label, snapshot) {
   const isGolive = snapshot.odp_port_source === 'golive';
-  const odpTitle = isGolive ? 'Dari kolom AF (Golive)' : 'Dari kolom L';
-  const portTitle = isGolive ? 'Dari kolom AG (Golive)' : 'Dari kolom M';
+  const odpTitle = isGolive ? 'Dari data Golive' : 'Dari data Rencana';
+  const portTitle = isGolive ? 'Dari data Golive' : 'Dari data Rencana';
   return `
     <div class="card" style="background:var(--panel-alt); padding:12px 14px; margin-bottom:12px;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
@@ -443,7 +443,7 @@ function renderAgingProgress(snapshot) {
     return `<div class="badge" style="background:#7f1d1d; margin-bottom:10px; display:inline-block;">Status: Drop — di luar progress tahapan</div>`;
   }
   if (!snapshot.wo_terbit) {
-    return `<div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:10px;">WO terbit (kolom D) belum terisi — aging &amp; deadline belum bisa dihitung.</div>`;
+    return `<div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:10px;">WO terbit belum terisi — aging &amp; deadline belum bisa dihitung.</div>`;
   }
 
   const pct = snapshot.progress_percent == null ? 0 : Math.round(snapshot.progress_percent);
@@ -467,7 +467,7 @@ function renderAgingProgress(snapshot) {
         Deadline tahap ini: <strong style="color:${snapshot.is_overdue ? '#dc2626' : 'var(--text)'};">${fmtDateISO(snapshot.current_stage_deadline)}</strong>
         ${snapshot.is_overdue ? ' <span class="badge" style="background:#dc2626;">Lewat deadline</span>' : ''}
         &nbsp;·&nbsp; Target Golive: ${fmtDateISO(snapshot.final_deadline)}
-        ${snapshot.target_fi ? `<br>Berdasarkan komit Target Finish Instalasi (AK): <strong style="color:var(--text);">${esc(snapshot.target_fi)}</strong>` : '<br>Berdasarkan estimasi WO terbit (belum ada komit di kolom AK)'}
+        ${snapshot.target_fi ? `<br>Berdasarkan komit Target Finish Instalasi: <strong style="color:var(--text);">${esc(snapshot.target_fi)}</strong>` : '<br>Berdasarkan estimasi WO terbit (belum ada komit Target Finish Instalasi)'}
       </div>
     </div>
   `;
@@ -492,13 +492,16 @@ function refreshStats(filteredRows) {
   const totalOrder = filteredRows.filter(r => r.has_order).length;
   const totalPort = filteredRows.reduce((sum, r) => sum + (r.port || 0), 0);
   const active = filteredRows.filter(r => r.status);
-  const finishCount = active.filter(r => r.status === '05. FINISH INSTALASI').length;
-  const pct = active.length ? Math.round((finishCount / active.length) * 100) : 0;
+  const finishRows = active.filter(r => r.status === '05. FINISH INSTALASI');
+  const finishCount = finishRows.length;
+  const finishPort = finishRows.reduce((sum, r) => sum + (r.port || 0), 0);
+  const pct = active.length ? (finishCount / active.length) * 100 : 0;
 
   document.getElementById('statTotalOrder').textContent = fmtNum(totalOrder);
   document.getElementById('statTotalPort').textContent = fmtNum(totalPort);
   document.getElementById('statActive').textContent = fmtNum(active.length);
-  document.getElementById('statProgress').textContent = pct + '%';
+  document.getElementById('statProgress').textContent = pct.toFixed(2) + '%';
+  document.getElementById('statProgressFoot').textContent = `${fmtNum(finishCount)} LOP · ${fmtNum(finishPort)} Port`;
 }
 
 // ── Combined Port + LOP pivot table ────────────────────────────────
@@ -688,7 +691,7 @@ function renderRegionalBranchTable(filteredRows, pivotColumns, groupTsel, wrapEl
   const { orderedRegionals, grandTotal } = computeRegionalBranchTable(filteredRows, pivotColumns, groupTsel);
 
   if (!orderedRegionals.length) {
-    el.innerHTML = '<div class="empty-state">Belum ada data Regional (kolom T) / Branch (kolom S).</div>';
+    el.innerHTML = '<div class="empty-state">Belum ada data Regional / Branch.</div>';
     return;
   }
 
@@ -1017,7 +1020,7 @@ function editFromDetail(rowNum) {
 // ── Filter branch (kolom S) — dropdown + checkbox ─────────────────
 function renderBranchFilter(branches, preserveState) {
   const el = document.getElementById('branchFilterGrid');
-  if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch (kolom S).</div>'; return; }
+  if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch.</div>'; return; }
 
   // Kalau ini update data (bukan load awal/refresh halaman), simpan dulu pilihan checkbox
   // yang sedang aktif supaya filter tidak ikut ter-reset saat grid dirender ulang.
@@ -1058,7 +1061,7 @@ function updateBranchDropdownLabel() {
 // ── Filter batch (kolom C) — checkbox grid, sama pola dgn filter branch ──
 function renderBatchFilter(batches, preserveState) {
   const el = document.getElementById('batchFilterGrid');
-  if (!batches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data batch (kolom C).</div>'; return; }
+  if (!batches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data batch.</div>'; return; }
 
   // Sama seperti filter branch: pertahankan pilihan checkbox yang sedang aktif
   // saat data di-refresh, supaya filter tidak ikut ter-reset.
@@ -1207,9 +1210,9 @@ setFilterOpenBatch(false);
 
 // ── Tab Rekap Port & LOP: Per Branch (default) / Per Batch ───────────
 const REKAP_HINTS = {
-  branch: 'baris = Regional (kolom T) &amp; Branch (kolom S) &middot; kolom = jumlah LOP per status (kolom Z) &middot; klik angka untuk lihat &amp; download daftar lokasinya',
-  batch: 'baris = batch (kolom C) &middot; setiap status (kolom Z) menampilkan LOP (jml. order) &amp; Port (jml. AG) berdampingan &middot; klik angka untuk lihat &amp; download daftar lokasinya',
-  progress: 'baris = Regional (kolom T) &amp; Branch (kolom S) &middot; hanya 5 tahapan progress (PERIJINAN&ndash;FINISH INSTALASI), tanpa DROP MOM/DROP/GOLIVE &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+  branch: 'baris = Regional &amp; Branch &middot; kolom = jumlah LOP per status &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+  batch: 'baris = batch &middot; setiap status menampilkan LOP (jml. order) &amp; Port berdampingan &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+  progress: 'baris = Regional &amp; Branch &middot; hanya 5 tahapan progress (PERIJINAN&ndash;FINISH INSTALASI), tanpa DROP MOM/DROP/GOLIVE &middot; klik angka untuk lihat &amp; download daftar lokasinya',
 };
 let rekapView = 'branch';
 function setRekapView(view) {
@@ -1846,7 +1849,7 @@ async function openBhRowDetail(rowNum) {
       <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
     </div>
     <a href="#" class="modal-back" id="bhBackLink">&larr; Kembali ke daftar</a>
-    <div class="skeleton">Memuat detail (kolom I s/d AB)...</div>
+    <div class="skeleton">Memuat detail...</div>
   `;
   document.getElementById('bhModalCloseBtn').addEventListener('click', closeBhModal);
   document.getElementById('bhBackLink').addEventListener('click', (e) => {
@@ -2065,7 +2068,7 @@ function initMitraCombo() {
     const val = hiddenInput.value;
     const jenis = jenisPekerjaanPreview(val);
     hintEl.innerHTML = val
-      ? `Jenis Pekerjaan (kolom X) akan otomatis terisi: <strong>${jenis}</strong>`
+      ? `Jenis Pekerjaan akan otomatis terisi: <strong>${jenis}</strong>`
       : '';
   }
 
@@ -2234,29 +2237,29 @@ async function openRow(rowNum) {
         </div>
       ` : ''}
       <div class="field mitra-combo" id="mitraComboField" style="margin-top:14px;">
-        <label for="mitra_search">Nama Mitra (kolom Y)</label>
+        <label for="mitra_search">Nama Mitra</label>
         <input type="text" id="mitra_search" placeholder="-- ketik utk cari nama mitra --" autocomplete="off">
         <input type="hidden" id="nama_mitra" value="${esc(snapshot.mitra || '')}">
         <div class="mitra-combo-list" id="mitraComboList"></div>
         <div class="mitra-jenis-hint" id="mitraJenisHint"></div>
       </div>
       <div class="field" style="margin-top:14px;">
-        <label for="status_z">Status (kolom Z)</label>
+        <label for="status_z">Status</label>
         <select id="status_z" onchange="onPanelStatusZChange(${rowNum}, this.value, false);">
           <option value="">-- pilih status --</option>
           ${z_options.map(o => `<option value="${o}" ${o === snapshot.status_z ? 'selected' : ''}>${o}</option>`).join('')}
         </select>
       </div>
       <div class="field">
-        <label for="status_aa">Sub Status (kolom AA)</label>
+        <label for="status_aa">Sub Status</label>
         <select id="status_aa"></select>
       </div>
       <div class="field" id="targetFiField">
-        <label for="target_fi">Target Finish Instalasi (kolom AK) <span id="targetFiHint"></span></label>
+        <label for="target_fi">Target Finish Instalasi <span id="targetFiHint"></span></label>
         <input type="date" id="target_fi" min="${new Date().toISOString().slice(0,10)}" value="${snapshot.target_fi_iso || ''}">
       </div>
       <div class="field" id="kategoriDropField" style="display:none;">
-        <label for="kategori_drop">Kategori Drop (kolom BH) <span style="color:#dc2626;">*wajib dipilih</span></label>
+        <label for="kategori_drop">Kategori Drop <span style="color:#dc2626;">*wajib dipilih</span></label>
         <select id="kategori_drop">
           <option value="">-- pilih kategori drop --</option>
           ${currentKategoriDropOptions.map(o => `<option value="${o}" ${o === snapshot.kategori_drop ? 'selected' : ''}>${o}</option>`).join('')}
@@ -2672,7 +2675,7 @@ function renderBoqSheetTable(rows, colsTruncated) {
   // ditampilkan selalu (bukan cuma kalau "melebihi cap") demi kesederhanaan.
   const note = document.createElement('div');
   note.style.cssText = 'font-size:0.72rem; color:var(--muted); margin-bottom:6px;';
-  note.textContent = `Preview: mulai dari baris 6 (A6), baris dengan kolom G kosong disembunyikan. Dibatasi ${BOQ_PREVIEW_ROW_CAP.toLocaleString('id-ID')} baris pertama${colsTruncated ? ' & 100 kolom pertama' : ''} (demi performa). File asli (tombol "Buka") tidak difilter.`;
+  note.textContent = `Preview: baris dengan volume kosong disembunyikan. Dibatasi ${BOQ_PREVIEW_ROW_CAP.toLocaleString('id-ID')} baris pertama${colsTruncated ? ' & 100 kolom pertama' : ''} (demi performa). File asli (tombol "Buka") tidak difilter.`;
   container.appendChild(note);
   container.appendChild(table);
 }
@@ -2806,18 +2809,18 @@ async function saveUpdate(rowNum) {
   const nama_mitra = mitraEl ? mitraEl.value : '';
   const msg = document.getElementById('updateMsg');
 
-  if (!status_z) { msg.innerHTML = '<div class="flash error">Status (kolom Z) wajib dipilih.</div>'; return; }
+  if (!status_z) { msg.innerHTML = '<div class="flash error">Status wajib dipilih.</div>'; return; }
   if (!note_text.trim()) { msg.innerHTML = '<div class="flash error">Keterangan tidak boleh kosong.</div>'; return; }
   if (target_fi && target_fi < new Date().toISOString().slice(0,10)) {
     msg.innerHTML = '<div class="flash error">Tanggal Target Finish Instalasi tidak boleh tanggal yang sudah lewat.</div>';
     return;
   }
   if (currentPreFinishInstallStatuses.includes(status_z) && !target_fi && !currentTargetFiHasExisting) {
-    msg.innerHTML = '<div class="flash error">Target Finish Instalasi (kolom AK) wajib diisi untuk status sebelum Finish Instalasi.</div>';
+    msg.innerHTML = '<div class="flash error">Target Finish Instalasi wajib diisi untuk status sebelum Finish Instalasi.</div>';
     return;
   }
   if (currentProgressDropStatuses.includes(status_z) && !kategori_drop) {
-    msg.innerHTML = '<div class="flash error">Kategori Drop (kolom BH) wajib dipilih untuk status Drop.</div>';
+    msg.innerHTML = '<div class="flash error">Kategori Drop wajib dipilih untuk status Drop.</div>';
     return;
   }
   const requiredDocKeys = currentDocumentUploadRequired ? (currentDocumentTypesByStatus[status_z] || []) : [];
@@ -2843,7 +2846,7 @@ async function saveUpdate(rowNum) {
     });
     const json = await res.json();
     if (!json.ok) { msg.innerHTML = `<div class="flash error">${json.error}</div>`; return; }
-    msg.innerHTML = `<div class="flash success">Tersimpan ke kolom ${json.note_col} (tanggal di ${json.date_col}).</div>`;
+    msg.innerHTML = `<div class="flash success">Berhasil disimpan.</div>`;
     loadDashboard();
     openRow(rowNum);
   } catch (e) {
