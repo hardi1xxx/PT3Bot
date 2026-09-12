@@ -1530,6 +1530,10 @@ def get_aging_data():
         "ihld": _col_to_index(config.COL_IHLD) - 1,
         "lokasi": _col_to_index(config.COL_LOKASI) - 1,
         "mitra": _col_to_index(config.COL_MITRA) - 1,
+        # Regional (kolom T) -- dipakai tombol "Grouping (TSEL)" di tabel
+        # "Rata-rata Aging per Branch" (gabung Regional BANTEN & JAKARTA
+        # jadi satu baris, sama seperti Rekap Port & LOP di PT3).
+        "regional": _col_to_index(getattr(config, "COL_REGIONAL", "T")) - 1,
     }
     for col in fixed_end_cols:
         idx[f"fixed_{col}"] = _col_to_index(col) - 1
@@ -1571,6 +1575,7 @@ def get_aging_data():
             "lokasi": cell("lokasi"),
             "batch": cell("batch") or "(Tanpa Batch)",
             "branch": branch_val,
+            "regional": cell("regional") or "(TANPA REGIONAL)",
             "mitra": cell("mitra"),
             "status_z": status_raw,
             "status_aa": cell("status_aa"),
@@ -1582,6 +1587,9 @@ def get_aging_data():
         "branches": sorted(branch_set, key=lambda b: b.lower()),
         "warning_days": config.AGING_WARNING_DAYS,
         "critical_days": config.AGING_CRITICAL_DAYS,
+        # Status yang dianggap "onprogress" (Perijinan..Finish Instalasi) --
+        # dipakai tab "Onprogress" di tabel "Rata-rata Aging per Branch".
+        "onprogress_statuses": config.DASHBOARD_STATUSES,
         "rows": rows,
     }
 

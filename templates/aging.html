@@ -5,6 +5,21 @@
 
 {% block content %}
 
+<style>
+  /* Tab "Rata-rata Aging per Branch / Per Status / Onprogress" + tombol
+     Grouping (TSEL) -- gaya sama persis dengan "Rekap Port & LOP" di PT3. */
+  .rekap-tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--border, #2a3550); padding-bottom: 10px; flex-wrap: wrap; }
+  .rekap-tab-btn { border: 1px solid var(--border, #2a3550); background: var(--panel-alt); color: var(--muted); font-weight: 700; font-size: 0.82rem; padding: 7px 16px; border-radius: 8px; cursor: pointer; }
+  .rekap-tab-btn:hover { color: var(--text); }
+  .rekap-tab-btn.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
+  .rekap-tsel-btn { margin-left: auto; border: 1px solid #16a34a; background: var(--panel-alt); color: #16a34a; font-weight: 700; font-size: 0.82rem; padding: 7px 16px; border-radius: 8px; cursor: pointer; }
+  .rekap-tsel-btn:hover { background: rgba(22, 163, 74, 0.1); }
+  .rekap-tsel-btn.active { background: #16a34a; color: #fff; border-color: #16a34a; }
+  #agingStatusTable td, #agingOnprogressTable td { text-align: center; white-space: nowrap; }
+  .aging-cell-lop { color: var(--muted); font-size: 0.75rem; }
+  .aging-cell-avg { font-weight: 700; }
+</style>
+
 <!-- Stat cards -->
 <div class="stat-grid" id="agingStatGrid">
   <div class="stat-card alt">
@@ -76,13 +91,22 @@
   <div id="agingFunnel"><div class="skeleton">Memuat data...</div></div>
 </div>
 
-<!-- Tabel rata-rata per branch -->
+<!-- Tabel rata-rata per branch: tab Per Branch (default) / Per Status / Onprogress,
+     plus Grouping (TSEL) -- sama pola dengan "Rekap Port & LOP" di PT3. -->
 <div class="section-title">
   Rata-rata Aging per Branch
-  <span class="hint">klik baris branch untuk lihat daftar lokasi</span>
+  <span class="hint" id="agingRekapHint">klik baris branch untuk lihat daftar lokasi</span>
 </div>
 <div class="card" style="margin-bottom:22px;">
-  <div class="pivot-table-wrap"><table class="pivot" id="agingBranchTable"></table></div>
+  <div class="rekap-tabs" id="agingRekapTabs">
+    <button type="button" class="rekap-tab-btn active" data-aging-view="branch">Rata-rata Aging per Branch</button>
+    <button type="button" class="rekap-tab-btn" data-aging-view="status">Per Status</button>
+    <button type="button" class="rekap-tab-btn" data-aging-view="onprogress">Onprogress</button>
+    <button type="button" class="rekap-tsel-btn" id="agingTselGroupBtn" title="Gabungkan baris Regional BANTEN &amp; JAKARTA jadi satu baris (TSEL)">Grouping (TSEL)</button>
+  </div>
+  <div class="pivot-table-wrap" id="agingBranchTableWrap"><table class="pivot" id="agingBranchTable"></table></div>
+  <div class="pivot-table-wrap" id="agingStatusTableWrap" style="display:none;"><table class="pivot pivot-combined" id="agingStatusTable"></table></div>
+  <div class="pivot-table-wrap" id="agingOnprogressTableWrap" style="display:none;"><table class="pivot pivot-combined" id="agingOnprogressTable"></table></div>
 </div>
 
 <!-- Tabel per LOP -->
@@ -250,6 +274,7 @@ function refreshAging() {
 
   renderStageFunnel(filtered, warnDays, critDays);
   renderAgingBranchTable(filtered, warnDays, critDays);
+  renderAgingStatusTable(filtered, warnDays, critDays);
   renderAgingLopTable(filtered, warnDays, critDays, document.getElementById('agingSearch').value);
 }
 
@@ -328,13 +353,14 @@ function renderAgingBranchTable(filteredRows, warnDays, critDays) {
   const byBranch = {};
   filteredRows.forEach(r => {
     if (r.aging_days === null) return;
-    if (!byBranch[r.branch]) byBranch[r.branch] = { sum: 0, count: 0, safe: 0, warn: 0, crit: 0 };
-    const g = byBranch[r.branch];
+    const key = agingGroupKeyOf(r);
+    if (!byBranch[key]) byBranch[key] = { sum: 0, count: 0, safe: 0, warn: 0, crit: 0 };
+    const g = byBranch[key];
     g.sum += r.aging_days; g.count += 1;
     const b = agingBucket(r.aging_days, warnDays, critDays);
     g[b]++;
   });
-  const branches = Object.keys(byBranch).sort((a, b) => a.localeCompare(b));
+  const branches = sortAgingGroupNames(Object.keys(byBranch));
   if (!branches.length) { table.innerHTML = '<tr><td class="empty-state">Tidak ada data.</td></tr>'; return; }
 
   let html = '<thead><tr><th style="text-align:left;">Branch</th><th>Jumlah LOP</th><th>Rata-rata Aging</th><th>Aman</th><th>Perhatian</th><th>Kritis</th></tr></thead><tbody>';
@@ -350,6 +376,134 @@ function renderAgingBranchTable(filteredRows, warnDays, critDays) {
       <td>${fmtNum2(g.warn)}</td>
       <td>${fmtNum2(g.crit)}</td>
     </tr>`;
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+// ── Grouping (TSEL): gabungkan branch yang Regional-nya (kolom T) diawali
+// "BANTEN" atau "JAKARTA" jadi satu baris gabungan -- sama konsep dengan
+// tombol "Grouping (TSEL)" di Rekap Port & LOP (PT3.html), tapi diterapkan
+// langsung di level Branch (tabel aging ini flat per-Branch, tidak ada
+// level Regional terpisah). ──
+const AGING_TSEL_MERGE_PREFIXES = ['BANTEN', 'JAKARTA'];
+const AGING_TSEL_GROUP_LABEL = 'BANTEN & JAKARTA (TSEL)';
+let agingTselGroupingActive = false;
+
+function agingGroupKeyOf(r) {
+  if (agingTselGroupingActive) {
+    const upper = (r.regional || '').toUpperCase();
+    if (AGING_TSEL_MERGE_PREFIXES.some(p => upper.startsWith(p))) return AGING_TSEL_GROUP_LABEL;
+  }
+  return r.branch;
+}
+
+function sortAgingGroupNames(names) {
+  // Grup TSEL gabungan selalu ditaruh paling bawah, sisanya alfabetis.
+  return names.slice().sort((a, b) => {
+    if (a === AGING_TSEL_GROUP_LABEL) return 1;
+    if (b === AGING_TSEL_GROUP_LABEL) return -1;
+    return a.localeCompare(b);
+  });
+}
+
+document.getElementById('agingTselGroupBtn').addEventListener('click', () => {
+  agingTselGroupingActive = !agingTselGroupingActive;
+  document.getElementById('agingTselGroupBtn').classList.toggle('active', agingTselGroupingActive);
+  refreshAging();
+});
+
+// ── Tab "Rata-rata Aging per Branch" / "Per Status" / "Onprogress" ──────
+const AGING_REKAP_HINTS = {
+  branch: 'klik baris branch untuk lihat daftar lokasi',
+  status: 'baris = Branch &middot; kolom = tiap status pekerjaan &middot; nilai = jumlah LOP &amp; rata-rata aging (hari) pada status tsb',
+  onprogress: 'sama seperti Per Status, tapi hanya status yang sedang berjalan (Perijinan&ndash;Finish Instalasi) &middot; DROP MOM/DROP/GOLIVE tidak dihitung',
+};
+let agingRekapView = 'branch';
+function setAgingRekapView(view) {
+  agingRekapView = view;
+  document.querySelectorAll('#agingRekapTabs .rekap-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.agingView === view);
+  });
+  document.getElementById('agingBranchTableWrap').style.display = view === 'branch' ? 'block' : 'none';
+  document.getElementById('agingStatusTableWrap').style.display = view === 'status' ? 'block' : 'none';
+  document.getElementById('agingOnprogressTableWrap').style.display = view === 'onprogress' ? 'block' : 'none';
+  const hint = document.getElementById('agingRekapHint');
+  if (hint) hint.innerHTML = AGING_REKAP_HINTS[view];
+}
+document.getElementById('agingRekapTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.rekap-tab-btn[data-aging-view]');
+  if (!btn) return;
+  setAgingRekapView(btn.dataset.agingView);
+});
+setAgingRekapView('branch');
+
+// Urutan status yang wajar buat kolom tabel "Per Status"/"Onprogress":
+// DROP MOM/DROP dulu, lalu tahapan onprogress (Perijinan..Finish
+// Instalasi), lalu Golive & variannya (UT/Rekon/BAST) paling akhir.
+const AGING_STATUS_COLUMN_ORDER = [
+  '01. DROP MOM', '00. DROP', '10.1 BAST 2025',
+  '01. PERIJINAN', '02. PERSIAPAN', '03. MATDEV', '04. INSTALASI', '05. FINISH INSTALASI',
+  '06. GOLIVE', '07. UT', '09. REKON', '10. BAST',
+];
+function agingStatusSortIndex(s) {
+  const idx = AGING_STATUS_COLUMN_ORDER.indexOf(s);
+  return idx === -1 ? AGING_STATUS_COLUMN_ORDER.length : idx;
+}
+function agingStatusShortLabel(s) {
+  return (s || '(Tanpa Status)').replace(/^\d+(\.\d+)?\.\s*/, '');
+}
+
+// Tabel "Per Status" (branch x status, isi: jumlah LOP & rata-rata aging)
+// dan "Onprogress" (sama, tapi kolom dibatasi ke 5 status yang sedang
+// berjalan) -- dirender sekaligus di sini, tinggal beda daftar status &
+// elemen tabel tujuannya.
+function renderAgingStatusTable(filteredRows, warnDays, critDays) {
+  const rows = filteredRows.filter(r => r.aging_days !== null);
+  const statusesPresent = Array.from(new Set(rows.map(r => r.status_z || '(Tanpa Status)')));
+  const onprogressStatuses = (agingCache.onprogress_statuses || [
+    '01. PERIJINAN', '02. PERSIAPAN', '03. MATDEV', '04. INSTALASI', '05. FINISH INSTALASI',
+  ]).filter(s => statusesPresent.includes(s));
+
+  renderAgingStatusPivot(document.getElementById('agingStatusTable'), rows,
+    statusesPresent.slice().sort((a, b) => agingStatusSortIndex(a) - agingStatusSortIndex(b)), warnDays, critDays);
+  renderAgingStatusPivot(document.getElementById('agingOnprogressTable'), rows, onprogressStatuses, warnDays, critDays);
+}
+
+function renderAgingStatusPivot(table, rows, statuses, warnDays, critDays) {
+  if (!statuses.length) { table.innerHTML = '<tr><td class="empty-state">Tidak ada data.</td></tr>'; return; }
+
+  const groups = {}; // groupName -> { [status]: {sum, count} }
+  rows.forEach(r => {
+    const s = r.status_z || '(Tanpa Status)';
+    if (!statuses.includes(s)) return;
+    const key = agingGroupKeyOf(r);
+    if (!groups[key]) groups[key] = {};
+    if (!groups[key][s]) groups[key][s] = { sum: 0, count: 0 };
+    groups[key][s].sum += r.aging_days;
+    groups[key][s].count += 1;
+  });
+
+  const groupNames = sortAgingGroupNames(Object.keys(groups));
+  if (!groupNames.length) { table.innerHTML = '<tr><td class="empty-state">Tidak ada data.</td></tr>'; return; }
+
+  let html = '<thead><tr><th style="text-align:left;">Branch</th>';
+  statuses.forEach(s => { html += `<th>${esc2(agingStatusShortLabel(s))}</th>`; });
+  html += '</tr></thead><tbody>';
+  groupNames.forEach(g => {
+    html += `<tr><th style="text-align:left;">${esc2(g)}</th>`;
+    statuses.forEach(s => {
+      const cell = groups[g][s];
+      if (!cell) { html += '<td>-</td>'; return; }
+      const avg = Math.round(cell.sum / cell.count);
+      const bucket = agingBucket(avg, warnDays, critDays);
+      const color = agingColor(bucket);
+      html += `<td>
+        <div class="aging-cell-lop">${fmtNum2(cell.count)} LOP</div>
+        <div class="aging-cell-avg" style="color:${color};">${avg} hari</div>
+      </td>`;
+    });
+    html += '</tr>';
   });
   html += '</tbody>';
   table.innerHTML = html;
@@ -461,7 +615,6 @@ function openAgingModal(rowData) {
     </table>
     ${renderLopStageTimeline(rowData, warnDays, critDays)}
     <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
-      <button type="button" onclick="window.location.href='/?openRow=${rowData.row}'">Update Status</button>
       <button type="button" class="btn-ghost" id="agingViewFullDetailBtn">Lihat Detail Lengkap</button>
     </div>
     <div id="agingFullDetailWrap" style="margin-top:12px;"></div>
@@ -506,7 +659,7 @@ document.getElementById('agingBranchTable').addEventListener('click', (e) => {
 function openBranchListModal(branch) {
   const warnDays = agingCache.warning_days, critDays = agingCache.critical_days;
   const rows = getAgingFilteredRows()
-    .filter(r => r.branch === branch && r.aging_days !== null)
+    .filter(r => r.aging_days !== null && agingGroupKeyOf(r) === branch)
     .slice()
     .sort((a, b) => b.aging_days - a.aging_days);
   branchModalCache = { branch, rows, warnDays, critDays };
@@ -530,9 +683,17 @@ function renderBranchListView() {
     return;
   }
 
+  const avgDays = Math.round(rows.reduce((s, r) => s + r.aging_days, 0) / rows.length);
+  const avgBucket = agingBucket(avgDays, warnDays, critDays);
+  const avgColor = agingColor(avgBucket);
+
   modalBox.innerHTML = `
     <div class="modal-header">
-      <div class="modal-title">${esc2(branch)} <span class="badge">${rows.length} lokasi</span></div>
+      <div class="modal-title">
+        ${esc2(branch)}
+        <span class="badge">${rows.length} lokasi</span>
+        <span class="badge" style="background:${avgColor}22; color:${avgColor}; border-color:${avgColor}55; font-weight:700;">rata-rata ${avgDays} hari</span>
+      </div>
       <button class="btn-ghost modal-close" id="branchModalCloseBtn">Tutup &#10005;</button>
     </div>
     <div class="loc-list" style="margin-top:10px; max-height:420px; overflow-y:auto;" id="branchLopListBody">
