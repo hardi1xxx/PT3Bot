@@ -8,7 +8,7 @@
 <!-- Filter Branch (kolom J, sheet Detail PT2) -->
 <div class="card" id="pt2FilterCard" style="margin-bottom:22px;">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-    <div style="font-size:0.9rem;">Filter Branch (kolom J) &mdash; <span id="pt2FilterBranchSummary">semua branch dipilih</span></div>
+    <div style="font-size:0.9rem;">Filter Branch &mdash; <span id="pt2FilterBranchSummary">semua branch dipilih</span></div>
     <button type="button" class="btn-ghost" id="pt2FilterToggleBtn">Tampilkan &#9662;</button>
   </div>
   <div id="pt2FilterBranchPanel" style="display:none; margin-top:14px;">
@@ -25,22 +25,21 @@
   <div class="stat-card pt2-clickable-card" onclick="pt2CardClick('total_lop')" title="Klik untuk lihat daftar">
     <div class="stat-label">Total LOP</div>
     <div class="stat-value" id="pt2StatTotalLop">–</div>
-    <div class="stat-foot">Jumlah baris terisi (kolom A)</div>
+    <div class="stat-foot">Jumlah baris terisi</div>
   </div>
   <div class="stat-card alt pt2-clickable-card" onclick="pt2CardClick('total_port')" title="Klik untuk lihat daftar">
     <div class="stat-label">Total Port</div>
     <div class="stat-value" id="pt2StatTotalPort">–</div>
-    <div class="stat-foot">Jumlah FINAL PORT (kolom AC)</div>
+    <div class="stat-foot">Jumlah FINAL PORT</div>
   </div>
   <div class="stat-card green pt2-clickable-card" onclick="pt2CardClick('golive_hi')" title="Klik untuk lihat daftar & download">
     <div class="stat-label">Golive Hari Ini</div>
     <div class="stat-value" id="pt2StatGoliveHi">–</div>
-    <div class="stat-foot" id="pt2StatGoliveHiFoot">TGL CLOSE WO (kolom AE) = hari ini</div>
+    <div class="stat-foot" id="pt2StatGoliveHiFoot">TGL CLOSE WO = hari ini</div>
   </div>
   <div class="stat-card amber pt2-clickable-card" onclick="pt2CardClick('pct_golive')" title="Klik untuk lihat daftar & download">
     <div class="stat-label">%GOLIVE</div>
     <div class="stat-value" id="pt2StatPctGolive">–</div>
-    <div class="stat-foot" id="pt2StatPctGoliveFoot">5.GOLIVE ÷ Total LOP tanpa Drop &amp; Kendala</div>
   </div>
 </div>
 
@@ -71,7 +70,7 @@
 <!-- Grafik trend harian Golive (per minggu, filter tanggal close order) -->
 <div class="section-title">
   Grafik Golive Berjalan
-  <span class="hint">harian, per minggu — filter berdasarkan TGL CLOSE WO (kolom AE)</span>
+  <span class="hint">harian, per minggu — filter berdasarkan TGL CLOSE WO</span>
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pt2-trend-controls">
@@ -101,30 +100,50 @@
   </div>
 </div>
 
-<!-- Rekap Regional/Branch table -->
+<!-- Rekap LOP & Port (gabungan: per Regional/Branch, per Batch NDE, Progress) -->
 <div class="section-title">
-  Rekap LOP &amp; Port per Regional / Branch
-  <span class="hint">klik angka di tabel untuk lihat daftar lokasinya — kolom GOLIVE bisa langsung didownload</span>
+  Rekap LOP &amp; Port
+  <span class="hint">klik angka di tabel untuk lihat daftar lokasinya &amp; download</span>
 </div>
 <div class="card" style="margin-bottom:22px;">
+  <div class="pt2-pivot-toolbar">
+    <div class="pt2-pivot-tabs" id="pt2PivotTabs">
+      <button type="button" class="pt2-pivot-tab-btn active" data-pivot-tab="branch">Per Branch</button>
+      <button type="button" class="pt2-pivot-tab-btn" data-pivot-tab="batch">Per Batch</button>
+      <button type="button" class="pt2-pivot-tab-btn" data-pivot-tab="progress">Progress</button>
+    </div>
+    <div class="pt2-pivot-actions">
+      <button type="button" class="pt2-grouping-btn" id="pt2GroupingBtn" title="Gabungkan regional BANTEN &amp; JAKARTA menjadi JABAT">Grouping (TSEL)</button>
+      <button type="button" class="pt2-export-btn" id="pt2ExportBtn">&#8681; Export Data</button>
+    </div>
+  </div>
   <div class="pivot-table-wrap" id="pt2PivotWrap"><div class="skeleton">Memuat data...</div></div>
+  <div class="pivot-table-wrap" id="pt2BatchPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
+  <div class="pivot-table-wrap" id="pt2ProgressPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
 </div>
 
-<!-- Rekap per Batch NDE (kolom H) -->
-<div class="section-title">
-  Rekap LOP &amp; Port per Batch NDE
-  <span class="hint">baris = BATCH NDE (kolom H) — klik angka untuk lihat daftar lokasinya</span>
-</div>
+<!-- Pencarian Data -->
+<div class="section-title">Pencarian Data</div>
 <div class="card" style="margin-bottom:22px;">
-  <div class="pivot-table-wrap" id="pt2BatchPivotWrap"><div class="skeleton">Memuat data...</div></div>
+  <div class="pt2-search-bar">
+    <input type="text" id="pt2SearchInput" placeholder="Cari IHLD, Lokasi, Source Order, Batch, Regional, Branch, Status, Klasifikasi...">
+    <button type="button" class="pt2-export-btn" id="pt2SearchBtn">&#128269; Cari</button>
+    <button type="button" class="btn-ghost" id="pt2SearchClearBtn">Bersihkan</button>
+  </div>
+  <div id="pt2SearchResultWrap"><div class="empty-state">Masukkan kata kunci lalu klik Cari (atau tekan Enter) untuk menampilkan daftar data.</div></div>
 </div>
 
-<!-- Kendala (Klasifikasi Cancel, kolom P) -->
+<!-- Kendala -->
 <div class="section-title">Kendala</div>
 <div class="card" style="margin-bottom:22px;">
   <p style="color:var(--muted, #64748b); font-size:0.85rem; margin:0 0 12px;">
-    Kategori kendala dari kolom P (Klasifikasi Cancel). Klik kategori untuk lihat daftar lokasi &amp; download.
+    Klik kategori untuk lihat daftar lokasi &amp; download.
   </p>
+  <div class="pt2-pivot-tabs" id="pt2KendalaTabs">
+    <button type="button" class="pt2-pivot-tab-btn active" data-kgroup="dropnde">Drop Nde <span class="pt2-tab-count" id="pt2KGCountDropnde"></span></button>
+    <button type="button" class="pt2-pivot-tab-btn" data-kgroup="nonteknis">Kendala Non Teknis <span class="pt2-tab-count" id="pt2KGCountNonteknis"></span></button>
+    <button type="button" class="pt2-pivot-tab-btn" data-kgroup="teknis">Kendala Teknis <span class="pt2-tab-count" id="pt2KGCountTeknis"></span></button>
+  </div>
   <div class="bh-grid" id="pt2KendalaGrid"><div class="skeleton">Memuat data...</div></div>
 </div>
 
@@ -135,6 +154,34 @@
 
 <style>
   .stat-value .stat-value-sub { font-size:0.5em; font-weight:600; color:var(--muted, #64748b); margin-left:6px; }
+  .stat-value .stat-value-sub-block { display:block; font-size:0.42em; font-weight:600; color:var(--muted, #64748b); margin-top:5px; }
+
+  .pt2-pivot-toolbar { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+  .pt2-pivot-tabs { display:flex; gap:6px; background:#f1f5f9; border-radius:10px; padding:4px; flex-wrap:wrap; }
+  .pt2-pivot-tab-btn {
+    border:none; background:transparent; padding:9px 18px; border-radius:8px; font-size:0.86rem;
+    font-weight:700; color:var(--muted, #64748b); cursor:pointer; white-space:nowrap;
+  }
+  .pt2-pivot-tab-btn.active { background:var(--brand-blue, #1c2b4a); color:#fff; box-shadow:0 1px 3px rgba(0,0,0,.15); }
+  .pt2-tab-count { font-weight:600; opacity:0.75; margin-left:4px; }
+  .pt2-pivot-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .pt2-grouping-btn {
+    border:1.5px solid #16a34a; background:#fff; color:#16a34a; font-weight:700; font-size:0.84rem;
+    border-radius:999px; padding:8px 16px; cursor:pointer; transition:background .15s ease;
+  }
+  .pt2-grouping-btn.active { background:#16a34a; color:#fff; }
+  .pt2-grouping-btn:hover { background:#f0fdf4; }
+  .pt2-grouping-btn.active:hover { background:#15803d; }
+  .pt2-export-btn {
+    border:1px solid var(--border, #e2e8f0); background:#f8fafc; color:var(--text, #1e293b); font-weight:700;
+    font-size:0.84rem; border-radius:8px; padding:8px 16px; cursor:pointer;
+  }
+  .pt2-export-btn:hover { background:#eef2f7; }
+
+  .pt2-search-bar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .pt2-search-bar input[type=text] {
+    flex:1 1 280px; border:1px solid var(--border, #e2e8f0); border-radius:8px; padding:9px 12px; font-size:0.86rem;
+  }
 
   .pt2-branch-pill { display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px; border:1px solid var(--border, #e2e8f0); background:#f8fafc; font-size:0.84rem; cursor:pointer; user-select:none; }
   .pt2-branch-pill input { accent-color:#1d4ed8; cursor:pointer; }
@@ -249,13 +296,26 @@ function pt2Finalize(agg, data) {
   agg.pct_golive = denomLop > 0 ? (golive.lop / denomLop * 100) : 0;
 }
 
-function pt2BuildPivot(data) {
+// Grouping (TSEL): gabungkan regional BANTEN & JAKARTA menjadi satu baris "JABAT"
+const PT2_JABAT_MEMBERS = ['BANTEN', 'JAKARTA'];
+const PT2_JABAT_LABEL = 'JABAT';
+let pt2GroupingActive = false;
+
+function pt2RegionalKeyFor(regional, grouping) {
+  const key = regional || '(Tanpa Regional)';
+  return (grouping && PT2_JABAT_MEMBERS.includes(key)) ? PT2_JABAT_LABEL : key;
+}
+
+function pt2BuildPivot(data, grouping) {
   const regionalMap = {};
-  data.regionals.forEach(r => { regionalMap[r] = { agg: pt2EmptyAgg(data.statuses), branchMap: {} }; });
+  data.regionals.forEach(r => {
+    const key = pt2RegionalKeyFor(r, grouping);
+    if (!regionalMap[key]) regionalMap[key] = { agg: pt2EmptyAgg(data.statuses), branchMap: {} };
+  });
   const grand = pt2EmptyAgg(data.statuses);
 
   data.rows.forEach(r => {
-    const regionalKey = r.regional || '(Tanpa Regional)';
+    const regionalKey = pt2RegionalKeyFor(r.regional, grouping);
     if (!regionalMap[regionalKey]) regionalMap[regionalKey] = { agg: pt2EmptyAgg(data.statuses), branchMap: {} };
     const regEntry = regionalMap[regionalKey];
     const branchKey = r.branch || '(Tanpa Branch)';
@@ -278,7 +338,24 @@ function pt2BuildPivot(data) {
   });
   pt2Finalize(grand, data);
 
-  return { regionalMap, grand };
+  // Urutan baris regional untuk ditampilkan (JABAT muncul di posisi regional pertama yang digabung)
+  let regionalOrder;
+  if (grouping) {
+    regionalOrder = [];
+    let inserted = false;
+    data.regionals.forEach(r => {
+      if (PT2_JABAT_MEMBERS.includes(r)) {
+        if (!inserted) { regionalOrder.push(PT2_JABAT_LABEL); inserted = true; }
+      } else {
+        regionalOrder.push(r);
+      }
+    });
+    if (!inserted && regionalMap[PT2_JABAT_LABEL]) regionalOrder.unshift(PT2_JABAT_LABEL);
+  } else {
+    regionalOrder = data.regionals.slice();
+  }
+
+  return { regionalMap, grand, regionalOrder };
 }
 
 function pt2ComputeH1Agg(rows, data) {
@@ -303,7 +380,11 @@ function pt2FilterRows(filter) {
   const isSameDate = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
   return pt2Cache.rows.filter(r => {
-    if (filter.regional !== undefined && r.regional !== filter.regional) return false;
+    if (filter.regional !== undefined) {
+      if (Array.isArray(filter.regional)) {
+        if (!filter.regional.includes(r.regional)) return false;
+      } else if (r.regional !== filter.regional) return false;
+    }
     if (filter.branch !== undefined && r.branch !== filter.branch) return false;
     if (filter.batch !== undefined && r.batch !== filter.batch) return false;
     if (filter.status !== undefined && r.status !== filter.status) return false;
@@ -323,7 +404,7 @@ function pt2FilterRows(filter) {
 
 function pt2FilterTitle(filter) {
   const parts = [];
-  if (filter.regional) parts.push(filter.regional);
+  if (filter.regional) parts.push(Array.isArray(filter.regional) ? `JABAT (${filter.regional.join('+')})` : filter.regional);
   if (filter.branch) parts.push(filter.branch);
   if (filter.batch) parts.push('Batch ' + filter.batch);
   if (filter.status) parts.push(pt2ShortLabel(filter.status));
@@ -342,12 +423,11 @@ function pt2RefreshStats(data, grand) {
 
   document.getElementById('pt2StatGoliveHi').innerHTML =
     `${pt2FmtNum(grand.golive_hi.lop)}<span class="stat-value-sub">${pt2FmtNum(grand.golive_hi.port)} Port</span>`;
-  document.getElementById('pt2StatGoliveHiFoot').textContent = 'TGL CLOSE WO (kolom AE) = hari ini';
+  document.getElementById('pt2StatGoliveHiFoot').textContent = 'TGL CLOSE WO = hari ini';
 
   const goliveTotal = grand.values[data.golive_status] || { lop: 0, port: 0 };
   document.getElementById('pt2StatPctGolive').innerHTML =
-    `${grand.pct_golive.toFixed(2)}%<span class="stat-value-sub">${pt2FmtNum(goliveTotal.lop)} LOP &middot; ${pt2FmtNum(goliveTotal.port)} Port</span>`;
-  document.getElementById('pt2StatPctGoliveFoot').textContent = '5.GOLIVE ÷ Total LOP tanpa Drop & Kendala';
+    `${grand.pct_golive.toFixed(2)}%<span class="stat-value-sub-block">${pt2FmtNum(goliveTotal.lop)} LOP &middot; ${pt2FmtNum(goliveTotal.port)} Port</span>`;
 
   const dropCount = grand.values['0.DROP'] ? grand.values['0.DROP'].lop : 0;
   const kendalaCount = grand.values['0.KENDALA'] ? grand.values['0.KENDALA'].lop : 0;
@@ -416,7 +496,7 @@ function pt2ComputeH1GoliveDate(rows) {
 }
 
 function pt2RenderH1Row(agg, data, h1Golive) {
-  let html = `<tr class="pt2-h1-row"><td class="row-label">H-1 <span class="pt2-h1-hint">(kolom AH)</span></td>`;
+  let html = `<tr class="pt2-h1-row"><td class="row-label">H-1</td>`;
   data.statuses.forEach(s => {
     const v = agg.values[s];
     html += `<td>${pt2FmtNum(v.lop)}</td><td>${pt2FmtNum(v.port)}</td>`;
@@ -462,7 +542,7 @@ function pt2RenderPivotTable(data) {
   const el = document.getElementById('pt2PivotWrap');
   if (!data.rows.length) { el.innerHTML = '<div class="empty-state">Belum ada data di sheet Detail PT2.</div>'; return; }
 
-  const { regionalMap, grand } = pt2BuildPivot(data);
+  const { regionalMap, grand, regionalOrder } = pt2BuildPivot(data, pt2GroupingActive);
   const monthLabel = 'GOLIVE ' + (data.current_month_label || '');
 
   let html = '<table class="pt2-pivot"><thead><tr>';
@@ -477,15 +557,16 @@ function pt2RenderPivotTable(data) {
   html += '<th>LOP</th><th>Port</th><th>LOP</th><th>Port</th><th>LOP</th><th>Port</th>';
   html += '</tr></thead><tbody>';
 
-  data.regionals.forEach(regionalKey => {
+  regionalOrder.forEach(regionalKey => {
     const regEntry = regionalMap[regionalKey];
     if (!regEntry) return;
     const branchKeys = Object.keys(regEntry.branchMap).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
     if (!branchKeys.length) return;
 
-    html += pt2RenderPivotRow(regionalKey, regEntry.agg, data, 'regional-row', { regional: regionalKey });
+    const regionalFilterKey = (regionalKey === PT2_JABAT_LABEL) ? PT2_JABAT_MEMBERS.slice() : regionalKey;
+    html += pt2RenderPivotRow(regionalKey, regEntry.agg, data, 'regional-row', { regional: regionalFilterKey });
     branchKeys.forEach(branchKey => {
-      html += pt2RenderPivotRow(branchKey, regEntry.branchMap[branchKey], data, 'branch-row', { regional: regionalKey, branch: branchKey });
+      html += pt2RenderPivotRow(branchKey, regEntry.branchMap[branchKey], data, 'branch-row', { regional: regionalFilterKey, branch: branchKey });
     });
   });
 
@@ -579,6 +660,116 @@ document.getElementById('pt2BatchPivotWrap').addEventListener('click', (e) => {
   pt2OpenFilteredList(pt2FilterTitle(filter), pt2FilterRows(filter), filter);
 });
 
+// ── Progress (lokasi berstatus 3.OGP DEPLOY) — per Regional/Branch ───
+const PT2_PROGRESS_STATUS = '3.OGP DEPLOY';
+
+function pt2EmptySimpleAgg() { return { lop: 0, port: 0 }; }
+
+function pt2BuildProgressPivot(data, grouping) {
+  const regionalMap = {};
+  const grand = pt2EmptySimpleAgg();
+
+  data.rows.forEach(r => {
+    if (r.status !== PT2_PROGRESS_STATUS) return;
+    const regionalKey = pt2RegionalKeyFor(r.regional, grouping);
+    if (!regionalMap[regionalKey]) regionalMap[regionalKey] = { agg: pt2EmptySimpleAgg(), branchMap: {} };
+    const regEntry = regionalMap[regionalKey];
+    const branchKey = r.branch || '(Tanpa Branch)';
+    if (!regEntry.branchMap[branchKey]) regEntry.branchMap[branchKey] = pt2EmptySimpleAgg();
+    const branchAgg = regEntry.branchMap[branchKey];
+
+    [branchAgg, regEntry.agg, grand].forEach(agg => {
+      agg.lop += 1;
+      agg.port += (r.port || 0);
+    });
+  });
+
+  return { regionalMap, grand };
+}
+
+function pt2RenderProgressRow(label, agg, rowClass, rowKey) {
+  const f = pt2FilterAttr(Object.assign({ status: PT2_PROGRESS_STATUS }, rowKey || {}));
+  return `<tr class="${rowClass}"><td class="row-label">${pt2Esc(label)}</td>
+    <td class="pt2-clickable" data-filter='${f}'>${pt2FmtNum(agg.lop)}</td>
+    <td class="pt2-clickable" data-filter='${f}'>${pt2FmtNum(agg.port)}</td></tr>`;
+}
+
+function pt2RenderProgressPivotTable(data) {
+  const el = document.getElementById('pt2ProgressPivotWrap');
+  if (!el) return;
+  const rowsExist = data.rows.some(r => r.status === PT2_PROGRESS_STATUS);
+  if (!rowsExist) { el.innerHTML = `<div class="empty-state">Belum ada lokasi berstatus ${pt2Esc(PT2_PROGRESS_STATUS)}.</div>`; return; }
+
+  const { regionalMap, grand } = pt2BuildProgressPivot(data, pt2GroupingActive);
+  const regionalKeys = Object.keys(regionalMap).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+
+  let html = '<table class="pt2-pivot"><thead><tr>';
+  html += `<th class="row-label">REGIONAL / BRANCH</th><th>LOP</th><th>Port</th>`;
+  html += '</tr></thead><tbody>';
+
+  regionalKeys.forEach(regionalKey => {
+    const regEntry = regionalMap[regionalKey];
+    const branchKeys = Object.keys(regEntry.branchMap).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    if (!branchKeys.length) return;
+    const regionalFilterKey = (regionalKey === PT2_JABAT_LABEL) ? PT2_JABAT_MEMBERS.slice() : regionalKey;
+    html += pt2RenderProgressRow(regionalKey, regEntry.agg, 'regional-row', { regional: regionalFilterKey });
+    branchKeys.forEach(branchKey => {
+      html += pt2RenderProgressRow(branchKey, regEntry.branchMap[branchKey], 'branch-row', { regional: regionalFilterKey, branch: branchKey });
+    });
+  });
+
+  html += pt2RenderProgressRow('GRAND TOTAL', grand, 'grand-total-row', {});
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+document.getElementById('pt2ProgressPivotWrap').addEventListener('click', (e) => {
+  const td = e.target.closest('.pt2-clickable');
+  if (!td || !pt2Cache) return;
+  const filter = JSON.parse(td.dataset.filter);
+  pt2OpenFilteredList(pt2FilterTitle(filter), pt2FilterRows(filter), filter);
+});
+
+// ── Tab & aksi toolbar Rekap LOP & Port (Per Branch / Per Batch / Progress) ─
+let pt2ActivePivotTab = 'branch';
+function pt2SetPivotTab(tab) {
+  pt2ActivePivotTab = tab;
+  document.querySelectorAll('#pt2PivotTabs .pt2-pivot-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.pivotTab === tab);
+  });
+  document.getElementById('pt2PivotWrap').style.display = tab === 'branch' ? '' : 'none';
+  document.getElementById('pt2BatchPivotWrap').style.display = tab === 'batch' ? '' : 'none';
+  document.getElementById('pt2ProgressPivotWrap').style.display = tab === 'progress' ? '' : 'none';
+  const groupingBtn = document.getElementById('pt2GroupingBtn');
+  groupingBtn.style.display = tab === 'batch' ? 'none' : '';
+}
+document.getElementById('pt2PivotTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.pt2-pivot-tab-btn');
+  if (!btn) return;
+  pt2SetPivotTab(btn.dataset.pivotTab);
+});
+
+document.getElementById('pt2GroupingBtn').addEventListener('click', () => {
+  pt2GroupingActive = !pt2GroupingActive;
+  document.getElementById('pt2GroupingBtn').classList.toggle('active', pt2GroupingActive);
+  if (!pt2Cache) return;
+  if (pt2ActivePivotTab === 'branch') pt2RenderPivotTable(pt2Cache);
+  else if (pt2ActivePivotTab === 'progress') pt2RenderProgressPivotTable(pt2Cache);
+});
+
+document.getElementById('pt2ExportBtn').addEventListener('click', () => {
+  if (!pt2Cache) return;
+  let rows, title;
+  if (pt2ActivePivotTab === 'progress') {
+    rows = pt2Cache.rows.filter(r => r.status === PT2_PROGRESS_STATUS);
+    title = 'progress-ogp-deploy';
+  } else {
+    rows = pt2Cache.rows;
+    title = pt2ActivePivotTab === 'batch' ? 'per-batch' : 'per-branch';
+  }
+  pt2DownloadCSV(rows, title, PT2_LIST_COLS_CANCEL);
+});
+
 // ── Donut chart ─────────────────────────────────────────────────────
 function pt2RenderDonut(data, grand) {
   const labels = data.statuses.map(pt2ShortLabel);
@@ -620,7 +811,20 @@ document.getElementById('pt2ChartLegend').addEventListener('click', (e) => {
   pt2OpenFilteredList(pt2ShortLabel(status), pt2FilterRows({ status }), { status });
 });
 
-// ── Kendala (kolom P): kategori -> daftar lokasi (9 kolom) + download ─
+// ── Kendala: kategori (Klasifikasi Cancel) dikelompokkan jadi 3 grup ──
+const PT2_KG_DROPNDE = ['cleansing'];
+const PT2_KG_NONTEKNIS = [
+  'kendala izin', 'duplikasi order', 'pelanggan batal',
+  'kendala lingkungan', 'kendala lain-lain', 'drop by tsel',
+];
+function pt2KendalaGroupOf(label) {
+  const l = (label || '').trim().toLowerCase();
+  if (PT2_KG_DROPNDE.includes(l)) return 'dropnde';
+  if (PT2_KG_NONTEKNIS.includes(l)) return 'nonteknis';
+  return 'teknis';
+}
+let pt2ActiveKendalaGroup = 'dropnde';
+
 function pt2ComputeKendalaTable(rows) {
   const counter = {};
   const rowsByLabel = {};
@@ -630,26 +834,112 @@ function pt2ComputeKendalaTable(rows) {
     (rowsByLabel[r.klasifikasi] = rowsByLabel[r.klasifikasi] || []).push(r);
   });
   return Object.keys(counter).sort((a, b) => counter[b] - counter[a])
-    .map(label => ({ label, count: counter[label], rows: rowsByLabel[label] }));
+    .map(label => ({ label, count: counter[label], rows: rowsByLabel[label], group: pt2KendalaGroupOf(label) }));
 }
 
 function pt2RenderKendala(data) {
   const kendalaTable = pt2ComputeKendalaTable(data.rows);
   pt2Cache.kendala_table = kendalaTable;
+
+  const totals = { dropnde: 0, nonteknis: 0, teknis: 0 };
+  kendalaTable.forEach(item => { totals[item.group] += item.count; });
+  document.getElementById('pt2KGCountDropnde').textContent = `(${pt2FmtNum(totals.dropnde)})`;
+  document.getElementById('pt2KGCountNonteknis').textContent = `(${pt2FmtNum(totals.nonteknis)})`;
+  document.getElementById('pt2KGCountTeknis').textContent = `(${pt2FmtNum(totals.teknis)})`;
+
+  pt2RenderKendalaGrid();
+}
+
+function pt2RenderKendalaGrid() {
   const el = document.getElementById('pt2KendalaGrid');
-  if (!kendalaTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data kendala (kolom P) di sheet ini.</div>'; return; }
-  el.innerHTML = kendalaTable.map((item, i) => `
-    <div class="bh-chip" data-kendala-index="${i}" title="Klik untuk lihat daftar lokasi & download">
+  if (!pt2Cache || !pt2Cache.kendala_table) return;
+  const items = pt2Cache.kendala_table
+    .map((item, i) => Object.assign({ _idx: i }, item))
+    .filter(item => item.group === pt2ActiveKendalaGroup);
+  if (!items.length) { el.innerHTML = '<div class="empty-state">Tidak ada data kendala pada kategori ini.</div>'; return; }
+  el.innerHTML = items.map(item => `
+    <div class="bh-chip" data-kendala-index="${item._idx}" title="Klik untuk lihat daftar lokasi & download">
       <span>${pt2Esc(item.label)}</span><span class="bh-count">${pt2FmtNum(item.count)}</span>
     </div>
   `).join('');
 }
+
+document.getElementById('pt2KendalaTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.pt2-pivot-tab-btn');
+  if (!btn) return;
+  pt2ActiveKendalaGroup = btn.dataset.kgroup;
+  document.querySelectorAll('#pt2KendalaTabs .pt2-pivot-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.kgroup === pt2ActiveKendalaGroup);
+  });
+  pt2RenderKendalaGrid();
+});
 
 document.getElementById('pt2KendalaGrid').addEventListener('click', (e) => {
   const chip = e.target.closest('.bh-chip');
   if (!chip || !pt2Cache) return;
   const item = pt2Cache.kendala_table[parseInt(chip.dataset.kendalaIndex, 10)];
   if (item) pt2OpenFilteredList(item.label, item.rows);
+});
+
+// ── Pencarian Data: cari di seluruh kolom, tampilkan daftar + download ─
+const PT2_SEARCH_FIELDS = [
+  'ihld', 'lokasi', 'source_order', 'batch', 'regional', 'branch',
+  'status_raw', 'klasifikasi', 'detail_cancel', 'odp_golive',
+];
+let pt2SearchQuery = '';
+
+function pt2SearchRows(query) {
+  const q = (query || '').trim().toLowerCase();
+  if (!q || !pt2Cache) return [];
+  return pt2Cache.rows.filter(r => PT2_SEARCH_FIELDS.some(k => String(r[k] || '').toLowerCase().includes(q)));
+}
+
+function pt2RunSearch() {
+  const wrap = document.getElementById('pt2SearchResultWrap');
+  if (!wrap) return;
+  if (!pt2SearchQuery) {
+    wrap.innerHTML = '<div class="empty-state">Masukkan kata kunci lalu klik Cari (atau tekan Enter) untuk menampilkan daftar data.</div>';
+    return;
+  }
+  const results = pt2SearchRows(pt2SearchQuery);
+  if (!results.length) {
+    wrap.innerHTML = `<div class="empty-state">Tidak ada data yang cocok dengan "${pt2Esc(pt2SearchQuery)}".</div>`;
+    return;
+  }
+  const capped = results.slice(0, PT2_LIST_DISPLAY_CAP);
+  wrap.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+      <div style="font-size:0.85rem;">Ditemukan <strong>${pt2FmtNum(results.length)}</strong> baris untuk "${pt2Esc(pt2SearchQuery)}"</div>
+      <button class="pt2-download-btn" id="pt2SearchDownloadBtn">&#11015; Download CSV (${pt2FmtNum(results.length)} baris)</button>
+    </div>
+    <div style="overflow:auto; max-height:52vh; border:1px solid var(--border, #e2e8f0); border-radius:8px;">
+      <table class="pt2-list-table">
+        <thead><tr><th>No</th>${PT2_LIST_COLS_CANCEL.map(c => `<th>${pt2Esc(c.label)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${capped.map((r, i) => `<tr><td>${i + 1}</td>${PT2_LIST_COLS_CANCEL.map(c => `<td>${pt2Esc(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${results.length > capped.length ? `<p style="color:var(--muted,#64748b); font-size:0.8rem; margin-top:8px;">Menampilkan ${pt2FmtNum(capped.length)} dari ${pt2FmtNum(results.length)} baris di layar — download CSV untuk lihat semuanya.</p>` : ''}
+  `;
+  const dlBtn = document.getElementById('pt2SearchDownloadBtn');
+  if (dlBtn) dlBtn.addEventListener('click', () => pt2DownloadCSV(results, 'pencarian-' + pt2SearchQuery, PT2_LIST_COLS_CANCEL));
+}
+
+document.getElementById('pt2SearchBtn').addEventListener('click', () => {
+  pt2SearchQuery = document.getElementById('pt2SearchInput').value;
+  pt2RunSearch();
+});
+document.getElementById('pt2SearchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    pt2SearchQuery = document.getElementById('pt2SearchInput').value;
+    pt2RunSearch();
+  }
+});
+document.getElementById('pt2SearchClearBtn').addEventListener('click', () => {
+  document.getElementById('pt2SearchInput').value = '';
+  pt2SearchQuery = '';
+  pt2RunSearch();
 });
 
 // ── Modal generik: daftar bernomor + download CSV ─────────────────────
@@ -935,8 +1225,8 @@ document.getElementById('pt2TrendNextWeek').addEventListener('click', () => {
 
 function pt2InitTrendDefaults() {
   const today = new Date();
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  document.getElementById('pt2TrendFrom').value = pt2DateToISO(firstOfMonth);
+  const jan1 = new Date(today.getFullYear(), 0, 1);
+  document.getElementById('pt2TrendFrom').value = pt2DateToISO(jan1);
   document.getElementById('pt2TrendTo').value = pt2DateToISO(today);
   pt2TrendDayWeekStart = pt2StartOfWeek(today);
 }
@@ -1014,8 +1304,10 @@ function pt2RenderDashboardBody() {
   if (!pt2Cache) return;
   pt2RenderPivotTable(pt2Cache);
   pt2RenderBatchPivotTable(pt2Cache);
+  pt2RenderProgressPivotTable(pt2Cache);
   pt2RenderKendala(pt2Cache);
   pt2RenderTrendChart();
+  pt2RunSearch();
 }
 
 async function loadPt2Dashboard() {
