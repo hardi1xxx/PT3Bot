@@ -648,6 +648,14 @@ def get_dashboard_data():
         "regional": _col_to_index(getattr(config, "COL_REGIONAL", "T")) - 1,
         "golive_date": _col_to_index(getattr(config, "COL_GOLIVE_DATE", "BD")) - 1,
         "order_prioritas": _col_to_index(config.COL_ORDER_PRIORITAS) - 1,
+        # Nama ODP untuk tabel "Trend Golive" (modal saat sebuah bar
+        # diklik) -- dulu field ini dimaksudkan baca kolom "BO" di sheet
+        # lama, tapi kolom itu sudah dipindah/di-rename jadi AD
+        # (config.COL_ODP_GOLIVE), jadi sebelumnya field ini tidak pernah
+        # diisi backend & selalu kosong di frontend. "odp_real" (AE) =
+        # jumlah/angka ODP-nya (lihat config.COL_ODP_REAL, "angka saja").
+        "odp_golive": _col_to_index(config.COL_ODP_GOLIVE) - 1,
+        "odp_real": _col_to_index(config.COL_ODP_REAL) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW - 1:]
@@ -726,6 +734,8 @@ def get_dashboard_data():
             "regional": cell("regional") or "(TANPA REGIONAL)",
             "order_prioritas": cell("order_prioritas"),  # kolom BX, opsional -- badge di list "Lokasi Sedang Berjalan"
             "priority_bx": cell("order_prioritas"),  # alias kolom BX -- dipakai filter "Hanya Order Priority" di PT3.html
+            "odp_bo": cell("odp_golive"),          # Nama ODP (kolom AD) -- dipakai tabel "Trend Golive"
+            "odp_real": _to_number(cell("odp_real")),  # Jumlah/angka ODP (kolom AE) -- juga dipakai tabel "Trend Golive"
         })
 
     return {

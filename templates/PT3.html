@@ -360,10 +360,12 @@ const STATUS_COLORS = {
 
 let dashboardCache = null;   // { statuses, batches, branches, rows }
 // PENTING: tabel "Golive — [periode]" (Trend Golive) menampilkan "Nama ODP"
-// dari field `r.odp_bo` (kolom BO), BUKAN `r.odp_l` (kolom L, itu dipakai di
-// tempat lain seperti tabel Detail Lokasi). Field `odp_bo` ini harus
-// disediakan oleh backend saat membangun `dashboardCache.rows` -- kalau
-// belum ada di response backend, kolom "Nama ODP" di modal ini akan kosong.
+// dari field `r.odp_bo` (kolom AD, config.COL_ODP_GOLIVE -- dulu disebut
+// "kolom BO" di sheet lama, sudah pindah/rename jadi AD), BUKAN `r.odp_l`
+// (kolom L, itu dipakai di tempat lain seperti tabel Detail Lokasi).
+// "Jumlah ODP" (angka) memakai field `r.odp_real` (kolom AE,
+// config.COL_ODP_REAL). Keduanya disediakan backend di
+// `dashboardCache.rows` (lihat get_dashboard_data() di sheets_service.py).
 // Begitu juga filter "Hanya Order Priority" memakai field `r.priority_bx`
 // (kolom BX) -- backend perlu memetakan kolom BX ke field ini juga.
 
@@ -1445,10 +1447,10 @@ function goliveTrendCsvEscape(value) {
 function downloadGoliveTrendCsv(bucketKey) {
   const items = (goliveTrendBucketIndex[bucketKey] || []).slice()
     .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
-  const header = ['Branch', 'LOP (IHLD)', 'Lokasi', 'Nama ODP', 'Tanggal Golive'];
+  const header = ['Branch', 'LOP (IHLD)', 'Lokasi', 'Nama ODP', 'Jumlah ODP', 'Tanggal Golive'];
   const lines = [header.map(goliveTrendCsvEscape).join(',')];
   items.forEach(r => {
-    lines.push([r.branch || '', r.ihld || '', r.lokasi || '', r.odp_bo || '', r.golive_date_display || '']
+    lines.push([r.branch || '', r.ihld || '', r.lokasi || '', r.odp_bo || '', r.odp_real || '', r.golive_date_display || '']
       .map(goliveTrendCsvEscape).join(','));
   });
   const csvContent = '\uFEFF' + lines.join('\r\n');
@@ -1477,7 +1479,7 @@ function openGoliveTrendBucket(bucketKey) {
     </div>
     <div class="pivot-table-wrap" style="max-height:420px; overflow:auto;">
       <table class="pivot">
-        <thead><tr><th>Branch</th><th>LOP (IHLD)</th><th>Lokasi</th><th>Nama ODP</th><th>Tanggal Golive</th></tr></thead>
+        <thead><tr><th>Branch</th><th>LOP (IHLD)</th><th>Lokasi</th><th>Nama ODP</th><th>Jumlah ODP</th><th>Tanggal Golive</th></tr></thead>
         <tbody id="goliveTrendModalBody">
           ${items.length ? items.map(r => `
             <tr class="result-item" data-row="${r.row}" style="cursor:pointer;">
@@ -1485,9 +1487,10 @@ function openGoliveTrendBucket(bucketKey) {
               <td>${esc(r.ihld) || '-'}</td>
               <td>${esc(r.lokasi) || '-'}</td>
               <td>${esc(r.odp_bo) || '-'}</td>
+              <td>${r.odp_real ? fmtNum(r.odp_real) : '-'}</td>
               <td>${esc(r.golive_date_display) || '-'}</td>
             </tr>
-          `).join('') : `<tr><td colspan="5"><div class="empty-state">Tidak ada lokasi Golive di periode ini.</div></td></tr>`}
+          `).join('') : `<tr><td colspan="6"><div class="empty-state">Tidak ada lokasi Golive di periode ini.</div></td></tr>`}
         </tbody>
       </table>
     </div>
