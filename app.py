@@ -78,6 +78,21 @@ def require_login():
     return None
 
 
+def is_viewer():
+    """True kalau user yang lagi login role-nya 'viewer' (view only --
+    mis. akun Tsel). Dipakai di setiap endpoint yang MENGUBAH data
+    (update status, upload dokumen/KML/BOQ, import massal, insert HEM)
+    supaya tetap ditolak di server walau request-nya tidak lewat
+    form/tombol di browser (curl/Postman dsb). Endpoint yang murni baca
+    data (termasuk download/export) TIDAK dipasangi guard ini."""
+    user = session.get("user") or {}
+    return user.get("role") == "viewer"
+
+
+def viewer_blocked_json():
+    return jsonify({"ok": False, "error": "Akun Anda hanya memiliki akses lihat saja (view only)."}), 403
+
+
 @app.errorhandler(Exception)
 def handle_unexpected_error(e):
     """Jaring pengaman terakhir: kalau ADA route /api/* yang lolos tanpa
@@ -201,6 +216,8 @@ def api_row_detail(row_num):
 
 @app.route("/api/row/<int:row_num>/update", methods=["POST"])
 def api_row_update(row_num):
+    if is_viewer():
+        return viewer_blocked_json()
     payload = request.get_json(silent=True) or {}
     z_value = (payload.get("status_z") or "").strip()
     aa_value = (payload.get("status_aa") or "").strip()
@@ -255,6 +272,8 @@ def api_row_document_upload(row_num, doc_key):
     Perijinan) untuk 1 LOP. multipart/form-data: file=<file>, note=<catatan
     revisi opsional -- wajib diisi kalau ini revisi (sudah ada file lama),
     validasinya di sisi JS supaya user dikasih tahu sebelum upload jalan."""
+    if is_viewer():
+        return viewer_blocked_json()
     if doc_key not in config.DOCUMENT_TYPES:
         return jsonify({"ok": False, "error": "Jenis dokumen tidak dikenal."}), 400
 
@@ -335,6 +354,8 @@ def api_row_kml_upload(row_num):
     """Upload 1 file KML untuk 1 LOP. Opsional -- TIDAK ada validasi wajib
     di /api/row/<row_num>/update terkait ini. Boleh upload lebih dari 1
     file per LOP (tidak menimpa yang lama)."""
+    if is_viewer():
+        return viewer_blocked_json()
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"ok": False, "error": "File belum dipilih."}), 400
@@ -379,6 +400,8 @@ def api_row_boq_upload(row_num):
     """Upload 1 file BOQ (.pdf/.xlsx/.xls) untuk 1 LOP. Opsional, tidak
     memblokir simpan status. Boleh lebih dari 1 file per LOP (tidak
     menimpa yang lama)."""
+    if is_viewer():
+        return viewer_blocked_json()
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"ok": False, "error": "File belum dipilih."}), 400
@@ -447,6 +470,8 @@ def api_pt3_import():
     sheets_service.update_status() (logika sama persis dengan update
     1-per-1 lewat panel Update Status). Baris yang gagal tidak menghentikan
     baris lainnya -- lihat hasil per baris di response `results`."""
+    if is_viewer():
+        return viewer_blocked_json()
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"ok": False, "error": "File belum dipilih."}), 400
@@ -474,6 +499,8 @@ def api_hem_insert():
     value, ...}, ...]}. Response HARUS {"ok", "inserted", "errors"} --
     itu kontrak yang sudah dipakai JS di hem.html (lihat
     saveRowsDirectly())."""
+    if is_viewer():
+        return viewer_blocked_json()
     payload = request.get_json(silent=True) or {}
     rows = payload.get("rows") or []
     try:
@@ -495,6 +522,8 @@ def api_hem_insert_ihld():
     di atas) akan otomatis tertaut & tersebar ke data_area/data_material/
     data_progress/proses_dokumen/dokumen_file -- lihat insert_rows() di
     hem_db_service.py."""
+    if is_viewer():
+        return viewer_blocked_json()
     payload = request.get_json(silent=True) or {}
     rows = payload.get("rows") or []
     try:
@@ -700,6 +729,14 @@ def update_form(row_num):
 
 @app.route("/update/<int:row_num>", methods=["POST"])
 def do_update(row_num):
+    # Role 'viewer' cuma boleh lihat data -- form-nya memang sudah tidak
+    # dirender untuk role ini (lihat update.html), tapi itu murni UI.
+    # Blok juga di server supaya POST langsung (curl/Postman) ke endpoint
+    # ini tetap ditolak walau request-nya tidak lewat form di browser.
+    if is_viewer():
+        flash("Akun Anda hanya memiliki akses lihat saja (view only) -- tidak bisa melakukan update.", "error")
+        return redirect(url_for("update_form", row_num=row_num))
+
     z_value = request.form.get("status_z", "").strip()
     aa_value = request.form.get("status_aa", "").strip()
     note_text = request.form.get("note_text", "").strip()

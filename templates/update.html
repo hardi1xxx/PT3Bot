@@ -52,7 +52,7 @@
   {% endif %}
 </div>
 
-{% if session.get('role') == 'viewer' %}
+{% if session.get('user', {}).get('role') == 'viewer' %}
 <div class="card" style="max-width:640px; margin:0 auto;">
   <p style="color:var(--muted); font-size:0.85rem; margin:0 0 14px; line-height:1.5;">
     Akun Anda hanya memiliki akses <strong>lihat data (view only)</strong>. Update status, upload dokumen, dan
