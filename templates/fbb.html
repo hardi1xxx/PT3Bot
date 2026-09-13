@@ -731,9 +731,19 @@ function fbbNormStatus(s) {
 function fbbIsGolive(status) { return fbbNormStatus(status) === '5.GOLIVE'; }
 function fbbIsPotensi(status) { return fbbNormStatus(status).includes('OGPDEPLOY'); }
 
+// Daftar singkatan bulan (ID & EN sekaligus, backend _parse_date pakai
+// %b yang tergantung locale server -- jadi kedua versi ditampung di sini
+// biar konsisten apapun locale-nya): Jan Feb Mar Apr Mei/May Jun Jul
+// Agu/Aug Sep Okt/Oct Nov Des/Dec.
+const FBB_MONTH_ABBR = {
+  jan: 1, feb: 2, mar: 3, apr: 4, mei: 5, may: 5, jun: 6, jul: 7,
+  agu: 8, aug: 8, sep: 9, okt: 10, oct: 10, nov: 11, des: 12, dec: 12,
+};
+
 function fbbParseDate(raw) {
+  if (raw === null || raw === undefined) return null;
+  raw = String(raw).trim();
   if (!raw) return null;
-  raw = raw.trim();
   let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
@@ -741,6 +751,18 @@ function fbbParseDate(raw) {
     let [, d, mo, y] = m;
     y = y.length === 2 ? '20' + y : y;
     return new Date(Date.UTC(+y, +mo - 1, +d));
+  }
+  // Format singkatan bulan, mis. "01-Jun-2026" / "1/Jun/26" / "1 Jun 2026"
+  // -- sama seperti daftar format eksplisit di _parse_date() backend
+  // (sheets_service.py), yang jadi tanda format ini memang muncul di data.
+  m = raw.match(/^(\d{1,2})[\/\-\s]([A-Za-z]{3,})[\/\-\s](\d{2,4})$/);
+  if (m) {
+    let [, d, monName, y] = m;
+    const mo = FBB_MONTH_ABBR[monName.toLowerCase().slice(0, 3)];
+    if (mo) {
+      y = y.length === 2 ? '20' + y : y;
+      return new Date(Date.UTC(+y, mo - 1, +d));
+    }
   }
   const d2 = new Date(raw);
   return isNaN(d2) ? null : d2;
