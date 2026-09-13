@@ -350,6 +350,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script>
+// Role user yang sedang login (session["user"]["role"] di app.py) --
+// dipakai di openRow()/render dokumen-KML-BOQ untuk menyembunyikan TOTAL
+// field & tombol edit/upload buat role 'viewer' (akun Tsel, lihat saja).
+// Server (app.py: is_viewer()) sudah menolak POST-nya juga -- ini murni
+// supaya tombolnya tidak usah muncul sama sekali di UI untuk role ini.
+const CURRENT_USER_ROLE = {{ (session.get('user', {}).get('role') or '') | tojson }};
+function isViewerRole() { return CURRENT_USER_ROLE === 'viewer'; }
+
 // Daftarkan plugin datalabels secara eksplisit -- SEBELUMNYA plugin ini
 // cuma di-<script src>, tanpa Chart.register(). Kadang auto-register
 // bawaan plugin ini gagal kalau urutan load <script> Chart.js inti (dari
@@ -2221,21 +2229,58 @@ async function openRow(rowNum) {
     currentKategoriDropOptions = kategori_drop_options || [];
     currentKmlVisibleStatuses = json.kml_visible_statuses || [];
 
+    const historyCard = (snapshot.last_note || snapshot.note_preview) ? `
+      <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:14px;">
+        ${snapshot.last_note ? `
+          <label>Keterangan sebelumnya</label>
+          <div class="note-preview" style="border-color:var(--brand-blue); color:var(--text); margin-bottom:${snapshot.note_preview ? '10px' : '0'};">${esc(snapshot.last_note)}</div>
+        ` : ''}
+        ${snapshot.note_preview ? `
+          <label>Riwayat keterangan lengkap (terbaru di atas)</label>
+          <div class="note-preview">${esc(snapshot.note_preview)}</div>
+        ` : ''}
+      </div>
+    ` : '';
+
+    if (isViewerRole()) {
+      // Role 'viewer' (akun Tsel): cuma lihat data -- field edit (Nama
+      // Mitra, Status, Sub Status, Target FI, Kategori Drop, Keterangan
+      // update) & tombol upload/Simpan Update TIDAK dirender sama sekali.
+      // Server (app.py: is_viewer()) juga sudah menolak POST-nya, jadi ini
+      // murni supaya UI-nya tidak menampilkan aksi yang memang tidak bisa
+      // dipakai role ini.
+      panel.innerHTML = `
+        ${renderRowHeader(rowNum, label, snapshot)}
+        ${renderAgingProgress(snapshot)}
+        ${historyCard}
+        <div class="field" style="margin-top:14px;">
+          <label>Nama Mitra</label>
+          <div class="note-preview">${esc(snapshot.mitra) || '-'}</div>
+        </div>
+        <div class="field">
+          <label>Dokumen LOP</label>
+          <div id="documentsContainer"></div>
+        </div>
+        <div class="field">
+          <label>KML Lokasi</label>
+          <div id="kmlContainer"></div>
+        </div>
+        <div class="field">
+          <label>BOQ</label>
+          <div id="boqContainer"></div>
+        </div>
+        <p style="color:var(--muted); font-size:0.82rem; margin:14px 0 0;">
+          Akun Anda hanya memiliki akses <strong>lihat saja (view only)</strong> -- update status, upload dokumen,
+          dan perubahan lain tidak tersedia untuk role ini.
+        </p>
+        &nbsp; <a href="#" onclick="document.getElementById('q').focus(); return false;">&larr; Cari lagi</a>
+      `;
+      renderDocumentsSection(rowNum, snapshot.status_z);
+    } else {
     panel.innerHTML = `
       ${renderRowHeader(rowNum, label, snapshot)}
       ${renderAgingProgress(snapshot)}
-      ${(snapshot.last_note || snapshot.note_preview) ? `
-        <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:14px;">
-          ${snapshot.last_note ? `
-            <label>Keterangan sebelumnya</label>
-            <div class="note-preview" style="border-color:var(--brand-blue); color:var(--text); margin-bottom:${snapshot.note_preview ? '10px' : '0'};">${esc(snapshot.last_note)}</div>
-          ` : ''}
-          ${snapshot.note_preview ? `
-            <label>Riwayat keterangan lengkap (terbaru di atas)</label>
-            <div class="note-preview">${esc(snapshot.note_preview)}</div>
-          ` : ''}
-        </div>
-      ` : ''}
+      ${historyCard}
       <div class="field mitra-combo" id="mitraComboField" style="margin-top:14px;">
         <label for="mitra_search">Nama Mitra</label>
         <input type="text" id="mitra_search" placeholder="-- ketik utk cari nama mitra --" autocomplete="off">
@@ -2288,6 +2333,7 @@ async function openRow(rowNum) {
     `;
     onPanelStatusZChange(rowNum, snapshot.status_z, true, snapshot.status_aa);
     initMitraCombo();
+    }
 
     // KML SENGAJA di-load terpisah/lazy setelah panel utama tampil (bukan
     // ikut Promise.all di atas) -- supaya buka panel tidak ikut nunggu
@@ -2354,7 +2400,7 @@ function renderDocumentsSection(rowNum, currentStatusZ) {
       : `<div style="font-size:0.8rem; color:${isReallyRequired ? '#dc2626' : 'var(--muted)'}; margin:4px 0;">${isReallyRequired ? 'Belum diupload — wajib untuk status ini' : 'Belum diupload'}</div>`;
     const logBlock = doc.log ? `<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">${esc(doc.log)}</div>` : '';
 
-    const uploadControls = mode === 'upload' ? `
+    const uploadControls = (mode === 'upload' && !isViewerRole()) ? `
         <input type="file" id="docfile_${key}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
         <input type="text" id="docnote_${key}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%; margin-bottom:4px;">
         <button type="button" class="btn-ghost btn-sm" onclick="uploadDocument(${rowNum}, '${key}')">Upload${doc.url ? ' / Revisi' : ''}</button>
@@ -2418,7 +2464,7 @@ function renderKmlSection(rowNum, statusZ) {
   const container = document.getElementById('kmlContainer');
   if (!container) return;
 
-  const showUpload = currentKmlVisibleStatuses.includes(statusZ);
+  const showUpload = currentKmlVisibleStatuses.includes(statusZ) && !isViewerRole();
 
   const uploadBlock = showUpload ? `
     <div style="margin-bottom:10px;">
@@ -2496,7 +2542,7 @@ function renderBoqSection(rowNum) {
   const container = document.getElementById('boqContainer');
   if (!container) return;
 
-  const uploadBlock = `
+  const uploadBlock = isViewerRole() ? '' : `
     <div style="margin-bottom:10px;">
       <input type="file" id="boqfile" accept=".pdf,.xlsx,.xls" style="display:block; font-size:0.8rem; margin-bottom:4px;">
       <button type="button" class="btn-ghost btn-sm" onclick="uploadBoqFile(${rowNum})">Upload BOQ</button>
