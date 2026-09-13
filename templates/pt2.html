@@ -1105,6 +1105,14 @@ function pt2GoliveCountInRange(from, to) {
   }
   return count;
 }
+function pt2GoliveRowsInRange(from, to) {
+  if (!pt2Cache) return [];
+  return pt2Cache.rows.filter(r => {
+    if (r.status !== pt2Cache.golive_status) return false;
+    const d = pt2ParseDate(r.tgl_close_wo_formatted);
+    return d && d >= from && d <= to;
+  });
+}
 
 function pt2RenderTrendChart() {
   if (!pt2Cache) return;
@@ -1117,7 +1125,7 @@ function pt2RenderTrendChart() {
 
   let labels = [];
   let values = [];
-  let weekBuckets = [];
+  let buckets = []; // { start, end } per titik — dipakai untuk klik-buka daftar LOP golive
 
   if (pt2TrendMode === 'week') {
     let cursor = new Date(from);
@@ -1128,7 +1136,7 @@ function pt2RenderTrendChart() {
       const bucketEnd = naturalEnd > to ? new Date(to) : naturalEnd;
       values.push(pt2GoliveCountInRange(bucketStart, bucketEnd));
       labels.push([`Minggu ${weekNum}`, `${pt2FmtShortDate(bucketStart)}-${pt2FmtShortDate(bucketEnd)}`]);
-      weekBuckets.push({ start: bucketStart, end: bucketEnd });
+      buckets.push({ start: bucketStart, end: bucketEnd, title: `Golive — Minggu ${weekNum} (${pt2FmtShortDate(bucketStart)} - ${pt2FmtShortDate(bucketEnd)})` });
       cursor = pt2AddDays(bucketStart, 7);
       weekNum++;
     }
@@ -1144,7 +1152,9 @@ function pt2RenderTrendChart() {
       const bucketEnd = natEnd > to ? new Date(to) : natEnd;
       const bucketStart = cursor < from ? new Date(from) : cursor;
       values.push(pt2GoliveCountInRange(bucketStart, bucketEnd));
-      labels.push(`${monthNames[cursor.getMonth()]} ${cursor.getFullYear()}`);
+      const monthLabel = `${monthNames[cursor.getMonth()]} ${cursor.getFullYear()}`;
+      labels.push(monthLabel);
+      buckets.push({ start: bucketStart, end: bucketEnd, title: `Golive — ${monthLabel}` });
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
       guard++;
     }
@@ -1156,6 +1166,7 @@ function pt2RenderTrendChart() {
       const d = pt2AddDays(weekStart, i);
       values.push(pt2GoliveCountInRange(d, d));
       labels.push(pt2FmtShortDate(d));
+      buckets.push({ start: d, end: d, title: `Golive — ${pt2FmtShortDate(d)}` });
     }
     const weekEnd = pt2AddDays(weekStart, 6);
     titleEl.textContent = `Golive Harian (${pt2FmtShortDate(weekStart)} - ${pt2FmtShortDate(weekEnd)})`;
@@ -1188,14 +1199,15 @@ function pt2RenderTrendChart() {
         x: { ticks: { color: 'rgba(255,255,255,0.85)', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.12)' } },
         y: { beginAtZero: true, ticks: { color: 'rgba(255,255,255,0.85)' }, grid: { color: 'rgba(255,255,255,0.12)' } },
       },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
       onClick: (evt, elements) => {
-        if (pt2TrendMode === 'week' && elements.length) {
-          const bucket = weekBuckets[elements[0].index];
-          if (bucket) {
-            pt2TrendDayWeekStart = bucket.start;
-            pt2SetTrendMode('day');
-          }
-        }
+        if (!elements.length) return;
+        const bucket = buckets[elements[0].index];
+        if (!bucket) return;
+        const rows = pt2GoliveRowsInRange(bucket.start, bucket.end);
+        pt2OpenFilteredList(bucket.title, rows, { status: pt2Cache.golive_status });
       },
     },
     plugins: [{
