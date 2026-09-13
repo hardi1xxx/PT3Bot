@@ -52,6 +52,15 @@
   {% endif %}
 </div>
 
+{% if session.get('role') == 'viewer' %}
+<div class="card" style="max-width:640px; margin:0 auto;">
+  <p style="color:var(--muted); font-size:0.85rem; margin:0 0 14px; line-height:1.5;">
+    Akun Anda hanya memiliki akses <strong>lihat data (view only)</strong>. Update status, upload dokumen, dan
+    perubahan lain pada baris ini tidak tersedia untuk role Anda — hubungi admin bila perlu perubahan.
+  </p>
+  <a href="/pt3">&larr; Kembali ke dashboard</a>
+</div>
+{% else %}
 <form method="post" class="card update-form" style="max-width:640px; margin:0 auto;" enctype="multipart/form-data">
   <style>
     /* Dropdown pencarian Nama Mitra (kolom Y) -- daftar bisa ~500 nama,
@@ -332,4 +341,5 @@ fetch('/api/mitra-options')
   })
   .catch(() => { /* dropdown tetap bisa dipakai manual (isi teks bebas) kalau fetch gagal */ });
 </script>
+{% endif %}
 {% endblock %}
