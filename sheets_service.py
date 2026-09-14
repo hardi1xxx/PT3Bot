@@ -1095,6 +1095,7 @@ def get_row_snapshot(row_num: int):
         f"{config.COL_TARGET_FI}{row_num}",
         f"{config.COL_BH}{row_num}",
         f"{config.COL_MITRA}{row_num}",
+        f"{config.COL_BRANCH}{row_num}",
         f"{config.COL_ODP_L}{row_num}",
         f"{config.COL_PORT_M}{row_num}",
         f"{col_odp_af}{row_num}",
@@ -1190,6 +1191,7 @@ def get_row_snapshot(row_num: int):
         "target_fi_required": z_val in config.PRE_FINISH_INSTALL_STATUSES,
         "kategori_drop": v(f"{config.COL_BH}{row_num}") or None,
         "mitra": v(f"{config.COL_MITRA}{row_num}") or None,
+        "branch": v(f"{config.COL_BRANCH}{row_num}") or None,
         "odp": odp_display or None,
         "port": port_display or None,
         "odp_port_source": odp_port_source,  # "golive" (AF/AG) atau "plan" (L/M)
@@ -1508,17 +1510,41 @@ def get_aging_data():
     Per-row aging: (end_date - start_date) in days.
       start_date = kolom AP (Tanggal NDE)
       end_date   = HARI INI secara default, KECUALI status Z ada di
-                   config.AGING_FIXED_END_COLUMNS (Drop/BAST2025 -> BF;
+                   config.AGING_FIXED_END_COLUMNS (Drop -> BF;
                    Golive/UT/Rekon/BAST -> BD), dalam hal itu end_date =
                    nilai kolom tsb — jatuh balik ke hari ini kalau kosong
                    / tidak valid.
     aging_days bernilai None kalau AP kosong/tidak bisa di-parse.
+
+    stage_progress: daftar {stage, date, days} best-effort per tahap, dari
+    kolom tanggal yang SUDAH ADA (config.NOTIFY_STATUS_DATE_MAP + kolom BD
+    dari AGING_FIXED_END_COLUMNS) -- dipakai halaman /aging (funnel "Alur
+    Tahapan") buat menghitung rata-rata lama tiap SEGMEN (NDE->Perijinan,
+    Perijinan->Persiapan, dst), bukan cuma total NDE->sekarang.
+    ASUMSI (tolong konfirmasi ke dev kalau sheet-nya tidak begitu): begitu
+    status pindah ke tahap berikutnya, kolom tanggal tahap SEBELUMNYA tetap
+    menyimpan tanggal saat tahap itu tercapai (tidak ikut kosong/berubah).
+    Kolom "05. FINISH INSTALASI" belum ada pemetaannya di config manapun,
+    jadi segmen Instalasi->Finish Instalasi & Finish Instalasi->Golive akan
+    tampil "-" sampai kolom yang benar dikonfirmasi.
     """
     ws = get_worksheet()
     all_values = _cached_get_all_values(ws)
 
     # Only the fixed-end columns actually referenced in config need reading.
     fixed_end_cols = sorted(set(config.AGING_FIXED_END_COLUMNS.values()))
+
+    # Kolom tanggal per tahap buat stage_progress (lihat docstring) --
+    # key di sini HARUS sama persis dengan status_z tahap tsb, karena itu
+    # yang dipakai buat mencocokkan di frontend (AGING_STAGES di aging.html).
+    stage_date_columns = {
+        "01. PERIJINAN": config.NOTIFY_STATUS_DATE_MAP.get("01. PERIJINAN"),
+        "02. PERSIAPAN": config.NOTIFY_STATUS_DATE_MAP.get("02. PERSIAPAN"),
+        "03. MATDEV": config.NOTIFY_STATUS_DATE_MAP.get("03. MATDEV"),
+        "04. INSTALASI": config.NOTIFY_STATUS_DATE_MAP.get("04. INSTALASI"),
+        "06. GOLIVE": config.AGING_FIXED_END_COLUMNS.get("06. GOLIVE"),
+    }
+    stage_date_cols = sorted(set(c for c in stage_date_columns.values() if c))
 
     idx = {
         "ap": _col_to_index(config.COL_TANGGAL_NDE) - 1,
@@ -1532,11 +1558,14 @@ def get_aging_data():
         "mitra": _col_to_index(config.COL_MITRA) - 1,
         # Regional (kolom T) -- dipakai tombol "Grouping (TSEL)" di tabel
         # "Rata-rata Aging per Branch" (gabung Regional BANTEN & JAKARTA
-        # jadi satu baris, sama seperti Rekap Port & LOP di PT3).
+        # jadi satu baris, sama seperti Rekap Port & LOP di PT3) DAN
+        # grouping filter branch-per-regional di panel Filter Branch.
         "regional": _col_to_index(getattr(config, "COL_REGIONAL", "T")) - 1,
     }
     for col in fixed_end_cols:
         idx[f"fixed_{col}"] = _col_to_index(col) - 1
+    for col in stage_date_cols:
+        idx.setdefault(f"stagecol_{col}", _col_to_index(col) - 1)
 
     data_rows = all_values[config.DATA_START_ROW - 1:]
     today = datetime.date.today()
@@ -1569,6 +1598,18 @@ def get_aging_data():
 
         aging_days = (end_date - start_date).days if start_date else None
 
+        stage_progress = []
+        for stage_key, col_letter in stage_date_columns.items():
+            if not col_letter:
+                continue
+            stage_date = _parse_date(cell(f"stagecol_{col_letter}"))
+            stage_days = (stage_date - start_date).days if (stage_date and start_date) else None
+            stage_progress.append({
+                "stage": stage_key,
+                "date": stage_date.isoformat() if stage_date else None,
+                "days": stage_days,
+            })
+
         rows.append({
             "row": row_num,
             "ihld": ihld_val,
@@ -1581,6 +1622,7 @@ def get_aging_data():
             "status_aa": cell("status_aa"),
             "aging_days": aging_days,
             "fixed_end_column": fixed_col,
+            "stage_progress": stage_progress,
         })
 
     return {
@@ -1746,6 +1788,18 @@ def get_fbb_data():
         regionals.add(regional_val)
         branches.add(branch_val)
 
+        # Kurva S (fbb.html) menghitung Realisasi kumulatif berdasarkan
+        # tanggal Golive ini -- sebelumnya kolom ini cuma dikirim sebagai
+        # teks mentah dan di-parse di JS (fbbParseDate), yang cuma kenal
+        # pola ISO & D/M/Y persis. Format lain (mis. "1 Jun 2026", atau
+        # variasi lain yang lolos dari sheet) bikin parse-nya gagal diam-
+        # diam -> baris itu hilang dari Realisasi tanpa error yang kelihatan.
+        # _parse_date() di bawah ini SAMA PERSIS dengan yang dipakai
+        # _load_semesta_rows_for_summary() (tabel Ringkasan YTD/MTD, yang
+        # sudah benar) -- jadi kirim juga versi ISO-nya (YYYY-MM-DD) di sini
+        # supaya frontend tidak perlu re-parse teks mentah yang ambigu.
+        golive_date_obj = _parse_date(cell("tgl_golive"))
+
         rows.append({
             "row": row_num,
             "tanggal_nde": cell("tanggal_nde"),
@@ -1760,6 +1814,7 @@ def get_fbb_data():
             "final_port": _to_number(cell("final_port")),
             "tgl_fi": cell("tgl_fi"),
             "tgl_golive": cell("tgl_golive"),
+            "tgl_golive_iso": golive_date_obj.isoformat() if golive_date_obj else None,
             "umur": cell("umur"),
             "odp_golive": cell("odp_golive"),
             "keterangan": cell("keterangan"),
