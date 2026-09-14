@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block menu_aging %}active{% endblock %}
-{% block page_title %}Aging PT3{% endblock %}
-{% block page_sub %}Durasi berjalan tiap lokasi — dari Tanggal NDE (kolom AP) sampai hari ini (atau tanggal Drop/BAST2025 di kolom BF){% endblock %}
+{% block page_title %}Aging Deployment{% endblock %}
+{% block page_sub %}Durasi berjalan tiap lokasi di tahap yang sedang berjalan sekarang (sejak masuk tahap itu, mengikuti urutan NDE &rarr; Perijinan &rarr; ... &rarr; Golive) — kolom AP jadi titik awal keseluruhan{% endblock %}
 
 {% block content %}
 
@@ -18,6 +18,17 @@
   #agingStatusTable td, #agingOnprogressTable td { text-align: center; white-space: nowrap; }
   .aging-cell-lop { color: var(--muted); font-size: 0.75rem; }
   .aging-cell-avg { font-weight: 700; }
+  #agingStatusTable td.aging-cell-clickable, #agingOnprogressTable td.aging-cell-clickable { cursor: pointer; }
+  #agingStatusTable td.aging-cell-clickable:hover, #agingOnprogressTable td.aging-cell-clickable:hover { background: var(--panel-alt); }
+  .aging-tl-avg { font-size: 0.72rem; font-weight: 700; margin-top: 2px; }
+  .aging-branch-group { margin-bottom: 14px; }
+  .aging-branch-group:last-child { margin-bottom: 0; }
+  .aging-branch-group-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .02em;
+    margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px dashed var(--border, #2a3550);
+  }
+  .aging-branch-group-toggle { padding: 3px 10px; font-size: 0.72rem; text-transform: none; letter-spacing: normal; }
 </style>
 
 <!-- Stat cards -->
@@ -158,17 +169,52 @@ function getAgingFilteredRows() {
   return agingCache.rows.filter(r => selectedBranches.has(r.branch) && selectedStatuses.has(statusKeyOf(r)));
 }
 
-function renderAgingBranchFilter(branches) {
+function renderAgingBranchFilter(branches, rows) {
   const el = document.getElementById('agingBranchGrid');
   if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch (kolom S).</div>'; return; }
-  el.innerHTML = branches.map(b => `
-    <label class="branch-check">
-      <input type="checkbox" class="aging-branch-checkbox" value="${esc2(b)}" checked>
-      <span>${esc2(b)}</span>
-    </label>
+
+  // Dikelompokkan per Regional (kolom T) supaya gampang pilih per wilayah,
+  // bukan cuma daftar flat -- branch yang regional-nya tidak ketemu
+  // (seharusnya jarang) masuk grup "(Tanpa Regional)" di paling akhir.
+  const regionalOf = {};
+  (rows || []).forEach(r => { if (r.branch && !regionalOf[r.branch]) regionalOf[r.branch] = r.regional || '(Tanpa Regional)'; });
+  const byRegional = {};
+  branches.forEach(b => {
+    const reg = regionalOf[b] || '(Tanpa Regional)';
+    (byRegional[reg] = byRegional[reg] || []).push(b);
+  });
+  const regionalNames = Object.keys(byRegional).sort((a, b) => {
+    if (a === '(Tanpa Regional)') return 1;
+    if (b === '(Tanpa Regional)') return -1;
+    return a.localeCompare(b);
+  });
+
+  el.innerHTML = regionalNames.map(reg => `
+    <div class="aging-branch-group">
+      <div class="aging-branch-group-head">
+        <span>${esc2(reg)}</span>
+        <button type="button" class="btn-ghost btn-sm aging-branch-group-toggle" data-regional="${esc2(reg)}">Pilih/Kosongkan</button>
+      </div>
+      <div class="branch-filter-grid aging-branch-group-body">
+        ${byRegional[reg].map(b => `
+          <label class="branch-check">
+            <input type="checkbox" class="aging-branch-checkbox" value="${esc2(b)}" checked>
+            <span>${esc2(b)}</span>
+          </label>
+        `).join('')}
+      </div>
+    </div>
   `).join('');
   updateAgingFilterSummary();
 }
+document.getElementById('agingBranchGrid').addEventListener('click', (e) => {
+  const btn = e.target.closest('.aging-branch-group-toggle');
+  if (!btn) return;
+  const boxes = btn.closest('.aging-branch-group').querySelectorAll('.aging-branch-checkbox');
+  const allChecked = Array.from(boxes).every(cb => cb.checked);
+  boxes.forEach(cb => { cb.checked = !allChecked; });
+  refreshAging();
+});
 function updateAgingFilterSummary() {
   const all = document.querySelectorAll('.aging-branch-checkbox');
   const checked = document.querySelectorAll('.aging-branch-checkbox:checked');
@@ -324,6 +370,7 @@ function renderStageFunnel(filteredRows, warnDays, critDays) {
         <div class="aging-tl-count">${fmtNum2(rowsInStage.length)}</div>
         <div class="aging-tl-dot" style="background:${color};"></div>
         <div class="aging-tl-label">${esc2(label)}</div>
+        <div class="aging-tl-avg" style="color:${color};">${avg !== null ? `rata-rata ${avg} hari` : '-'}</div>
       </div>
       ${connector}
     `;
@@ -416,8 +463,8 @@ document.getElementById('agingTselGroupBtn').addEventListener('click', () => {
 // ── Tab "Rata-rata Aging per Branch" / "Per Status" / "Onprogress" ──────
 const AGING_REKAP_HINTS = {
   branch: 'klik baris branch untuk lihat daftar lokasi',
-  status: 'baris = Branch &middot; kolom = tiap status pekerjaan &middot; nilai = jumlah LOP &amp; rata-rata aging (hari) pada status tsb',
-  onprogress: 'sama seperti Per Status, tapi hanya status yang sedang berjalan (Perijinan&ndash;Finish Instalasi) &middot; DROP MOM/DROP/GOLIVE tidak dihitung',
+  status: 'baris = Branch &middot; kolom = tiap status pekerjaan &middot; nilai = jumlah LOP &amp; rata-rata aging (hari) pada status tsb &middot; klik sel untuk lihat daftar lokasinya',
+  onprogress: 'sama seperti Per Status, tapi hanya status yang sedang berjalan (Perijinan&ndash;Finish Instalasi) &middot; DROP MOM/DROP/GOLIVE tidak dihitung &middot; klik sel untuk lihat daftar lokasinya',
 };
 let agingRekapView = 'branch';
 function setAgingRekapView(view) {
@@ -442,7 +489,7 @@ setAgingRekapView('branch');
 // DROP MOM/DROP dulu, lalu tahapan onprogress (Perijinan..Finish
 // Instalasi), lalu Golive & variannya (UT/Rekon/BAST) paling akhir.
 const AGING_STATUS_COLUMN_ORDER = [
-  '01. DROP MOM', '00. DROP', '10.1 BAST 2025',
+  '01. DROP MOM', '00. DROP',
   '01. PERIJINAN', '02. PERSIAPAN', '03. MATDEV', '04. INSTALASI', '05. FINISH INSTALASI',
   '06. GOLIVE', '07. UT', '09. REKON', '10. BAST',
 ];
@@ -498,7 +545,7 @@ function renderAgingStatusPivot(table, rows, statuses, warnDays, critDays) {
       const avg = Math.round(cell.sum / cell.count);
       const bucket = agingBucket(avg, warnDays, critDays);
       const color = agingColor(bucket);
-      html += `<td>
+      html += `<td class="aging-cell-clickable" data-group="${esc2(g)}" data-status="${esc2(s)}" title="Klik untuk lihat daftar lokasi">
         <div class="aging-cell-lop">${fmtNum2(cell.count)} LOP</div>
         <div class="aging-cell-avg" style="color:${color};">${avg} hari</div>
       </td>`;
@@ -656,6 +703,28 @@ document.getElementById('agingBranchTable').addEventListener('click', (e) => {
   openBranchListModal(tr.dataset.branch);
 });
 
+// Klik sel di tabel "Per Status"/"Onprogress" (branch x status) -> daftar
+// lokasi branch tsb yang PERSIS di status kolom itu saja (bukan semua
+// status branch itu seperti klik baris di tabel "Per Branch").
+function agingStatusTableClickHandler(e) {
+  const td = e.target.closest('td.aging-cell-clickable');
+  if (!td || !agingCache) return;
+  openStatusCellModal(td.dataset.group, td.dataset.status);
+}
+document.getElementById('agingStatusTable').addEventListener('click', agingStatusTableClickHandler);
+document.getElementById('agingOnprogressTable').addEventListener('click', agingStatusTableClickHandler);
+
+function openStatusCellModal(group, status) {
+  const warnDays = agingCache.warning_days, critDays = agingCache.critical_days;
+  const rows = getAgingFilteredRows()
+    .filter(r => r.aging_days !== null && agingGroupKeyOf(r) === group && (r.status_z || '(Tanpa Status)') === status)
+    .slice()
+    .sort((a, b) => b.aging_days - a.aging_days);
+  branchModalCache = { branch: `${group} — ${agingStatusShortLabel(status)}`, rows, warnDays, critDays };
+  renderBranchListView();
+  document.getElementById('agingModalOverlay').classList.add('open');
+}
+
 function openBranchListModal(branch) {
   const warnDays = agingCache.warning_days, critDays = agingCache.critical_days;
   const rows = getAgingFilteredRows()
@@ -764,6 +833,28 @@ async function renderBranchLopDetailView(rowNum) {
   }
 }
 
+// Sebelumnya "Aging" = total hari dari NDE s.d. hari ini, dihitung rata
+// sama untuk baris apapun terlepas dari tahapnya sudah sejauh mana. Sekarang
+// diubah jadi PER-SEGMEN mengikuti urutan progres: NDE -> Perijinan adalah
+// segmen punya Perijinan, lanjut Perijinan -> Persiapan jadi segmen
+// Persiapan, dst -- jadi Aging yang tampil = lama baris itu DI TAHAP
+// SEKARANG saja (sejak masuk tahap itu), bukan total umur sejak NDE.
+// Datanya diambil dari stage_progress (cumulative hari ke tiap tahap, sudah
+// dikirim backend) yang sudah ada, tinggal dikurangi di sini.
+function agingStageEntryDays(r) {
+  if (!r.stage_progress) return 0;
+  const entry = r.stage_progress.find(sp => sp.stage === r.status_z && sp.date);
+  return entry ? entry.days : 0;
+}
+function applyAgingSegmentation(rows) {
+  rows.forEach(r => {
+    if (r.aging_days === null || r.aging_days === undefined) return;
+    r.aging_days_full = r.aging_days; // simpan total asli (NDE s.d. hari ini) buat referensi kalau perlu
+    const entryDays = agingStageEntryDays(r);
+    r.aging_days = Math.max(0, r.aging_days - entryDays);
+  });
+}
+
 async function loadAging() {
   document.getElementById('agingLopTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
   try {
@@ -774,7 +865,8 @@ async function loadAging() {
       return;
     }
     agingCache = json.data;
-    renderAgingBranchFilter(agingCache.branches);
+    applyAgingSegmentation(agingCache.rows);
+    renderAgingBranchFilter(agingCache.branches, agingCache.rows);
     renderAgingStatusFilter(agingCache.rows);
     refreshAging();
   } catch (e) {
