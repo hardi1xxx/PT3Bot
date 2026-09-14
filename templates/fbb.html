@@ -754,13 +754,18 @@ function fbbParseDate(raw) {
   }
   // Format singkatan bulan, mis. "01-Jun-2026" / "1/Jun/26" / "1 Jun 2026"
   // -- sama seperti daftar format eksplisit di _parse_date() backend
-  // (sheets_service.py), yang jadi tanda format ini memang muncul di data.
-  m = raw.match(/^(\d{1,2})[\/\-\s]([A-Za-z]{3,})[\/\-\s](\d{2,4})$/);
+  // (sheets_service.py). Tahun OPSIONAL: kolom TGL_GOLIVE di sheet
+  // asli ternyata sering cuma "12-Jan" tanpa tahun sama sekali -- kalau
+  // tahun tidak ada, pakai tahun berjalan (persis sama seperti
+  // dateutil.parser.parse(..., dayfirst=True) di backend, yang otomatis
+  // mengisi tahun dari default `today` kalau tidak disebutkan).
+  m = raw.match(/^(\d{1,2})[\/\-\s]([A-Za-z]{3,})(?:[\/\-\s](\d{2,4}))?$/);
   if (m) {
     let [, d, monName, y] = m;
     const mo = FBB_MONTH_ABBR[monName.toLowerCase().slice(0, 3)];
     if (mo) {
-      y = y.length === 2 ? '20' + y : y;
+      if (!y) y = String(new Date().getFullYear());
+      else if (y.length === 2) y = '20' + y;
       return new Date(Date.UTC(+y, mo - 1, +d));
     }
   }
