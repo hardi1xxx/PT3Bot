@@ -77,8 +77,11 @@
      Region/Branch yang bisa expand-collapse & klik sel utk lihat detail.
      Wrap #mbb-dashboard-wrap / #mbb-pivot-wrap dipakai ULANG (bukan div
      baru) -- isinya tinggal beda tergantung source view MBB atau OLO. */
-  .olo-dash-top{display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:14px; align-items:stretch;}
-  @media (max-width: 980px){ .olo-dash-top{grid-template-columns:1fr;} }
+  .olo-dash-top{display:flex; gap:14px; margin-bottom:14px; align-items:stretch;}
+  .olo-dash-top .tree-card{flex:1; min-width:0;}
+  .olo-dash-top .olo-dash-right{flex:1; min-width:0; display:flex; flex-direction:column; gap:14px;}
+  .olo-dash-top .olo-dash-right .card{flex:1; display:flex; flex-direction:column;}
+  @media (max-width: 980px){ .olo-dash-top{flex-direction:column;} }
   .olo-curve-filters{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
   .olo-curve-filters select{border:1px solid #cbd5e1; border-radius:6px; padding:4px 8px; font-size:0.82rem; color:#334155;}
   #mbb-pivot-wrap table.pivot .olo-pivot-region-row td{cursor:pointer; background:#f8fafc; font-weight:700;}
@@ -111,6 +114,20 @@
   .olo-cal-cell.has-commit{background:#eff6ff; border-color:#93c5fd; cursor:pointer;}
   .olo-cal-cell.has-commit:hover{background:#dbeafe;}
   .olo-cal-cell .c{margin-top:4px; display:inline-block; background:#0f4c81; color:#fff; font-weight:800; border-radius:20px; padding:1px 8px; font-size:0.72rem;}
+  /* Tanggal plan FI yang sudah lewat hari ini TAPI progress-nya belum
+     OA/GOLIVE/Finish Instalasi -- ditandai beda (merah) dari commit biasa. */
+  .olo-cal-cell.has-overdue{background:#fef2f2; border-color:#fca5a5;}
+  .olo-cal-cell.has-overdue:hover{background:#fee2e2;}
+  .olo-cal-cell .c-over{margin-top:2px; display:inline-block; background:#dc2626; color:#fff; font-weight:800; border-radius:20px; padding:1px 7px; font-size:0.68rem;}
+  .olo-cal-legend{display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:0.78rem; color:#475569; margin-bottom:8px;}
+  .olo-cal-legend .dot{display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:middle;}
+  .olo-cal-legend .dot.blue{background:#0f4c81;}
+  .olo-cal-legend .dot.red{background:#dc2626;}
+
+  /* Toggle grouping tabel Status Pekerjaan: Region/Branch vs Sub Sistem */
+  .olo-pivot-group-toggle{margin-bottom:10px;}
+  #mbb-pivot-wrap table.pivot tfoot td, #mbb-pivot-wrap table.pivot tr.olo-pivot-foot-row td{cursor:pointer;}
+  #mbb-pivot-wrap table.pivot tr.olo-pivot-foot-row td:hover{background:#eff6ff; color:#0f4c81;}
 
   /* Modal popup generik -- dipakai buat detail baris tabel utama, sel
      tabel pivot OLO, dan titik Kurva S. */
@@ -1046,13 +1063,13 @@ function renderMbbCurve(rowsForView){
    digabung ke leaf HOLD (pola sama kayak MBB_SUB_BUCKETS -- supaya total
    leaf Progress selalu pas dengan angka kotak "Progress"). */
 const OLO_PROGRESS_SUB_BUCKETS = [
-  { key:"hold",             label:"HOLD",             match:(s)=> s.includes("00.1 need confirm") || s.includes("00.2 confirmed batal") || s.includes("00. plan drop") || s.includes("13. hold") },
   { key:"golive",           label:"GOLIVE",           match:(s)=> s.includes("10. ut") || s.includes("08. golive") },
   { key:"survei",           label:"Survei",           match:(s)=> s.includes("02. survey") },
   { key:"perijinan",        label:"Perijinan",        match:(s)=> s.includes("04. perizinan") },
   { key:"matdev",           label:"Matdev",           match:(s)=> s.includes("05. matdel") },
   { key:"instalasi",        label:"Instalasi",        match:(s)=> s.includes("06. instalasi") },
   { key:"finish-instalasi", label:"Finish Instalasi", match:(s)=> s.includes("07. finish instalasi") },
+  { key:"hold",             label:"HOLD",             match:(s)=> s.includes("00.1 need confirm") || s.includes("00.2 confirmed batal") || s.includes("00. plan drop") || s.includes("13. hold") },
 ];
 // "OA" sekarang SATU leaf saja (gabungan "15. OA" & "16. OA") -- sebelumnya
 // dipecah jadi 2 leaf terpisah (OA (JT) / OA (PT1)), sesuai permintaan
@@ -1417,14 +1434,28 @@ function renderOloCalendarHtml(rowsForView){
   const firstDow = new Date(year, month, 1).getDay(); // 0 = Minggu
   const daysInMonth = new Date(year, month+1, 0).getDate();
 
+  // Tanggal plan FI (Plan Golive) yang SUDAH LEWAT hari ini, tapi baris
+  // itu progressnya belum sampai OA / GOLIVE / Finish Instalasi -- ditandai
+  // beda (merah) dari commit yang masih normal (biru).
+  const today = new Date(); today.setHours(0,0,0,0);
+  const isRowNotYetDone = (r)=>{
+    const c = classifyOloRow(r);
+    return !(c.top === "oa" || c.sub === "golive" || c.sub === "finish-instalasi");
+  };
+
   let cells = "";
   for (let i=0; i<firstDow; i++) cells += `<div class="olo-cal-cell empty"></div>`;
   for (let day=1; day<=daysInMonth; day++){
-    const count = (byDay[day] || []).length;
+    const dayRows = byDay[day] || [];
+    const count = dayRows.length;
     if (count > 0){
-      cells += `<div class="olo-cal-cell has-commit" onclick="oloShowCalendarDayDetail(${day})">
+      const isPast = new Date(year, month, day) < today;
+      const overdueCount = isPast ? dayRows.filter(isRowNotYetDone).length : 0;
+      const cellCls = overdueCount > 0 ? "has-commit has-overdue" : "has-commit";
+      cells += `<div class="olo-cal-cell ${cellCls}" onclick="oloShowCalendarDayDetail(${day})">
         <div class="d">${day}</div>
         <div class="c">${fmtN(count)}</div>
+        ${overdueCount > 0 ? `<div class="c-over">&#9888; ${fmtN(overdueCount)}</div>` : ""}
       </div>`;
     } else {
       cells += `<div class="olo-cal-cell"><div class="d">${day}</div></div>`;
@@ -1439,13 +1470,24 @@ function renderOloCalendarHtml(rowsForView){
 function oloShowCalendarDayDetail(day){
   const rows = oloCalendarRowsByDay[day] || [];
   const dateLabel = `${day} ${INDO_MONTHS[oloCalendarMonth]} ${oloCalendarYear}`;
-  const bodyRows = rows.length ? rows.map(r => `
-    <tr>${OLO_DETAIL_COLS.map(c=>{
+  const today = new Date(); today.setHours(0,0,0,0);
+  const isPast = new Date(oloCalendarYear, oloCalendarMonth, day) < today;
+  const isRowNotYetDone = (r)=>{
+    const c = classifyOloRow(r);
+    return !(c.top === "oa" || c.sub === "golive" || c.sub === "finish-instalasi");
+  };
+  const overdueCount = isPast ? rows.filter(isRowNotYetDone).length : 0;
+  const bodyRows = rows.length ? rows.map(r => {
+    const overdue = isPast && isRowNotYetDone(r);
+    return `
+    <tr${overdue ? ' style="background:#fef2f2;"' : ''}>${OLO_DETAIL_COLS.map(c=>{
       const v = getCol(r, c);
       return `<td>${v ? escapeHtml(v) : '<span class="cell-empty">–</span>'}</td>`;
-    }).join("")}</tr>`).join("") : `<tr><td colspan="${OLO_DETAIL_COLS.length}" class="empty-state">Tidak ada baris.</td></tr>`;
+    }).join("")}</tr>`;
+  }).join("") : `<tr><td colspan="${OLO_DETAIL_COLS.length}" class="empty-state">Tidak ada baris.</td></tr>`;
+  const overdueNote = overdueCount > 0 ? ` — <span style="color:#dc2626; font-weight:700;">${fmtN(overdueCount)} sudah lewat plan, belum OA/GOLIVE/FI</span> (baris berwarna merah)` : '';
   openModal(`Komit FI (Plan Golive) — ${escapeHtml(dateLabel)}`, `
-    <div class="hint" style="margin-bottom:8px;">${rows.length} baris</div>
+    <div class="hint" style="margin-bottom:8px;">${rows.length} baris${overdueNote}</div>
     <div class="olo-detail-list">
       <table>
         <thead><tr>${OLO_DETAIL_COLS.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
@@ -1494,31 +1536,37 @@ function renderOloDashboard(rowsForView){
         <div class="mbb-tree-svg-wrap">${renderOloTreeSvg(total, oa, progress, drop, progressSubCounts)}</div>
       </div>
 
-      <div class="card curve-card">
-        <div class="section-title" style="margin:0 0 8px;">Kurva S PLAN vs REALISASI Golive</div>
-        <div class="olo-curve-filters">
-          <select id="olo-curve-year" onchange="setOloCurveYear(this.value)"></select>
-          <div class="seg-toggle">
-            <button type="button" class="${oloCurveMode==='bulanan'?'on':''}" onclick="setOloCurveMode('bulanan')">Bulanan</button>
-            <button type="button" class="${oloCurveMode==='harian'?'on':''}" onclick="setOloCurveMode('harian')">Harian</button>
+      <div class="olo-dash-right">
+        <div class="card curve-card">
+          <div class="section-title" style="margin:0 0 8px;">Kurva S PLAN vs REALISASI Golive</div>
+          <div class="olo-curve-filters">
+            <select id="olo-curve-year" onchange="setOloCurveYear(this.value)"></select>
+            <div class="seg-toggle">
+              <button type="button" class="${oloCurveMode==='bulanan'?'on':''}" onclick="setOloCurveMode('bulanan')">Bulanan</button>
+              <button type="button" class="${oloCurveMode==='harian'?'on':''}" onclick="setOloCurveMode('harian')">Harian</button>
+            </div>
+            ${oloCurveMode === "harian" ? `<span class="hint">Bulan</span><select id="olo-curve-month" onchange="setOloCurveMonth(this.value)">${monthOptions}</select>` : ""}
           </div>
-          ${oloCurveMode === "harian" ? `<span class="hint">Bulan</span><select id="olo-curve-month" onchange="setOloCurveMonth(this.value)">${monthOptions}</select>` : ""}
+          <div style="position:relative; height:230px;"><canvas id="olo-curve-chart"></canvas></div>
         </div>
-        <div style="position:relative; height:230px;"><canvas id="olo-curve-chart"></canvas></div>
-      </div>
-    </div>
 
-    <div class="card" style="margin-bottom:14px;">
-      <div class="section-title" style="margin:0 0 8px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
-        <span>Kalender Komit FI (Plan Golive)</span>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <button type="button" class="btn-sm" onclick="oloCalendarPrevMonth()">&#8592;</button>
-          <span class="hint" style="min-width:130px; text-align:center; font-weight:700;">${escapeHtml(INDO_MONTHS[oloCalendarMonth])} ${oloCalendarYear}</span>
-          <button type="button" class="btn-sm" onclick="oloCalendarNextMonth()">&#8594;</button>
+        <div class="card cal-card">
+          <div class="section-title" style="margin:0 0 8px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+            <span>Kalender Komit FI (Plan Golive)</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button type="button" class="btn-sm" onclick="oloCalendarPrevMonth()">&#8592;</button>
+              <span class="hint" style="min-width:130px; text-align:center; font-weight:700;">${escapeHtml(INDO_MONTHS[oloCalendarMonth])} ${oloCalendarYear}</span>
+              <button type="button" class="btn-sm" onclick="oloCalendarNextMonth()">&#8594;</button>
+            </div>
+          </div>
+          <div class="olo-cal-legend">
+            <span><span class="dot blue"></span>Ada komitmen FI (Plan Golive)</span>
+            <span><span class="dot red"></span>Plan FI sudah lewat hari ini &amp; belum OA/GOLIVE/FI</span>
+          </div>
+          <div class="hint" style="margin-bottom:8px;">Klik tanggal untuk lihat detail.</div>
+          ${renderOloCalendarHtml(rowsForView)}
         </div>
       </div>
-      <div class="hint" style="margin-bottom:8px;">Tanggal dengan badge biru = ada komitmen FI (Plan Golive). Klik tanggal untuk lihat detail.</div>
-      ${renderOloCalendarHtml(rowsForView)}
     </div>
   `;
 
@@ -1537,6 +1585,13 @@ function renderOloDashboard(rowsForView){
 // -> tampil panel Detail per baris di bawah tabel.
 let oloPivotExpanded = null; // Set nama REGION yang lagi expanded (diisi pertama kali render, default semua expanded)
 let oloLastPivotDataMap = null; // dataMap tabel pivot terakhir dirender -- dipakai buat isi popup detail tanpa perlu render ulang tabel
+let oloPivotGroupMode = "region"; // "region" (Region/Branch) | "subsistem" (SUB SISTEM)
+let oloLastPivotRowsForView = null; // rows mentah yang dipakai membangun tabel pivot terakhir -- dipakai utk detail "Grand Total"
+
+function setOloPivotGroupMode(mode){
+  oloPivotGroupMode = mode;
+  render();
+}
 
 function oloTogglePivotRegion(region){
   if (oloPivotExpanded.has(region)) oloPivotExpanded.delete(region);
@@ -1573,10 +1628,85 @@ function oloShowPivotDetail(region, branch, status){
     </div>`);
 }
 
+// Detail popup buat sel angka tabel pivot mode "Sub Sistem" (1 level,
+// tanpa expand/collapse Branch).
+function oloShowSubsistemDetail(subsistem, status){
+  const subMap = oloLastPivotDataMap ? oloLastPivotDataMap.get(subsistem) : null;
+  const rows = subMap ? (subMap.get(status) || []) : [];
+
+  const bodyRows = rows.length ? rows.map(r => `
+    <tr>${OLO_DETAIL_COLS.map(c=>{
+      const v = getCol(r, c);
+      return `<td>${v ? escapeHtml(v) : '<span class="cell-empty">–</span>'}</td>`;
+    }).join("")}</tr>`).join("") : `<tr><td colspan="${OLO_DETAIL_COLS.length}" class="empty-state">Tidak ada baris.</td></tr>`;
+
+  openModal(`Detail: ${escapeHtml(subsistem)} — ${escapeHtml(status)}`, `
+    <div class="hint" style="margin-bottom:8px;">${rows.length} baris</div>
+    <div class="olo-detail-list">
+      <table>
+        <thead><tr>${OLO_DETAIL_COLS.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`);
+}
+
+// Baris "Grand Total" di paling bawah tabel pivot juga bisa diklik --
+// status === null artinya kolom "Grand Total" paling kanan (semua status).
+function oloShowGrandTotalDetail(status){
+  const rows = (oloLastPivotRowsForView || []).filter(r=>{
+    if (status === null) return true;
+    return (getCol(r, "STATUS PEKERJAAN") || "(Tanpa Status)") === status;
+  });
+
+  const bodyRows = rows.length ? rows.map(r => `
+    <tr>${OLO_DETAIL_COLS.map(c=>{
+      const v = getCol(r, c);
+      return `<td>${v ? escapeHtml(v) : '<span class="cell-empty">–</span>'}</td>`;
+    }).join("")}</tr>`).join("") : `<tr><td colspan="${OLO_DETAIL_COLS.length}" class="empty-state">Tidak ada baris.</td></tr>`;
+
+  const title = status === null ? "Grand Total — Semua Status" : `Grand Total — ${escapeHtml(status)}`;
+  openModal(title, `
+    <div class="hint" style="margin-bottom:8px;">${rows.length} baris</div>
+    <div class="olo-detail-list">
+      <table>
+        <thead><tr>${OLO_DETAIL_COLS.map(c=>`<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`);
+}
+
+function oloPivotGroupToggleHtml(){
+  return `
+    <div class="seg-toggle olo-pivot-group-toggle">
+      <button type="button" class="${oloPivotGroupMode==='region'?'on':''}" onclick="setOloPivotGroupMode('region')">Region / Branch</button>
+      <button type="button" class="${oloPivotGroupMode==='subsistem'?'on':''}" onclick="setOloPivotGroupMode('subsistem')">Sub Sistem</button>
+    </div>`;
+}
+
 function renderOloPivotTable(rowsForView){
   const wrap = document.getElementById("mbb-pivot-wrap"); // reuse wrap MBB
   if (!wrap) return;
 
+  oloLastPivotRowsForView = rowsForView; // dipakai oloShowGrandTotalDetail() saat footer diklik
+
+  if (!rowsForView.length){
+    wrap.innerHTML = `
+      <div class="card" style="margin-bottom:14px;">
+        <div class="section-title" style="margin:0 0 8px;">Status Pekerjaan</div>
+        ${oloPivotGroupToggleHtml()}
+        <div class="empty-state">Tidak ada data untuk ditampilkan.</div>
+      </div>`;
+    return;
+  }
+
+  if (oloPivotGroupMode === "subsistem"){
+    renderOloPivotTableBySubsistem(wrap, rowsForView);
+  } else {
+    renderOloPivotTableByRegion(wrap, rowsForView);
+  }
+}
+
+function renderOloPivotTableByRegion(wrap, rowsForView){
   const statusSet = new Set();
   const dataMap = new Map(); // region -> Map(branch -> Map(status -> rows[]))
   rowsForView.forEach(r=>{
@@ -1596,15 +1726,6 @@ function renderOloPivotTable(rowsForView){
   const regions = Array.from(dataMap.keys()).sort((a,b)=>a.localeCompare(b, 'id'));
 
   oloLastPivotDataMap = dataMap; // dipakai oloShowPivotDetail() saat sel diklik
-
-  if (!regions.length){
-    wrap.innerHTML = `
-      <div class="card" style="margin-bottom:14px;">
-        <div class="section-title" style="margin:0 0 8px;">Status Pekerjaan per Region / Branch</div>
-        <div class="empty-state">Tidak ada data untuk ditampilkan.</div>
-      </div>`;
-    return;
-  }
 
   if (oloPivotExpanded === null) oloPivotExpanded = new Set(regions);
 
@@ -1652,15 +1773,79 @@ function renderOloPivotTable(rowsForView){
     return regionRow + branchRows;
   }).join("");
 
-  const footRow = `<tr style="font-weight:700; background:#f8fafc;"><td>Grand Total</td>${statuses.map(s => `<td class="num">${fmtN(colTotals[s])}</td>`).join("")}<td class="num">${fmtN(grandTotal)}</td></tr>`;
+  const footRow = `
+    <tr class="olo-pivot-foot-row" style="font-weight:700; background:#f8fafc;">
+      <td onclick="oloShowGrandTotalDetail(null)">Grand Total</td>
+      ${statuses.map(s => `<td class="num" onclick="oloShowGrandTotalDetail('${oloJsStr(s)}')">${fmtN(colTotals[s])}</td>`).join("")}
+      <td class="num" onclick="oloShowGrandTotalDetail(null)">${fmtN(grandTotal)}</td>
+    </tr>`;
 
   wrap.innerHTML = `
     <div class="card" style="margin-bottom:14px;">
       <div class="section-title" style="margin:0 0 8px;">Status Pekerjaan per Region / Branch</div>
-      <div class="hint" style="margin-bottom:8px;">Klik nama Region untuk expand/collapse Branch. Klik angka pada baris Branch untuk lihat detail per baris (popup).</div>
+      ${oloPivotGroupToggleHtml()}
+      <div class="hint" style="margin-bottom:8px;">Klik nama Region untuk expand/collapse Branch. Klik angka pada baris Branch untuk lihat detail per baris (popup). Klik baris Grand Total untuk lihat semua baris per status.</div>
       <div style="overflow-x:auto;">
         <table class="pivot">
           <thead><tr><th>REGION / BRANCH</th>${statuses.map(s => `<th>${escapeHtml(s)}</th>`).join("")}<th>Grand Total</th></tr></thead>
+          <tbody>${bodyRows}${footRow}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderOloPivotTableBySubsistem(wrap, rowsForView){
+  const statusSet = new Set();
+  const dataMap = new Map(); // subsistem -> Map(status -> rows[])
+  rowsForView.forEach(r=>{
+    const subsistem = getCol(r, "SUB SISTEM") || "(Tanpa Sub Sistem)";
+    const status = getCol(r, "STATUS PEKERJAAN") || "(Tanpa Status)";
+    statusSet.add(status);
+    if (!dataMap.has(subsistem)) dataMap.set(subsistem, new Map());
+    const subMap = dataMap.get(subsistem);
+    if (!subMap.has(status)) subMap.set(status, []);
+    subMap.get(status).push(r);
+  });
+
+  const statuses = Array.from(statusSet).sort((a,b)=>a.localeCompare(b, 'id'));
+  const subsistems = Array.from(dataMap.keys()).sort((a,b)=>a.localeCompare(b, 'id'));
+
+  oloLastPivotDataMap = dataMap; // dipakai oloShowSubsistemDetail() saat sel diklik
+
+  let grandTotal = 0;
+  const colTotals = {}; statuses.forEach(s => colTotals[s] = 0);
+
+  const bodyRows = subsistems.map(subsistem=>{
+    const subMap = dataMap.get(subsistem);
+    let subTotal = 0;
+    const tds = statuses.map(s=>{
+      const cellRows = subMap.get(s) || [];
+      const n = cellRows.length;
+      subTotal += n;
+      colTotals[s] += n;
+      if (!n) return `<td class="num"><span class="cell-empty">–</span></td>`;
+      return `<td class="num olo-pivot-cell-clickable" onclick="oloShowSubsistemDetail('${oloJsStr(subsistem)}','${oloJsStr(s)}')">${fmtN(n)}</td>`;
+    }).join("");
+    grandTotal += subTotal;
+    return `<tr class="olo-pivot-branch-row"><td>${escapeHtml(subsistem)}</td>${tds}<td class="num" style="font-weight:700;">${fmtN(subTotal)}</td></tr>`;
+  }).join("");
+
+  const footRow = `
+    <tr class="olo-pivot-foot-row" style="font-weight:700; background:#f8fafc;">
+      <td onclick="oloShowGrandTotalDetail(null)">Grand Total</td>
+      ${statuses.map(s => `<td class="num" onclick="oloShowGrandTotalDetail('${oloJsStr(s)}')">${fmtN(colTotals[s])}</td>`).join("")}
+      <td class="num" onclick="oloShowGrandTotalDetail(null)">${fmtN(grandTotal)}</td>
+    </tr>`;
+
+  wrap.innerHTML = `
+    <div class="card" style="margin-bottom:14px;">
+      <div class="section-title" style="margin:0 0 8px;">Status Pekerjaan per Sub Sistem</div>
+      ${oloPivotGroupToggleHtml()}
+      <div class="hint" style="margin-bottom:8px;">Klik angka pada baris Sub Sistem untuk lihat detail per baris (popup). Klik baris Grand Total untuk lihat semua baris per status.</div>
+      <div style="overflow-x:auto;">
+        <table class="pivot">
+          <thead><tr><th>SUB SISTEM</th>${statuses.map(s => `<th>${escapeHtml(s)}</th>`).join("")}<th>Grand Total</th></tr></thead>
           <tbody>${bodyRows}${footRow}</tbody>
         </table>
       </div>
