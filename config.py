@@ -354,6 +354,23 @@ AGING_FIXED_END_COLUMNS = {
     "10. BAST":        "BD",
 }
 
+# Rantai kolom "Done <tahap>" berurutan, KHUSUS dipakai halaman /aging untuk
+# hitung aging PER-SEGMEN (durasi di tahap yang sedang berjalan saja, bukan
+# total sejak NDE) -- dikonfirmasi langsung oleh dev, jadi terpisah dari
+# NOTIFY_STATUS_DATE_MAP (dipakai notifikasi "belum update hari ini", jangan
+# disatukan supaya perubahan di sini tidak mengubah perilaku notifikasi itu).
+# Start tiap tahap = kolom akhir tahap SEBELUMNYA di daftar ini (atau
+# COL_TANGGAL_NDE untuk tahap pertama); end = kolom "Done" di sini, atau
+# hari ini kalau kolomnya masih kosong.
+AGING_STAGE_CHAIN = [
+    ("01. PERIJINAN", "AT"),          # Done Perijinan
+    ("02. PERSIAPAN", "AV"),          # Done Persiapan
+    ("03. MATDEV", "AX"),             # Done Matdev
+    ("04. INSTALASI", "AZ"),          # Done Instalasi
+    ("05. FINISH INSTALASI", "BB"),   # Done Finish Instalasi
+    ("06. GOLIVE", "BD"),             # Tanggal Golive
+]
+
 # ── Notifikasi "belum update hari ini" ─────────────────────────────────
 # Status Z yang dipantau + kolom tanggal pasangannya. Kalau status LOP ada
 # di sini dan kolom tanggalnya BUKAN hari ini (dan tidak kosong — kosong

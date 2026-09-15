@@ -51,6 +51,16 @@ def _col_to_index(col_letters: str) -> int:
     return result
 
 
+def _index_to_col_letters(index_1based: int) -> str:
+    """Kebalikan _col_to_index: 1 -> 'A', 26 -> 'Z', 27 -> 'AA', dst."""
+    letters = ""
+    n = index_1based
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        letters = chr(ord("A") + rem) + letters
+    return letters
+
+
 def _get_credentials():
     """Satu tempat untuk build Credentials dari GOOGLE_SERVICE_ACCOUNT_JSON --
     dipakai gspread (get_client() di bawah) MAUPUN drive_service.py, supaya
@@ -1507,44 +1517,41 @@ def _parse_date(raw: str):
 
 def get_aging_data():
     """
-    Per-row aging: (end_date - start_date) in days.
-      start_date = kolom AP (Tanggal NDE)
-      end_date   = HARI INI secara default, KECUALI status Z ada di
-                   config.AGING_FIXED_END_COLUMNS (Drop -> BF;
-                   Golive/UT/Rekon/BAST -> BD), dalam hal itu end_date =
-                   nilai kolom tsb — jatuh balik ke hari ini kalau kosong
-                   / tidak valid.
-    aging_days bernilai None kalau AP kosong/tidak bisa di-parse.
+    Per-row aging.
 
-    stage_progress: daftar {stage, date, days} best-effort per tahap, dari
-    kolom tanggal yang SUDAH ADA (config.NOTIFY_STATUS_DATE_MAP + kolom BD
-    dari AGING_FIXED_END_COLUMNS) -- dipakai halaman /aging (funnel "Alur
-    Tahapan") buat menghitung rata-rata lama tiap SEGMEN (NDE->Perijinan,
-    Perijinan->Persiapan, dst), bukan cuma total NDE->sekarang.
-    ASUMSI (tolong konfirmasi ke dev kalau sheet-nya tidak begitu): begitu
-    status pindah ke tahap berikutnya, kolom tanggal tahap SEBELUMNYA tetap
-    menyimpan tanggal saat tahap itu tercapai (tidak ikut kosong/berubah).
-    Kolom "05. FINISH INSTALASI" belum ada pemetaannya di config manapun,
-    jadi segmen Instalasi->Finish Instalasi & Finish Instalasi->Golive akan
-    tampil "-" sampai kolom yang benar dikonfirmasi.
+    aging_days SEKARANG = durasi SEGMEN tahap yang SEDANG BERJALAN saja
+    (bukan total dari NDE s/d hari ini seperti sebelumnya), mengikuti
+    rantai config.AGING_STAGE_CHAIN yang sudah dikonfirmasi dev:
+      Perijinan        = NDE (AP)            s/d Done Perijinan (AT)
+      Persiapan        = Done Perijinan (AT) s/d Done Persiapan (AV)
+      Matdev           = Done Persiapan (AV) s/d Done Matdev (AX)
+      Instalasi        = Done Matdev (AX)    s/d Done Instalasi (AZ)
+      Finish Instalasi = Done Instalasi (AZ) s/d Done Finish Instalasi (BB)
+      Golive           = Done Fin. Instalasi (BB) s/d Tanggal Golive (BD)
+    Kalau kolom akhir segmen itu masih kosong, dipakai HARI INI sebagai
+    penggantinya (segmen masih berjalan). Kalau kolom AWAL segmen (tanggal
+    selesai tahap sebelumnya) ternyata kosong -- data belum lengkap -- mundur
+    ke tahap-tahap sebelumnya sampai ketemu tanggal terisi, paling jauh ke
+    Tanggal NDE (AP).
+    Status Z di LUAR rantai progress ini (Drop, Drop MOM, BAST 2025, UT,
+    Rekon, BAST) tetap pakai perilaku lama: total NDE (AP) s/d hari ini,
+    atau s/d kolom tetap di config.AGING_FIXED_END_COLUMNS kalau ada.
+    aging_days bernilai None kalau tanggal awal segmennya tidak bisa
+    ditentukan sama sekali (AP pun kosong).
+
+    stage_progress: tanggal CUMULATIF dari NDE ke tiap tahap (dari
+    config.AGING_STAGE_CHAIN) -- dipakai halaman /aging (Timeline "Alur
+    Tahapan" per-LOP), yang menghitung durasi tiap segmen sendiri lewat
+    pengurangan (stage berikutnya - stage ini), bukan dari aging_days.
     """
     ws = get_worksheet()
     all_values = _cached_get_all_values(ws)
 
     # Only the fixed-end columns actually referenced in config need reading.
     fixed_end_cols = sorted(set(config.AGING_FIXED_END_COLUMNS.values()))
-
-    # Kolom tanggal per tahap buat stage_progress (lihat docstring) --
-    # key di sini HARUS sama persis dengan status_z tahap tsb, karena itu
-    # yang dipakai buat mencocokkan di frontend (AGING_STAGES di aging.html).
-    stage_date_columns = {
-        "01. PERIJINAN": config.NOTIFY_STATUS_DATE_MAP.get("01. PERIJINAN"),
-        "02. PERSIAPAN": config.NOTIFY_STATUS_DATE_MAP.get("02. PERSIAPAN"),
-        "03. MATDEV": config.NOTIFY_STATUS_DATE_MAP.get("03. MATDEV"),
-        "04. INSTALASI": config.NOTIFY_STATUS_DATE_MAP.get("04. INSTALASI"),
-        "06. GOLIVE": config.AGING_FIXED_END_COLUMNS.get("06. GOLIVE"),
-    }
-    stage_date_cols = sorted(set(c for c in stage_date_columns.values() if c))
+    stage_chain = config.AGING_STAGE_CHAIN
+    stage_cols = sorted(set(col for _, col in stage_chain))
+    stage_index_by_key = {key: i for i, (key, _) in enumerate(stage_chain)}
 
     idx = {
         "ap": _col_to_index(config.COL_TANGGAL_NDE) - 1,
@@ -1564,7 +1571,7 @@ def get_aging_data():
     }
     for col in fixed_end_cols:
         idx[f"fixed_{col}"] = _col_to_index(col) - 1
-    for col in stage_date_cols:
+    for col in stage_cols:
         idx.setdefault(f"stagecol_{col}", _col_to_index(col) - 1)
 
     data_rows = all_values[config.DATA_START_ROW - 1:]
@@ -1589,26 +1596,43 @@ def get_aging_data():
 
         status_raw = cell("status_z")
         start_date = _parse_date(cell("ap"))
-
         fixed_col = config.AGING_FIXED_END_COLUMNS.get(status_raw)
-        if fixed_col:
-            end_date = _parse_date(cell(f"fixed_{fixed_col}")) or today
-        else:
-            end_date = today
 
-        aging_days = (end_date - start_date).days if start_date else None
+        # Tanggal "selesai" tiap tahap berurutan: index 0 = NDE (AP), lalu
+        # 1..N = tanggal Done tiap tahap di AGING_STAGE_CHAIN (AT/AV/AX/AZ/
+        # BB/BD). Dipakai baik untuk stage_progress maupun aging_days.
+        stage_dates = [start_date]
+        for _, col in stage_chain:
+            stage_dates.append(_parse_date(cell(f"stagecol_{col}")))
 
         stage_progress = []
-        for stage_key, col_letter in stage_date_columns.items():
-            if not col_letter:
-                continue
-            stage_date = _parse_date(cell(f"stagecol_{col_letter}"))
+        for i, (stage_key, _) in enumerate(stage_chain):
+            stage_date = stage_dates[i + 1]
             stage_days = (stage_date - start_date).days if (stage_date and start_date) else None
             stage_progress.append({
                 "stage": stage_key,
                 "date": stage_date.isoformat() if stage_date else None,
                 "days": stage_days,
             })
+
+        stage_idx = stage_index_by_key.get(status_raw)
+        if stage_idx is not None:
+            # Status ada di rantai progress -> aging_days = durasi SEGMEN
+            # tahap ini saja. Start = tanggal selesai tahap sebelumnya;
+            # kalau kosong, mundur sampai ketemu tanggal terisi (paling
+            # jauh NDE/AP).
+            seg_start = None
+            for j in range(stage_idx, -1, -1):
+                if stage_dates[j] is not None:
+                    seg_start = stage_dates[j]
+                    break
+            seg_end = stage_dates[stage_idx + 1] or today
+            aging_days = (seg_end - seg_start).days if seg_start else None
+        else:
+            # Di luar rantai progress (Drop, Drop MOM, BAST 2025, UT, Rekon,
+            # BAST) -> perilaku lama: total NDE s/d hari ini / kolom tetap.
+            end_date = (_parse_date(cell(f"fixed_{fixed_col}")) or today) if fixed_col else today
+            aging_days = (end_date - start_date).days if start_date else None
 
         rows.append({
             "row": row_num,
@@ -1634,6 +1658,44 @@ def get_aging_data():
         "onprogress_statuses": config.DASHBOARD_STATUSES,
         "rows": rows,
     }
+
+
+def get_aging_export_rows():
+    """Data mentah kolom A-H, Q-U, Y-AL, AP-BC dari sheet Detail PT3 --
+    dipakai tombol "Export Data" di halaman /aging. Label kolom diambil
+    langsung dari header row (config.HEADER_ROW), bukan dikatalogkan
+    manual satu-satu (~40 kolom) -- kalau header-nya kosong, dipakai nama
+    kolom (mis. "Kolom AT") sebagai fallback."""
+    ws = get_worksheet()
+    all_values = _cached_get_all_values(ws)
+
+    ranges = [("A", "H"), ("Q", "U"), ("Y", "AL"), ("AP", "BC")]
+    col_indices = []
+    for start_col, end_col in ranges:
+        col_indices.extend(range(_col_to_index(start_col) - 1, _col_to_index(end_col)))
+
+    header_row = all_values[config.HEADER_ROW - 1] if len(all_values) >= config.HEADER_ROW else []
+
+    def header_at(i):
+        if i < len(header_row) and header_row[i].strip():
+            return header_row[i].strip()
+        return f"Kolom {_index_to_col_letters(i + 1)}"
+
+    headers = [header_at(i) for i in col_indices]
+
+    order_idx = _col_to_index(config.COL_ORDER) - 1
+    ihld_idx = _col_to_index(config.COL_IHLD) - 1
+    batch_idx = _col_to_index(config.COL_BATCH) - 1
+
+    rows = []
+    for row in all_values[config.DATA_START_ROW - 1:]:
+        def cell(i):
+            return row[i].strip() if i < len(row) else ""
+        if not cell(order_idx) and not cell(ihld_idx) and not cell(batch_idx):
+            continue  # fully empty row, skip
+        rows.append([cell(i) for i in col_indices])
+
+    return {"headers": headers, "rows": rows}
 
 
 def get_pending_updates():

@@ -124,7 +124,8 @@
 <div class="section-title">
   Detail per LOP
   <span class="hint">status Drop (00. DROP / 01. DROP MOM) tidak ditampilkan di tabel ini</span>
-  <button class="refresh-btn" style="margin-left:auto;" onclick="loadAging()">&#8635; Refresh</button>
+  <button type="button" class="btn-ghost btn-sm" id="agingExportBtn" style="margin-left:auto;" title="Download data mentah kolom A-H, Q-U, Y-AL, AP-BC (sheet Detail PT3) sebagai CSV">&#11015; Export Data</button>
+  <button class="refresh-btn" onclick="loadAging()">&#8635; Refresh</button>
 </div>
 <div class="card">
   <input type="text" id="agingSearch" placeholder="Cari IHLD / Lokasi...">
@@ -833,27 +834,52 @@ async function renderBranchLopDetailView(rowNum) {
   }
 }
 
-// Sebelumnya "Aging" = total hari dari NDE s.d. hari ini, dihitung rata
-// sama untuk baris apapun terlepas dari tahapnya sudah sejauh mana. Sekarang
-// diubah jadi PER-SEGMEN mengikuti urutan progres: NDE -> Perijinan adalah
-// segmen punya Perijinan, lanjut Perijinan -> Persiapan jadi segmen
-// Persiapan, dst -- jadi Aging yang tampil = lama baris itu DI TAHAP
-// SEKARANG saja (sejak masuk tahap itu), bukan total umur sejak NDE.
-// Datanya diambil dari stage_progress (cumulative hari ke tiap tahap, sudah
-// dikirim backend) yang sudah ada, tinggal dikurangi di sini.
-function agingStageEntryDays(r) {
-  if (!r.stage_progress) return 0;
-  const entry = r.stage_progress.find(sp => sp.stage === r.status_z && sp.date);
-  return entry ? entry.days : 0;
+// "Aging" = durasi baris itu di TAHAP YANG SEDANG BERJALAN sekarang saja
+// (bukan total sejak NDE) -- sudah dihitung persis di backend mengikuti
+// rantai NDE(AP) -> Perijinan(AT) -> Persiapan(AV) -> Matdev(AX) ->
+// Instalasi(AZ) -> Finish Instalasi(BB) -> Golive(BD), lihat get_aging_data()
+// di sheets_service.py. aging_days dari API sudah final, tidak perlu
+// diproses ulang di sini.
+
+// ── Export Data: kolom mentah A-H, Q-U, Y-AL, AP-BC dari sheet Detail PT3 ──
+function agingRowsToCSV(headers, rows) {
+  const escCsv = (v) => {
+    const s = (v === null || v === undefined) ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [['No'].concat(headers).map(escCsv).join(',')];
+  rows.forEach((r, i) => { lines.push([i + 1].concat(r).map(escCsv).join(',')); });
+  return lines.join('\n');
 }
-function applyAgingSegmentation(rows) {
-  rows.forEach(r => {
-    if (r.aging_days === null || r.aging_days === undefined) return;
-    r.aging_days_full = r.aging_days; // simpan total asli (NDE s.d. hari ini) buat referensi kalau perlu
-    const entryDays = agingStageEntryDays(r);
-    r.aging_days = Math.max(0, r.aging_days - entryDays);
-  });
-}
+
+document.getElementById('agingExportBtn').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const originalLabel = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = 'Memproses...';
+  try {
+    const res = await fetch('/api/aging-export');
+    const json = await res.json();
+    if (!json.ok) { alert(json.error || 'Gagal export data.'); return; }
+    const { headers, rows } = json.data;
+    if (!rows.length) { alert('Tidak ada data untuk diexport.'); return; }
+    const csv = agingRowsToCSV(headers, rows);
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aging-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Gagal export: ' + err);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalLabel;
+  }
+});
 
 async function loadAging() {
   document.getElementById('agingLopTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
@@ -865,7 +891,6 @@ async function loadAging() {
       return;
     }
     agingCache = json.data;
-    applyAgingSegmentation(agingCache.rows);
     renderAgingBranchFilter(agingCache.branches, agingCache.rows);
     renderAgingStatusFilter(agingCache.rows);
     refreshAging();

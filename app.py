@@ -701,6 +701,18 @@ def api_aging_data():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+@app.route("/api/aging-export")
+def api_aging_export():
+    # Murni baca/download data (kolom A-H, Q-U, Y-AL, AP-BC) -- bukan aksi
+    # ubah data, jadi tidak perlu digate is_viewer() (sama seperti export
+    # lain di PT2/PT3/FBB, viewer tetap boleh download).
+    try:
+        data = sheets_service.get_aging_export_rows()
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/update/<int:row_num>", methods=["GET"])
 def update_form(row_num):
     try:
