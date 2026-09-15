@@ -1527,15 +1527,19 @@ def get_aging_data():
       Matdev           = Done Persiapan (AV) s/d Done Matdev (AX)
       Instalasi        = Done Matdev (AX)    s/d Done Instalasi (AZ)
       Finish Instalasi = Done Instalasi (AZ) s/d Done Finish Instalasi (BB)
-      Golive           = Done Fin. Instalasi (BB) s/d Tanggal Golive (BD)
     Kalau kolom akhir segmen itu masih kosong, dipakai HARI INI sebagai
     penggantinya (segmen masih berjalan). Kalau kolom AWAL segmen (tanggal
     selesai tahap sebelumnya) ternyata kosong -- data belum lengkap -- mundur
     ke tahap-tahap sebelumnya sampai ketemu tanggal terisi, paling jauh ke
     Tanggal NDE (AP).
-    Status Z di LUAR rantai progress ini (Drop, Drop MOM, BAST 2025, UT,
-    Rekon, BAST) tetap pakai perilaku lama: total NDE (AP) s/d hari ini,
-    atau s/d kolom tetap di config.AGING_FIXED_END_COLUMNS kalau ada.
+
+    GOLIVE DIKECUALIKAN dari perhitungan per-segmen di atas: begitu LOP
+    selesai (status = "06. GOLIVE"), aging_days = TOTAL perjalanan NDE (AP)
+    s/d Tanggal Golive (BD) -- sama seperti "Total Progress" di Timeline --
+    BUKAN durasi singkat sejak Finish Instalasi selesai. Status di LUAR
+    rantai progress ini (Drop, Drop MOM, BAST 2025, UT, Rekon, BAST) juga
+    tetap pakai perilaku lama: total NDE (AP) s/d hari ini, atau s/d kolom
+    tetap di config.AGING_FIXED_END_COLUMNS kalau ada.
     aging_days bernilai None kalau tanggal awal segmennya tidak bisa
     ditentukan sama sekali (AP pun kosong).
 
@@ -1616,11 +1620,17 @@ def get_aging_data():
             })
 
         stage_idx = stage_index_by_key.get(status_raw)
-        if stage_idx is not None:
-            # Status ada di rantai progress -> aging_days = durasi SEGMEN
-            # tahap ini saja. Start = tanggal selesai tahap sebelumnya;
-            # kalau kosong, mundur sampai ketemu tanggal terisi (paling
-            # jauh NDE/AP).
+        # GOLIVE dikecualikan dari perhitungan per-segmen: begitu LOP
+        # selesai (golive), "Aging" yang berguna adalah TOTAL perjalanan
+        # NDE->Golive (sama seperti "Total Progress" di Timeline), bukan
+        # durasi 1-2 hari terakhir sejak Finish Instalasi selesai. Jadi
+        # GOLIVE tetap lewat jalur lama (AP s/d BD via AGING_FIXED_END_COLUMNS)
+        # di bawah, walau tetap ada di AGING_STAGE_CHAIN untuk stage_progress.
+        if stage_idx is not None and status_raw != "06. GOLIVE":
+            # Status ada di rantai progress (Perijinan..Finish Instalasi) ->
+            # aging_days = durasi SEGMEN tahap ini saja. Start = tanggal
+            # selesai tahap sebelumnya; kalau kosong, mundur sampai ketemu
+            # tanggal terisi (paling jauh NDE/AP).
             seg_start = None
             for j in range(stage_idx, -1, -1):
                 if stage_dates[j] is not None:
@@ -1630,7 +1640,7 @@ def get_aging_data():
             aging_days = (seg_end - seg_start).days if seg_start else None
         else:
             # Di luar rantai progress (Drop, Drop MOM, BAST 2025, UT, Rekon,
-            # BAST) -> perilaku lama: total NDE s/d hari ini / kolom tetap.
+            # BAST) ATAU Golive -> total NDE s/d hari ini / kolom tetap.
             end_date = (_parse_date(cell(f"fixed_{fixed_col}")) or today) if fixed_col else today
             aging_days = (end_date - start_date).days if start_date else None
 
