@@ -1519,34 +1519,22 @@ def get_aging_data():
     """
     Per-row aging.
 
-    aging_days SEKARANG = durasi SEGMEN tahap yang SEDANG BERJALAN saja
-    (bukan total dari NDE s/d hari ini seperti sebelumnya), mengikuti
-    rantai config.AGING_STAGE_CHAIN yang sudah dikonfirmasi dev:
-      Perijinan        = NDE (AP)            s/d Done Perijinan (AT)
-      Persiapan        = Done Perijinan (AT) s/d Done Persiapan (AV)
-      Matdev           = Done Persiapan (AV) s/d Done Matdev (AX)
-      Instalasi        = Done Matdev (AX)    s/d Done Instalasi (AZ)
-      Finish Instalasi = Done Instalasi (AZ) s/d Done Finish Instalasi (BB)
-    Kalau kolom akhir segmen itu masih kosong, dipakai HARI INI sebagai
-    penggantinya (segmen masih berjalan). Kalau kolom AWAL segmen (tanggal
-    selesai tahap sebelumnya) ternyata kosong -- data belum lengkap -- mundur
-    ke tahap-tahap sebelumnya sampai ketemu tanggal terisi, paling jauh ke
-    Tanggal NDE (AP).
-
-    GOLIVE DIKECUALIKAN dari perhitungan per-segmen di atas: begitu LOP
-    selesai (status = "06. GOLIVE"), aging_days = TOTAL perjalanan NDE (AP)
-    s/d Tanggal Golive (BD) -- sama seperti "Total Progress" di Timeline --
-    BUKAN durasi singkat sejak Finish Instalasi selesai. Status di LUAR
-    rantai progress ini (Drop, Drop MOM, BAST 2025, UT, Rekon, BAST) juga
-    tetap pakai perilaku lama: total NDE (AP) s/d hari ini, atau s/d kolom
-    tetap di config.AGING_FIXED_END_COLUMNS kalau ada.
-    aging_days bernilai None kalau tanggal awal segmennya tidak bisa
-    ditentukan sama sekali (AP pun kosong).
+    aging_days = field "Aging" utama (tampil di stat card, tabel Per
+    Branch/Per Status, dan kartu detail LOP) -- SELALU total hari dari
+    Tanggal NDE (AP) s/d HARI INI, tanpa pengecualian status apa pun
+    (termasuk Drop, Golive, dst -- semua tetap dihitung s/d hari ini, BUKAN
+    s/d tanggal Drop/Golive-nya). aging_days bernilai None kalau AP kosong/
+    tidak bisa di-parse.
 
     stage_progress: tanggal CUMULATIF dari NDE ke tiap tahap (dari
-    config.AGING_STAGE_CHAIN) -- dipakai halaman /aging (Timeline "Alur
-    Tahapan" per-LOP), yang menghitung durasi tiap segmen sendiri lewat
-    pengurangan (stage berikutnya - stage ini), bukan dari aging_days.
+    config.AGING_STAGE_CHAIN: NDE->Perijinan(AT)->Persiapan(AV)->
+    Matdev(AX)->Instalasi(AZ)->Finish Instalasi(BB)->Golive(BD)) -- field
+    INI (bukan aging_days) yang dipakai halaman /aging untuk breakdown
+    per-segmen "Alur Tahapan" per-LOP (frontend menghitung durasi tiap
+    segmen sendiri lewat pengurangan stage berikutnya - stage ini; segmen
+    yang salah satu ujungnya belum ada tanggalnya otomatis tampil "-",
+    tidak ditebak/di-fallback). Field ini terpisah total dari aging_days
+    di atas -- perubahan di sini tidak memengaruhi field Aging utama.
     """
     ws = get_worksheet()
     all_values = _cached_get_all_values(ws)
@@ -1555,7 +1543,6 @@ def get_aging_data():
     fixed_end_cols = sorted(set(config.AGING_FIXED_END_COLUMNS.values()))
     stage_chain = config.AGING_STAGE_CHAIN
     stage_cols = sorted(set(col for _, col in stage_chain))
-    stage_index_by_key = {key: i for i, (key, _) in enumerate(stage_chain)}
 
     idx = {
         "ap": _col_to_index(config.COL_TANGGAL_NDE) - 1,
@@ -1619,30 +1606,12 @@ def get_aging_data():
                 "days": stage_days,
             })
 
-        stage_idx = stage_index_by_key.get(status_raw)
-        # GOLIVE dikecualikan dari perhitungan per-segmen: begitu LOP
-        # selesai (golive), "Aging" yang berguna adalah TOTAL perjalanan
-        # NDE->Golive (sama seperti "Total Progress" di Timeline), bukan
-        # durasi 1-2 hari terakhir sejak Finish Instalasi selesai. Jadi
-        # GOLIVE tetap lewat jalur lama (AP s/d BD via AGING_FIXED_END_COLUMNS)
-        # di bawah, walau tetap ada di AGING_STAGE_CHAIN untuk stage_progress.
-        if stage_idx is not None and status_raw != "06. GOLIVE":
-            # Status ada di rantai progress (Perijinan..Finish Instalasi) ->
-            # aging_days = durasi SEGMEN tahap ini saja. Start = tanggal
-            # selesai tahap sebelumnya; kalau kosong, mundur sampai ketemu
-            # tanggal terisi (paling jauh NDE/AP).
-            seg_start = None
-            for j in range(stage_idx, -1, -1):
-                if stage_dates[j] is not None:
-                    seg_start = stage_dates[j]
-                    break
-            seg_end = stage_dates[stage_idx + 1] or today
-            aging_days = (seg_end - seg_start).days if seg_start else None
-        else:
-            # Di luar rantai progress (Drop, Drop MOM, BAST 2025, UT, Rekon,
-            # BAST) ATAU Golive -> total NDE s/d hari ini / kolom tetap.
-            end_date = (_parse_date(cell(f"fixed_{fixed_col}")) or today) if fixed_col else today
-            aging_days = (end_date - start_date).days if start_date else None
+        # aging_days = field "Aging" utama (dipakai jg di stat card & tabel
+        # Per Branch/Per Status): SELALU NDE (AP) s/d HARI INI, tanpa
+        # pengecualian status apa pun. Logika per-segmen (AT/AV/AX/AZ/BB/BD)
+        # HANYA dipakai di stage_progress di atas, untuk breakdown "Alur
+        # Tahapan LOP Ini" per-LOP -- bukan untuk field Aging ini.
+        aging_days = (today - start_date).days if start_date else None
 
         rows.append({
             "row": row_num,
@@ -1672,17 +1641,23 @@ def get_aging_data():
 
 def get_aging_export_rows():
     """Data mentah kolom A-H, Q-U, Y-AL, AP-BC dari sheet Detail PT3 --
-    dipakai tombol "Export Data" di halaman /aging. Label kolom diambil
-    langsung dari header row (config.HEADER_ROW), bukan dikatalogkan
-    manual satu-satu (~40 kolom) -- kalau header-nya kosong, dipakai nama
-    kolom (mis. "Kolom AT") sebagai fallback."""
+    dipakai tombol "Export Data" di halaman /aging. Kolom Keterangan
+    (config.COL_KETERANGAN_AB, "AB") sengaja DIKELUARKAN dari rentang Y-AL
+    (diminta dev). Label kolom diambil langsung dari header row
+    (config.HEADER_ROW), bukan dikatalogkan manual satu-satu (~40 kolom) --
+    kalau header-nya kosong, dipakai nama kolom (mis. "Kolom AT") sebagai
+    fallback."""
     ws = get_worksheet()
     all_values = _cached_get_all_values(ws)
 
     ranges = [("A", "H"), ("Q", "U"), ("Y", "AL"), ("AP", "BC")]
+    excluded_idx = {_col_to_index(config.COL_KETERANGAN_AB) - 1}
     col_indices = []
     for start_col, end_col in ranges:
-        col_indices.extend(range(_col_to_index(start_col) - 1, _col_to_index(end_col)))
+        col_indices.extend(
+            i for i in range(_col_to_index(start_col) - 1, _col_to_index(end_col))
+            if i not in excluded_idx
+        )
 
     header_row = all_values[config.HEADER_ROW - 1] if len(all_values) >= config.HEADER_ROW else []
 
