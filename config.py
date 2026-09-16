@@ -174,6 +174,9 @@ AA_OPTIONS = [
     "4.8. Selesai Fisik",
     "4.8. Valins",
     "4.9. Dok GOLIVE",
+    # Sub status "05. FINISH INSTALASI" yang Port & LOP-nya sudah dihitung
+    # GOLIVE, tapi lokasinya tetap muncul di progress (belum golive penuh).
+    "4.10. Golive Parsial",
     "5 GOLIVE",
     "5.1 Uji Terima",
     "5.2 Rekon",
@@ -212,7 +215,9 @@ STATUS_AA_GROUPS = {
         "4.1. Galian", "4.2. Tanam Tiang", "4.3. Tarik Kabel",
         "4.4. instalasi ODP", "4.5. instalasi ODC", "4.6. Perapihan", "4.7. Terminasi",
     ],
-    "05. FINISH INSTALASI": ["4.8. Selesai Fisik", "4.8. Valins", "4.9. Dok GOLIVE"],
+    "05. FINISH INSTALASI": [
+        "4.8. Selesai Fisik", "4.8. Valins", "4.9. Dok GOLIVE", "4.10. Golive Parsial",
+    ],
     # Semua Z yang masuk stage "golive" di PROGRESS_STAGES (lihat z_values
     # di bawah) pakai urutan sub status yang sama.
     "06. GOLIVE": ["5 GOLIVE", "5.1 Uji Terima", "5.2 Rekon", "5.3 BAST", "5.4 BAST 2025"],
@@ -243,6 +248,23 @@ KATEGORI_DROP_OPTIONS = [
 # Sejauh ini cuma AZ (04. INSTALASI): mencatat tanggal MULAI masuk
 # instalasi, bukan tanggal update paling akhir.
 DATE_COLS_WRITE_ONCE = {"AZ"}
+
+# ── Golive Parsial ────────────────────────────────────────────────────
+# Sub status (AA) di bawah Z "05. FINISH INSTALASI" untuk lokasi yang Port
+# & LOP-nya SUDAH dihitung golive, tapi pekerjaannya belum selesai penuh
+# sehingga lokasinya TETAP muncul di progress (Finish Instalasi).
+# Perilaku khusus saat status ini disimpan (lihat update_row_status di
+# sheets_service.py): selain kolom tanggal/catatan Finish Instalasi (BB/BC)
+# yang normal, tanggal Golive (BD) + catatannya (BE) IKUT DITULIS -- jadi
+# Port-nya langsung terhitung golive memakai kolom yang sama seperti golive
+# biasa (tidak ada kolom port terpisah). Begitu lokasi benar-benar selesai
+# dan statusnya dipindah ke "06. GOLIVE", BD/BE ditimpa nilai baru seperti
+# update biasa (BD tidak masuk DATE_COLS_WRITE_ONCE, jadi memang boleh
+# ditimpa).
+GOLIVE_PARSIAL_AA = "4.10. Golive Parsial"
+GOLIVE_PARSIAL_Z = "05. FINISH INSTALASI"
+GOLIVE_PARSIAL_DATE_COL = "BD"
+GOLIVE_PARSIAL_NOTE_COL = "BE"
 
 STATUS_COLUMN_MAP = {
     "0.1 SURVEI":            {"date_col": "AR", "note_col": "AS"},

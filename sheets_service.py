@@ -710,8 +710,17 @@ def get_dashboard_data():
         # PT3.html sekarang membaca target_fi_iso & target_golive_iso
         # (AL) langsung sebagai 2 entri terpisah, lihat buildFiCalEntries().
         is_golive_stage = _normalize_status(status_raw) in GOLIVE_STAGE_STATUSES
-        cal_date = golive_date_date if is_golive_stage else target_fi_date
-        cal_date_source = "golive" if (is_golive_stage and golive_date_date) else ("target_fi" if cal_date else None)
+        # Golive Parsial: Z masih "05. FINISH INSTALASI" (tetap muncul di
+        # progress) tapi Port & LOP-nya sudah dihitung golive -- lihat
+        # config.GOLIVE_PARSIAL_AA. Dikirim sebagai flag terpisah supaya
+        # frontend bisa menghitungnya di kolom GOLIVE TANPA mengubah
+        # status/pivot_group baris ini.
+        is_golive_parsial = (
+            status_raw.strip() == config.GOLIVE_PARSIAL_Z
+            and cell("status_aa").strip() == config.GOLIVE_PARSIAL_AA
+        )
+        cal_date = golive_date_date if (is_golive_stage or is_golive_parsial) else target_fi_date
+        cal_date_source = "golive" if ((is_golive_stage or is_golive_parsial) and golive_date_date) else ("target_fi" if cal_date else None)
 
         rows.append({
             "row": row_num,
@@ -741,6 +750,7 @@ def get_dashboard_data():
             "cal_date_display": cal_date.strftime("%d/%m/%Y") if cal_date else None,
             "cal_date_source": cal_date_source,  # "golive" atau "target_fi"
             "is_golive_stage": is_golive_stage,
+            "is_golive_parsial": is_golive_parsial,
             "regional": cell("regional") or "(TANPA REGIONAL)",
             "order_prioritas": cell("order_prioritas"),  # kolom BX, opsional -- badge di list "Lokasi Sedang Berjalan"
             "priority_bx": cell("order_prioritas"),  # alias kolom BX -- dipakai filter "Hanya Order Priority" di PT3.html
@@ -1335,6 +1345,18 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     check_existing_date = date_col in config.DATE_COLS_WRITE_ONCE
     if check_existing_date:
         read_refs.append(f"{date_col}{row_num}")
+
+    # Golive Parsial: Port & LOP dihitung golive walau status fisiknya masih
+    # Finish Instalasi -> tanggal Golive (BD) + catatannya (BE) ikut ditulis
+    # di bawah, jadi catatan lama BE perlu ikut dibaca untuk digabung.
+    is_golive_parsial = (
+        z_value == config.GOLIVE_PARSIAL_Z
+        and (aa_value or "").strip() == config.GOLIVE_PARSIAL_AA
+    )
+    gp_note_ref = f"{config.GOLIVE_PARSIAL_NOTE_COL}{row_num}"
+    if is_golive_parsial and gp_note_ref not in read_refs:
+        read_refs.append(gp_note_ref)
+
     read_values = _batch_get_cells(ws, read_refs)
 
     # 1+2. Susun note baru (terbaru di atas)
@@ -1369,6 +1391,23 @@ def update_status(row_num: int, z_value: str, aa_value: str, note_text: str,
     if write_date:
         updates.append({"range": f"{date_col}{row_num}", "values": [[date_str_iso]]})
         date_format_targets.append((date_col, "dd/mm/yy"))
+
+    # Golive Parsial -> tulis JUGA tanggal Golive (BD) + catatannya (BE),
+    # memakai kolom yang sama persis seperti golive biasa, supaya Port & LOP
+    # baris ini langsung terhitung golive walau status fisiknya masih
+    # "05. FINISH INSTALASI" (lokasinya tetap muncul di progress).
+    # Nanti kalau status dipindah ke "06. GOLIVE", kedua kolom ini ditimpa
+    # nilai baru lewat jalur normal di atas -- BD sengaja TIDAK masuk
+    # DATE_COLS_WRITE_ONCE supaya memang bisa ditimpa.
+    if is_golive_parsial:
+        gp_date_col = config.GOLIVE_PARSIAL_DATE_COL
+        gp_note_col = config.GOLIVE_PARSIAL_NOTE_COL
+        existing_gp_note = read_values.get(f"{gp_note_col}{row_num}", "") or ""
+        gp_entry = f"{date_str} : [GOLIVE PARSIAL] {note_text.strip()}"
+        merged_gp_note = gp_entry + "\n" + existing_gp_note if existing_gp_note.strip() else gp_entry
+        updates.append({"range": f"{gp_date_col}{row_num}", "values": [[date_str_iso]]})
+        updates.append({"range": f"{gp_note_col}{row_num}", "values": [[merged_gp_note]]})
+        date_format_targets.append((gp_date_col, "dd/mm/yy"))
 
     # 4. Field tambahan — OPSIONAL: cuma ditulis kalau ada isinya.
     #    Kosong = tidak diubah, nilai lama di sheet tetap dipertahankan.

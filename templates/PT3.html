@@ -626,6 +626,19 @@ function computeRegionalBranchTable(filteredRows, pivotColumns, groupTsel) {
     regionalTotals[regional][key].port += (r.port || 0);
     grandTotal[key].lop += 1;
     grandTotal[key].port += (r.port || 0);
+
+    // Golive Parsial: Port & LOP-nya dihitung GOLIVE juga, SEKALIGUS tetap
+    // dihitung di kolom Finish Instalasi di atas (lokasinya memang masih
+    // dikerjakan). Jadi baris ini SENGAJA masuk 2 kolom -- konsekuensinya
+    // kolom Total baris tsb lebih besar dari jumlah LOP fisiknya.
+    if (r.is_golive_parsial && key !== 'GOLIVE' && pivotColumns.includes('GOLIVE')) {
+      regionals[regional][branch]['GOLIVE'].lop += 1;
+      regionals[regional][branch]['GOLIVE'].port += (r.port || 0);
+      regionalTotals[regional]['GOLIVE'].lop += 1;
+      regionalTotals[regional]['GOLIVE'].port += (r.port || 0);
+      grandTotal['GOLIVE'].lop += 1;
+      grandTotal['GOLIVE'].port += (r.port || 0);
+    }
   });
 
   // Grouping (TSEL): gabungkan semua Regional yang cocok dengan prefix
@@ -832,7 +845,15 @@ function downloadLocListCsv() {
 function getLocListRows(filteredRows) {
   if (activeCellFilter) {
     return filteredRows.filter(r => {
-      if (activeCellFilter.column && r.pivot_group !== activeCellFilter.column) return false;
+      if (activeCellFilter.column) {
+        // Golive Parsial ikut dihitung di kolom GOLIVE (lihat
+        // computePivotTables), jadi daftar hasil klik sel GOLIVE harus ikut
+        // memunculkannya juga -- kalau tidak, jumlah di sel dan jumlah baris
+        // di daftar yang terbuka jadi tidak cocok.
+        const matchColumn = r.pivot_group === activeCellFilter.column
+          || (activeCellFilter.column === 'GOLIVE' && r.is_golive_parsial);
+        if (!matchColumn) return false;
+      }
       if (activeCellFilter.batch && r.batch !== activeCellFilter.batch) return false;
       if (activeCellFilter.regionalList && !activeCellFilter.regionalList.includes(r.regional)) return false;
       if (!activeCellFilter.regionalList && activeCellFilter.regional && r.regional !== activeCellFilter.regional) return false;
