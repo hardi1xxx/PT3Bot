@@ -12,6 +12,7 @@ import config
 import sheets_service
 import auth_service
 import hem_db_service
+import master_db_service
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
@@ -93,6 +94,21 @@ def viewer_blocked_json():
     return jsonify({"ok": False, "error": "Akun Anda hanya memiliki akses lihat saja (view only)."}), 403
 
 
+def is_developer():
+    """True kalau user yang lagi login role-nya 'developer'. Dipakai buat
+    membatasi halaman /master-data dan semua endpoint /api/master-data/*
+    -- HANYA developer yang boleh lihat/ubah data referensi (Mitra,
+    Status, Project, WOK, Users)."""
+    user = session.get("user") or {}
+    return user.get("role") == "developer"
+
+
+def _require_developer_json():
+    if not is_developer():
+        return jsonify({"ok": False, "error": "Khusus role developer"}), 403
+    return None
+
+
 @app.errorhandler(Exception)
 def handle_unexpected_error(e):
     """Jaring pengaman terakhir: kalau ADA route /api/* yang lolos tanpa
@@ -139,6 +155,199 @@ def index():
     user = session.get("user")
     menus = [m for m in PROJECT_MENUS if auth_service.can_access_menu(user, m["key"])]
     return render_template("index.html", user=user, menus=menus, role_label=auth_service.ROLE_LABELS.get(user["role"], user["role"]))
+
+
+@app.route("/master-data")
+def master_data_page():
+    """Halaman kelola data referensi (Mitra, Status Progress, Project,
+    WOK, Users) -- khusus role developer. Sumber datanya Postgres
+    (service 'DB MASTER' di Railway, lihat master_db_service.py), BUKAN
+    lagi sheet Google atau users.xlsx."""
+    user = session.get("user")
+    if not is_developer():
+        return "Halaman ini khusus role developer.", 403
+    return render_template(
+        "master_data.html",
+        user=user,
+        role_label=auth_service.ROLE_LABELS.get(user["role"], user["role"]),
+    )
+
+
+# ── MITRA ──
+@app.route("/api/master-data/mitra")
+def api_md_mitra_list():
+    err = _require_developer_json()
+    if err: return err
+    return jsonify({"ok": True, "items": master_db_service.list_mitra()})
+
+
+@app.route("/api/master-data/mitra", methods=["POST"])
+def api_md_mitra_add():
+    err = _require_developer_json()
+    if err: return err
+    try:
+        new_id = master_db_service.add_mitra((request.get_json(silent=True) or {}).get("nama_mitra"))
+        return jsonify({"ok": True, "id": new_id})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gagal menambah (mungkin sudah ada): {e}"}), 409
+
+
+@app.route("/api/master-data/mitra/<int:mitra_id>", methods=["DELETE"])
+def api_md_mitra_delete(mitra_id):
+    err = _require_developer_json()
+    if err: return err
+    master_db_service.delete_mitra(mitra_id)
+    return jsonify({"ok": True})
+
+
+# ── STATUS KATEGORI ──
+@app.route("/api/master-data/status-kategori")
+def api_md_status_kategori_list():
+    err = _require_developer_json()
+    if err: return err
+    return jsonify({"ok": True, "items": master_db_service.list_status_kategori()})
+
+
+@app.route("/api/master-data/status-kategori", methods=["POST"])
+def api_md_status_kategori_add():
+    err = _require_developer_json()
+    if err: return err
+    try:
+        new_id = master_db_service.add_status_kategori((request.get_json(silent=True) or {}).get("kode"))
+        return jsonify({"ok": True, "id": new_id})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gagal menambah (mungkin sudah ada): {e}"}), 409
+
+
+@app.route("/api/master-data/status-kategori/<int:kategori_id>", methods=["DELETE"])
+def api_md_status_kategori_delete(kategori_id):
+    err = _require_developer_json()
+    if err: return err
+    master_db_service.delete_status_kategori(kategori_id)
+    return jsonify({"ok": True})
+
+
+# ── STATUS PEKERJAAN (sub-status) ──
+@app.route("/api/master-data/status-pekerjaan")
+def api_md_status_pekerjaan_list():
+    err = _require_developer_json()
+    if err: return err
+    return jsonify({"ok": True, "items": master_db_service.list_status_pekerjaan()})
+
+
+@app.route("/api/master-data/status-pekerjaan", methods=["POST"])
+def api_md_status_pekerjaan_add():
+    err = _require_developer_json()
+    if err: return err
+    body = request.get_json(silent=True) or {}
+    try:
+        new_id = master_db_service.add_status_pekerjaan(body.get("kategori_id"), body.get("nama_status"))
+        return jsonify({"ok": True, "id": new_id})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 409
+
+
+@app.route("/api/master-data/status-pekerjaan/<int:status_id>", methods=["DELETE"])
+def api_md_status_pekerjaan_delete(status_id):
+    err = _require_developer_json()
+    if err: return err
+    master_db_service.delete_status_pekerjaan(status_id)
+    return jsonify({"ok": True})
+
+
+# ── PROJECT ──
+@app.route("/api/master-data/projects")
+def api_md_projects_list():
+    err = _require_developer_json()
+    if err: return err
+    return jsonify({"ok": True, "items": master_db_service.list_projects()})
+
+
+@app.route("/api/master-data/projects", methods=["POST"])
+def api_md_projects_add():
+    err = _require_developer_json()
+    if err: return err
+    body = request.get_json(silent=True) or {}
+    try:
+        master_db_service.add_project(body.get("project_code"), body)
+        return jsonify({"ok": True})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gagal menambah (mungkin sudah ada): {e}"}), 409
+
+
+@app.route("/api/master-data/projects/<project_code>", methods=["DELETE"])
+def api_md_projects_delete(project_code):
+    err = _require_developer_json()
+    if err: return err
+    master_db_service.delete_project(project_code)
+    return jsonify({"ok": True})
+
+
+# ── WOK ──
+@app.route("/api/master-data/wok")
+def api_md_wok_list():
+    err = _require_developer_json()
+    if err: return err
+    return jsonify({"ok": True, "items": master_db_service.list_wok()})
+
+
+@app.route("/api/master-data/wok", methods=["POST"])
+def api_md_wok_add():
+    err = _require_developer_json()
+    if err: return err
+    try:
+        new_id = master_db_service.add_wok(request.get_json(silent=True) or {})
+        return jsonify({"ok": True, "id": new_id})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gagal menambah (mungkin sudah ada): {e}"}), 409
+
+
+@app.route("/api/master-data/wok/<int:wok_id>", methods=["DELETE"])
+def api_md_wok_delete(wok_id):
+    err = _require_developer_json()
+    if err: return err
+    master_db_service.delete_wok(wok_id)
+    return jsonify({"ok": True})
+
+
+# ── USERS ──
+@app.route("/api/master-data/users")
+def api_md_users_list():
+    err = _require_developer_json()
+    if err: return err
+    return jsonify({"ok": True, "items": master_db_service.list_users()})
+
+
+@app.route("/api/master-data/users", methods=["POST"])
+def api_md_users_add():
+    err = _require_developer_json()
+    if err: return err
+    body = request.get_json(silent=True) or {}
+    try:
+        master_db_service.add_user(body.get("nik"), body.get("name"), body.get("password"), body.get("role"), body.get("project"))
+        return jsonify({"ok": True})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gagal menambah (NIK mungkin sudah ada): {e}"}), 409
+
+
+@app.route("/api/master-data/users/<nik>", methods=["DELETE"])
+def api_md_users_delete(nik):
+    err = _require_developer_json()
+    if err: return err
+    master_db_service.delete_user(nik)
+    return jsonify({"ok": True})
 
 
 @app.route("/pt3")
