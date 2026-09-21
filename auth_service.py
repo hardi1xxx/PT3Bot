@@ -1,83 +1,65 @@
-"""
-Login server-side untuk INTRA.
+"""Login server-side untuk INTRA.
 
-PENTING soal keamanan (supaya jelas kenapa desainnya begini): file
-users.xlsx dibaca di SINI, di server -- TIDAK PERNAH dikirim ke browser
-dalam bentuk apapun. Jadi user (via Inspect Element / tab Network) tidak
-akan pernah bisa melihat isi users.xlsx sama sekali, terlepas dari apakah
-file itu sendiri "dienkripsi" atau tidak -- bedanya jauh dari kalau ini
-app React/JS yang jalan di browser (di situ SEMUA data yang dipakai buat
-cek login otomatis ikut terkirim ke browser, makanya rawan).
+PENTING soal keamanan (supaya jelas kenapa desainnya begini): data user
+dibaca dari Postgres (service "DB MASTER") di SINI, di server -- TIDAK
+PERNAH dikirim ke browser dalam bentuk apapun. Jadi user (via Inspect
+Element / tab Network) tidak akan pernah bisa melihat data user sama
+sekali.
 
 Password tetap di-hash (werkzeug generate_password_hash/check_password_hash
 -- pakai scrypt, sudah termasuk salt otomatis) sebagai lapisan tambahan,
-supaya kalau file users.xlsx ini somehow bocor/ke-commit ke git dsb,
-password asli user tetap tidak langsung kebaca.
+supaya kalau database ini somehow bocor, password asli user tetap tidak
+langsung kebaca.
+
+SEBELUMNYA modul ini baca dari users.xlsx (openpyxl) -- sekarang sumber
+datanya dipindah ke tabel `users` di Postgres (lihat master_db_service.py),
+dikelola lewat halaman /master-data > tab Users (khusus role developer).
+Fungsi verify_login/current_user/can_access_menu/login_required TIDAK
+berubah sama sekali, cuma load_users() yang gantinya sumber data.
 """
 import functools
-import os
 
-import openpyxl
 from flask import session, redirect, url_for, request
 from werkzeug.security import check_password_hash
 
-USERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.xlsx")
+import master_db_service
 
 ROLE_LABELS = {
     "developer": "Developer",
     "admin": "Admin",
     "manager": "Manager",
     "user": "User",
+    "viewer": "Viewer",
 }
 
 
 def load_users():
-    """Baca users.xlsx tiap kali dipanggil -- SENGAJA tidak di-cache, supaya
-    perubahan (tambah/hapus/reset password user) di file langsung kepakai
-    tanpa perlu restart server. File-nya kecil (jumlah user terbatas), jadi
-    baca ulang tiap request tidak masalah dari sisi performa."""
-    if not os.path.exists(USERS_FILE):
-        return []
-    wb = openpyxl.load_workbook(USERS_FILE, read_only=True, data_only=True)
-    ws = wb["users"] if "users" in wb.sheetnames else wb.active
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
-    users = []
-    for r in rows:
-        if not r or not r[0]:
-            continue
-        nik, name, password_hash, role, project = (list(r) + [None] * 5)[:5]
-        users.append({
-            "nik": str(nik).strip(),
-            "name": (name or "").strip(),
-            "password_hash": (password_hash or "").strip(),
-            "role": (role or "user").strip().lower(),
-            "project": (project or "").strip().upper() or "ALL",
-        })
-    return users
+    """Ambil semua user dari tabel Postgres `users` (service DB MASTER).
+    SENGAJA tidak di-cache (sama seperti versi Excel sebelumnya) supaya
+    perubahan (tambah/hapus/reset password user lewat /master-data)
+    langsung kepakai tanpa perlu restart server."""
+    return master_db_service.list_users_with_hash()
 
 
 def verify_login(password):
     """Return dict user kalau password cocok dengan salah satu user di
-    users.xlsx, None kalau tidak ada yang cocok.
+    Postgres, None kalau tidak ada yang cocok.
 
-    NIK sudah tidak diminta lagi di form login -- password sendiri yang
-    jadi kredensial buat kenalin user-nya (makanya tiap user WAJIB punya
-    password unik masing-masing di users.xlsx, jangan sampai 2 user pakai
-    password yang sama, nanti yang kepilih cuma yang baris pertama
-    ketemu). Role & akses per-project (kolom role/project) tetap jalan
-    seperti biasa karena hasilnya tetap dict user yang lengkap.
+    NIK tidak diminta di form login -- password sendiri yang jadi
+    kredensial buat kenalin user-nya (makanya tiap user WAJIB punya
+    password unik masing-masing, jangan sampai 2 user pakai password
+    yang sama, nanti yang kepilih cuma yang baris pertama ketemu). Role &
+    akses per-project (kolom role/project) tetap jalan seperti biasa
+    karena hasilnya tetap dict user yang lengkap.
 
     Tiap baris di-bungkus try/except: kalau ADA SATU user yang
-    password_hash-nya rusak/format-nya salah di users.xlsx (mis. ke-korup
-    waktu di-paste ke Excel), baris itu di-skip aja -- supaya tidak bikin
-    SEMUA orang gagal login gara-gara satu baris yang rusak.
+    password_hash-nya rusak/format-nya salah, baris itu di-skip aja --
+    supaya tidak bikin SEMUA orang gagal login gara-gara satu baris yang
+    rusak.
 
     Catatan performa: check_password_hash (scrypt) sengaja lambat demi
     keamanan, dan di sini di-loop ke semua user tiap kali login. Untuk
-    jumlah user yang kecil (internal tool) ini masih aman; kalau jumlah
-    user sudah banyak (puluhan+), pertimbangkan balikin opsi isi
-    NIK/username lagi supaya lookup-nya O(1) per user, bukan di-scan
-    semua."""
+    jumlah user yang kecil (internal tool) ini masih aman."""
     if not password:
         return None
     for u in load_users():
@@ -88,8 +70,7 @@ def verify_login(password):
             if check_password_hash(stored_hash, password):
                 return u
         except ValueError:
-            # Format hash user ini rusak (mis. field password_hash di
-            # users.xlsx ke-korup/terpotong). Skip baris ini saja.
+            # Format hash user ini rusak. Skip baris ini saja.
             continue
     return None
 
@@ -99,9 +80,8 @@ def current_user():
 
 
 def can_access_menu(user, key):
-    """Sama aturan dengan draft React sebelumnya: developer/admin/manager
-    bebas akses semua menu, role 'user' cuma menu sesuai kolom project-nya
-    di users.xlsx ('ALL' juga bebas akses semua)."""
+    """developer/admin/manager bebas akses semua menu, role 'user' cuma
+    menu sesuai kolom project-nya ('ALL' juga bebas akses semua)."""
     if not user:
         return False
     if user["role"] in ("developer", "admin", "manager"):

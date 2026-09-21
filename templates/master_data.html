@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+{% block title %}Master Data — Developer{% endblock %}
+{% block page_title %}Master Data{% endblock %}
+{% block page_sub %}Data referensi (khusus role developer) — sumber data: Postgres{% endblock %}
+
+{% block content %}
+<style>
+  .md-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .md-tab {
+    padding: 8px 14px; border-radius: 8px; background: #fff; border: 1px solid #e2e8f0;
+    font-size: 0.82rem; font-weight: 700; color: #64748b; cursor: pointer;
+  }
+  .md-tab.active { background: #2f6fed; color: #fff; border-color: #2f6fed; }
+  .md-panel { display: none; }
+  .md-panel.active { display: block; }
+  .md-card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 20px; max-width: 760px; margin-bottom: 20px;
+  }
+  .md-card h2 { font-size: 1rem; margin: 0 0 4px; }
+  .md-card p.hint { font-size: 0.8rem; color: #64748b; margin: 0 0 16px; }
+  .md-add-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: flex-end; }
+  .md-field { display: flex; flex-direction: column; gap: 4px; }
+  .md-field label { font-size: 0.72rem; color: #64748b; font-weight: 600; }
+  .md-add-row input, .md-add-row select {
+    padding: 9px 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.88rem; min-width: 140px;
+  }
+  .md-add-row button {
+    padding: 9px 16px; border: none; border-radius: 8px; background: #2f6fed; color: #fff;
+    font-weight: 700; font-size: 0.85rem; cursor: pointer; height: 38px;
+  }
+  .md-add-row button:hover { background: #1c4fc4; }
+  .md-checks { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.78rem; color: #475569; margin-bottom: 12px; }
+  .md-checks label { display: flex; align-items: center; gap: 4px; }
+  .md-list, .md-table { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; width: 100%; }
+  .md-list li {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 4px; border-bottom: 1px solid #f1f5f9; font-size: 0.88rem;
+  }
+  .md-list li:last-child { border-bottom: none; }
+  .md-table table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .md-table th, .md-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #f1f5f9; }
+  .md-table th { color: #64748b; font-size: 0.7rem; text-transform: uppercase; }
+  .md-del-btn {
+    border: 1px solid #fecaca; background: #fef2f2; color: #dc2626;
+    border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; white-space: nowrap;
+  }
+  .md-del-btn:hover { background: #fee2e2; }
+  .md-empty { color: #94a3b8; font-size: 0.85rem; padding: 12px 4px; }
+  .md-error { color: #dc2626; font-size: 0.82rem; margin: 0 0 10px; display: none; }
+  .md-count { font-size: 0.75rem; color: #94a3b8; font-weight: 600; }
+  hr.md-sep { border: none; border-top: 1px solid #f1f5f9; margin: 18px 0; }
+</style>
+
+<div class="md-tabs">
+  <div class="md-tab active" data-tab="mitra" onclick="mdSwitchTab('mitra')">Mitra</div>
+  <div class="md-tab" data-tab="status" onclick="mdSwitchTab('status')">Status Progress</div>
+  <div class="md-tab" data-tab="project" onclick="mdSwitchTab('project')">Project</div>
+  <div class="md-tab" data-tab="wok" onclick="mdSwitchTab('wok')">WOK / Wilayah</div>
+  <div class="md-tab" data-tab="users" onclick="mdSwitchTab('users')">Users</div>
+</div>
+
+<!-- MITRA -->
+<div class="md-panel active" id="md-panel-mitra">
+  <div class="md-card">
+    <h2>Nama Mitra <span class="md-count" id="mdMitraCount"></span></h2>
+    <p class="hint">Dropdown "Nama Mitra" di panel update diambil dari sini (Postgres), bukan lagi sheet Google.</p>
+    <div class="md-error" id="mdMitraError"></div>
+    <div class="md-add-row">
+      <div class="md-field"><label>Nama mitra baru</label><input type="text" id="mdMitraInput" placeholder="mis. PT. CONTOH JAYA"></div>
+      <button type="button" onclick="mdAddMitra()">Tambah</button>
+    </div>
+    <ul class="md-list" id="mdMitraList"></ul>
+  </div>
+</div>
+
+<!-- STATUS PROGRESS -->
+<div class="md-panel" id="md-panel-status">
+  <div class="md-card">
+    <h2>Kategori Status</h2>
+    <p class="hint">mis. "01. SURVEY", "02. REDESIGN", dst.</p>
+    <div class="md-error" id="mdKategoriError"></div>
+    <div class="md-add-row">
+      <div class="md-field"><label>Kategori baru</label><input type="text" id="mdKategoriInput" placeholder="mis. 06. GOLIVE"></div>
+      <button type="button" onclick="mdAddKategori()">Tambah</button>
+    </div>
+    <ul class="md-list" id="mdKategoriList"></ul>
+  </div>
+
+  <div class="md-card">
+    <h2>Sub-status / Progress</h2>
+    <p class="hint">Detail progress di dalam satu kategori, mis. "PROSES SURVEI", "KENDALA SURVEI".</p>
+    <div class="md-error" id="mdSubStatusError"></div>
+    <div class="md-add-row">
+      <div class="md-field"><label>Kategori</label>
+        <select id="mdSubStatusKategoriSelect"></select>
+      </div>
+      <div class="md-field"><label>Sub-status baru</label><input type="text" id="mdSubStatusInput" placeholder="mis. PROSES SURVEI"></div>
+      <button type="button" onclick="mdAddSubStatus()">Tambah</button>
+    </div>
+    <div class="md-table"><table id="mdSubStatusTable"><thead><tr><th>Kategori</th><th>Sub-status</th><th></th></tr></thead><tbody></tbody></table></div>
+  </div>
+</div>
+
+<!-- PROJECT -->
+<div class="md-panel" id="md-panel-project">
+  <div class="md-card">
+    <h2>Project</h2>
+    <p class="hint">Kode project + fitur apa yang aktif untuk project tsb.</p>
+    <div class="md-error" id="mdProjectError"></div>
+    <div class="md-add-row">
+      <div class="md-field"><label>Kode Project</label><input type="text" id="mdProjectInput" placeholder="mis. FBB"></div>
+      <button type="button" onclick="mdAddProject()">Tambah</button>
+    </div>
+    <div class="md-checks">
+      <label><input type="checkbox" id="mdProjDashboard">Dashboard</label>
+      <label><input type="checkbox" id="mdProjSearch">Search</label>
+      <label><input type="checkbox" id="mdProjCreate">Create</label>
+      <label><input type="checkbox" id="mdProjUpdate">Update</label>
+      <label><input type="checkbox" id="mdProjDelete">Delete</label>
+      <label><input type="checkbox" id="mdProjPriority">Priority</label>
+    </div>
+    <div class="md-table"><table id="mdProjectTable">
+      <thead><tr><th>Kode</th><th>Dash</th><th>Search</th><th>Create</th><th>Update</th><th>Delete</th><th>Priority</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- WOK -->
+<div class="md-panel" id="md-panel-wok">
+  <div class="md-card">
+    <h2>WOK / Wilayah</h2>
+    <p class="hint">Referensi STO ↔ Witel/Regional/Area.</p>
+    <div class="md-error" id="mdWokError"></div>
+    <div class="md-add-row">
+      <div class="md-field"><label>STO</label><input type="text" id="mdWokSto" placeholder="mis. BAK"></div>
+      <div class="md-field"><label>Nama STO</label><input type="text" id="mdWokNama"></div>
+      <div class="md-field"><label>Witel</label><input type="text" id="mdWokWitel"></div>
+      <div class="md-field"><label>Regional</label><input type="text" id="mdWokRegional"></div>
+      <div class="md-field"><label>Area</label><input type="text" id="mdWokArea"></div>
+      <button type="button" onclick="mdAddWok()">Tambah</button>
+    </div>
+    <div class="md-table"><table id="mdWokTable">
+      <thead><tr><th>STO</th><th>Nama STO</th><th>Witel</th><th>Regional</th><th>Area</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- USERS -->
+<div class="md-panel" id="md-panel-users">
+  <div class="md-card">
+    <h2>Users</h2>
+    <p class="hint">Login aplikasi ini. Password baru otomatis di-hash (scrypt), tidak pernah disimpan/ditampilkan sebagai teks biasa.</p>
+    <div class="md-error" id="mdUserError"></div>
+    <div class="md-add-row">
+      <div class="md-field"><label>NIK</label><input type="text" id="mdUserNik"></div>
+      <div class="md-field"><label>Nama</label><input type="text" id="mdUserName"></div>
+      <div class="md-field"><label>Password</label><input type="password" id="mdUserPassword"></div>
+      <div class="md-field"><label>Role</label>
+        <select id="mdUserRole">
+          <option value="developer">developer</option>
+          <option value="admin">admin</option>
+          <option value="manager">manager</option>
+          <option value="user">user</option>
+          <option value="viewer">viewer</option>
+        </select>
+      </div>
+      <div class="md-field"><label>Project</label><input type="text" id="mdUserProject" placeholder="ALL"></div>
+      <button type="button" onclick="mdAddUser()">Tambah</button>
+    </div>
+    <div class="md-table"><table id="mdUserTable">
+      <thead><tr><th>NIK</th><th>Nama</th><th>Role</th><th>Project</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</div>
+
+<script>
+function mdSwitchTab(name) {
+  document.querySelectorAll('.md-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.md-panel').forEach(p => p.classList.toggle('active', p.id === 'md-panel-' + name));
+}
+
+async function mdApi(path, method, body) {
+  const opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || 'Terjadi kesalahan');
+  return data;
+}
+
+function mdEsc(s) {
+  return (s === null || s === undefined ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function mdShowErr(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.style.display = 'block';
+}
+
+// MITRA
+async function mdLoadMitra() {
+  try {
+    const data = await mdApi('/api/master-data/mitra');
+    const items = data.items || [];
+    document.getElementById('mdMitraCount').textContent = items.length ? `(${items.length})` : '';
+    const list = document.getElementById('mdMitraList');
+    list.innerHTML = items.length ? items.map(it => `
+      <li><span>${mdEsc(it.nama_mitra)}</span>
+      <button type="button" class="md-del-btn" onclick="mdDeleteMitra(${it.id})">Hapus</button></li>
+    `).join('') : '<li class="md-empty">Belum ada data mitra.</li>';
+  } catch (e) { mdShowErr('mdMitraError', e.message); }
+}
+async function mdAddMitra() {
+  const input = document.getElementById('mdMitraInput');
+  const nama = input.value.trim();
+  if (!nama) return;
+  try { await mdApi('/api/master-data/mitra', 'POST', { nama_mitra: nama }); input.value = ''; mdLoadMitra(); }
+  catch (e) { mdShowErr('mdMitraError', e.message); }
+}
+async function mdDeleteMitra(id) {
+  if (!confirm('Hapus mitra ini?')) return;
+  try { await mdApi('/api/master-data/mitra/' + id, 'DELETE'); mdLoadMitra(); }
+  catch (e) { alert(e.message); }
+}
+
+// STATUS
+async function mdLoadStatus() {
+  try {
+    const kategori = await mdApi('/api/master-data/status-kategori');
+    const items = kategori.items || [];
+    document.getElementById('mdKategoriList').innerHTML = items.length ? items.map(k => `
+      <li><span>${mdEsc(k.kode)}</span>
+      <button type="button" class="md-del-btn" onclick="mdDeleteKategori(${k.id})">Hapus</button></li>
+    `).join('') : '<li class="md-empty">Belum ada kategori.</li>';
+
+    const sel = document.getElementById('mdSubStatusKategoriSelect');
+    sel.innerHTML = items.map(k => `<option value="${k.id}">${mdEsc(k.kode)}</option>`).join('');
+
+    const status = await mdApi('/api/master-data/status-pekerjaan');
+    const rows = status.items || [];
+    document.querySelector('#mdSubStatusTable tbody').innerHTML = rows.length ? rows.map(s => `
+      <tr><td>${mdEsc(s.kategori_kode)}</td><td>${mdEsc(s.nama_status)}</td>
+      <td><button type="button" class="md-del-btn" onclick="mdDeleteSubStatus(${s.id})">Hapus</button></td></tr>
+    `).join('') : '<tr><td colspan="3" class="md-empty">Belum ada sub-status.</td></tr>';
+  } catch (e) { mdShowErr('mdKategoriError', e.message); }
+}
+async function mdAddKategori() {
+  const input = document.getElementById('mdKategoriInput');
+  const kode = input.value.trim();
+  if (!kode) return;
+  try { await mdApi('/api/master-data/status-kategori', 'POST', { kode }); input.value = ''; mdLoadStatus(); }
+  catch (e) { mdShowErr('mdKategoriError', e.message); }
+}
+async function mdDeleteKategori(id) {
+  if (!confirm('Hapus kategori ini? Sub-status di dalamnya ikut terhapus.')) return;
+  try { await mdApi('/api/master-data/status-kategori/' + id, 'DELETE'); mdLoadStatus(); }
+  catch (e) { alert(e.message); }
+}
+async function mdAddSubStatus() {
+  const kategori_id = document.getElementById('mdSubStatusKategoriSelect').value;
+  const input = document.getElementById('mdSubStatusInput');
+  const nama_status = input.value.trim();
+  if (!kategori_id) return mdShowErr('mdSubStatusError', 'Buat kategori dulu sebelum menambah sub-status.');
+  if (!nama_status) return;
+  try { await mdApi('/api/master-data/status-pekerjaan', 'POST', { kategori_id, nama_status }); input.value = ''; mdLoadStatus(); }
+  catch (e) { mdShowErr('mdSubStatusError', e.message); }
+}
+async function mdDeleteSubStatus(id) {
+  if (!confirm('Hapus sub-status ini?')) return;
+  try { await mdApi('/api/master-data/status-pekerjaan/' + id, 'DELETE'); mdLoadStatus(); }
+  catch (e) { alert(e.message); }
+}
+
+// PROJECT
+function mdChk(v) { return v ? '✅' : '—'; }
+async function mdLoadProject() {
+  try {
+    const data = await mdApi('/api/master-data/projects');
+    const rows = data.items || [];
+    document.querySelector('#mdProjectTable tbody').innerHTML = rows.length ? rows.map(r => `
+      <tr><td>${mdEsc(r.project_code)}</td>
+      <td>${mdChk(r.dashboard_enabled)}</td><td>${mdChk(r.search_enabled)}</td>
+      <td>${mdChk(r.create_enabled)}</td><td>${mdChk(r.update_enabled)}</td>
+      <td>${mdChk(r.delete_enabled)}</td><td>${mdChk(r.priority_enabled)}</td>
+      <td><button type="button" class="md-del-btn" onclick="mdDeleteProject('${mdEsc(r.project_code)}')">Hapus</button></td></tr>
+    `).join('') : '<tr><td colspan="8" class="md-empty">Belum ada project.</td></tr>';
+  } catch (e) { mdShowErr('mdProjectError', e.message); }
+}
+async function mdAddProject() {
+  const input = document.getElementById('mdProjectInput');
+  const project_code = input.value.trim();
+  if (!project_code) return;
+  const flags = {
+    dashboard_enabled: document.getElementById('mdProjDashboard').checked,
+    search_enabled: document.getElementById('mdProjSearch').checked,
+    create_enabled: document.getElementById('mdProjCreate').checked,
+    update_enabled: document.getElementById('mdProjUpdate').checked,
+    delete_enabled: document.getElementById('mdProjDelete').checked,
+    priority_enabled: document.getElementById('mdProjPriority').checked,
+  };
+  try { await mdApi('/api/master-data/projects', 'POST', { project_code, ...flags }); input.value = ''; mdLoadProject(); }
+  catch (e) { mdShowErr('mdProjectError', e.message); }
+}
+async function mdDeleteProject(code) {
+  if (!confirm('Hapus project ' + code + '?')) return;
+  try { await mdApi('/api/master-data/projects/' + code, 'DELETE'); mdLoadProject(); }
+  catch (e) { alert(e.message); }
+}
+
+// WOK
+async function mdLoadWok() {
+  try {
+    const data = await mdApi('/api/master-data/wok');
+    const rows = data.items || [];
+    document.querySelector('#mdWokTable tbody').innerHTML = rows.length ? rows.map(r => `
+      <tr><td>${mdEsc(r.sto)}</td><td>${mdEsc(r.nama_sto||'')}</td><td>${mdEsc(r.witel||'')}</td>
+      <td>${mdEsc(r.regional||'')}</td><td>${mdEsc(r.area||'')}</td>
+      <td><button type="button" class="md-del-btn" onclick="mdDeleteWok(${r.id})">Hapus</button></td></tr>
+    `).join('') : '<tr><td colspan="6" class="md-empty">Belum ada data WOK.</td></tr>';
+  } catch (e) { mdShowErr('mdWokError', e.message); }
+}
+async function mdAddWok() {
+  const sto = document.getElementById('mdWokSto').value.trim();
+  if (!sto) return;
+  const body = {
+    sto,
+    nama_sto: document.getElementById('mdWokNama').value.trim(),
+    witel: document.getElementById('mdWokWitel').value.trim(),
+    regional: document.getElementById('mdWokRegional').value.trim(),
+    area: document.getElementById('mdWokArea').value.trim(),
+  };
+  try {
+    await mdApi('/api/master-data/wok', 'POST', body);
+    ['mdWokSto','mdWokNama','mdWokWitel','mdWokRegional','mdWokArea'].forEach(id => document.getElementById(id).value = '');
+    mdLoadWok();
+  } catch (e) { mdShowErr('mdWokError', e.message); }
+}
+async function mdDeleteWok(id) {
+  if (!confirm('Hapus data WOK ini?')) return;
+  try { await mdApi('/api/master-data/wok/' + id, 'DELETE'); mdLoadWok(); }
+  catch (e) { alert(e.message); }
+}
+
+// USERS
+async function mdLoadUsers() {
+  try {
+    const data = await mdApi('/api/master-data/users');
+    const rows = data.items || [];
+    document.querySelector('#mdUserTable tbody').innerHTML = rows.length ? rows.map(r => `
+      <tr><td>${mdEsc(r.nik)}</td><td>${mdEsc(r.name)}</td><td>${mdEsc(r.role)}</td><td>${mdEsc(r.project)}</td>
+      <td><button type="button" class="md-del-btn" onclick="mdDeleteUser('${mdEsc(r.nik)}')">Hapus</button></td></tr>
+    `).join('') : '<tr><td colspan="5" class="md-empty">Belum ada user.</td></tr>';
+  } catch (e) { mdShowErr('mdUserError', e.message); }
+}
+async function mdAddUser() {
+  const body = {
+    nik: document.getElementById('mdUserNik').value.trim(),
+    name: document.getElementById('mdUserName').value.trim(),
+    password: document.getElementById('mdUserPassword').value,
+    role: document.getElementById('mdUserRole').value,
+    project: document.getElementById('mdUserProject').value.trim() || 'ALL',
+  };
+  if (!body.nik || !body.name || !body.password) return mdShowErr('mdUserError', 'NIK, nama, dan password wajib diisi');
+  try {
+    await mdApi('/api/master-data/users', 'POST', body);
+    ['mdUserNik','mdUserName','mdUserPassword','mdUserProject'].forEach(id => document.getElementById(id).value = '');
+    mdLoadUsers();
+  } catch (e) { mdShowErr('mdUserError', e.message); }
+}
+async function mdDeleteUser(nik) {
+  if (!confirm('Hapus user ' + nik + '?')) return;
+  try { await mdApi('/api/master-data/users/' + nik, 'DELETE'); mdLoadUsers(); }
+  catch (e) { alert(e.message); }
+}
+
+document.getElementById('mdMitraInput').addEventListener('keydown', e => { if (e.key === 'Enter') mdAddMitra(); });
+document.getElementById('mdKategoriInput').addEventListener('keydown', e => { if (e.key === 'Enter') mdAddKategori(); });
+document.getElementById('mdSubStatusInput').addEventListener('keydown', e => { if (e.key === 'Enter') mdAddSubStatus(); });
+document.getElementById('mdProjectInput').addEventListener('keydown', e => { if (e.key === 'Enter') mdAddProject(); });
+
+mdLoadMitra();
+mdLoadStatus();
+mdLoadProject();
+mdLoadWok();
+mdLoadUsers();
+</script>
+{% endblock %}

@@ -142,6 +142,11 @@
   .card.soon .status-tag { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
   .card.soon:hover { transform: none; border-color: var(--border); border-left-color: var(--border); box-shadow: none; }
 
+  /* Card khusus developer -- dipakai buat "Master Data" */
+  .card.dev-only .status-tag { background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
+  .card.dev-only:hover { border-color: #7c3aed; border-left-color: #7c3aed; box-shadow: 0 10px 26px rgba(124,58,237,0.14); }
+  .card.dev-only .icon { background: #ede9fe; color: #7c3aed; }
+
   /* ── Partners ─────────────────────────────────────────────────── */
   .partners { text-align: center; padding-top: 26px; border-top: 1px solid var(--border); }
   .partners .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 14px; }
@@ -229,6 +234,17 @@
         {% endif %}
       {% endif %}
     {% endfor %}
+
+    {% if user.role == 'developer' %}
+    <a class="card active dev-only" href="/master-data">
+      <div class="icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 4.5v11L12 22l-9-4.5v-11L12 2z"></path><path d="M12 22V12M21 6.5L12 12 3 6.5"></path></svg>
+      </div>
+      <div class="label">Master Data</div>
+      <div class="desc">Kelola data referensi (Mitra, Status, Project, WOK, Users) — khusus developer.</div>
+      <div class="status-tag">DEVELOPER</div>
+    </a>
+    {% endif %}
 
     <div class="card soon">
       <div class="icon">
