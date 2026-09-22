@@ -80,14 +80,14 @@ def require_login():
 
 
 def is_viewer():
-    """True kalau user yang lagi login role-nya 'viewer' (view only --
-    mis. akun Tsel). Dipakai di setiap endpoint yang MENGUBAH data
+    """True kalau user yang lagi login role-nya 'Telkomsel' (view only --
+    akun Tsel). Dipakai di setiap endpoint yang MENGUBAH data
     (update status, upload dokumen/KML/BOQ, import massal, insert HEM)
     supaya tetap ditolak di server walau request-nya tidak lewat
     form/tombol di browser (curl/Postman dsb). Endpoint yang murni baca
     data (termasuk download/export) TIDAK dipasangi guard ini."""
     user = session.get("user") or {}
-    return user.get("role") == "viewer"
+    return user.get("role") == "Telkomsel"
 
 
 def viewer_blocked_json():
@@ -194,12 +194,49 @@ def api_md_mitra_add():
         return jsonify({"ok": False, "error": f"Gagal menambah (mungkin sudah ada): {e}"}), 409
 
 
+@app.route("/api/master-data/mitra/<int:mitra_id>", methods=["PUT"])
+def api_md_mitra_update(mitra_id):
+    err = _require_developer_json()
+    if err: return err
+    try:
+        master_db_service.update_mitra(mitra_id, (request.get_json(silent=True) or {}).get("nama_mitra"))
+        return jsonify({"ok": True})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gagal menyimpan: {e}"}), 409
+
+
 @app.route("/api/master-data/mitra/<int:mitra_id>", methods=["DELETE"])
 def api_md_mitra_delete(mitra_id):
     err = _require_developer_json()
     if err: return err
     master_db_service.delete_mitra(mitra_id)
     return jsonify({"ok": True})
+
+
+@app.route("/api/master-data/mitra/bulk", methods=["POST"])
+def api_md_mitra_bulk():
+    """Import banyak nama mitra sekaligus dari file CSV yang di-upload
+    (1 nama per baris, kolom pertama)."""
+    err = _require_developer_json()
+    if err: return err
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"ok": False, "error": "File tidak ditemukan"}), 400
+    text = file.read().decode("utf-8-sig", errors="ignore")
+    names = []
+    for i, line in enumerate(text.splitlines()):
+        if i == 0 and line.strip().lower() in ("nama_mitra", "mitra", "nama mitra"):
+            continue  # baris header, skip
+        first_col = line.split(",")[0].strip()
+        if first_col:
+            names.append(first_col)
+    try:
+        result = master_db_service.bulk_add_mitra(names)
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
 # ── STATUS KATEGORI ──
@@ -221,6 +258,19 @@ def api_md_status_kategori_add():
         return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": f"Gagal menambah (mungkin sudah ada): {e}"}), 409
+
+
+@app.route("/api/master-data/status-kategori/<int:kategori_id>", methods=["PUT"])
+def api_md_status_kategori_update(kategori_id):
+    err = _require_developer_json()
+    if err: return err
+    try:
+        master_db_service.update_status_kategori(kategori_id, (request.get_json(silent=True) or {}).get("kode"))
+        return jsonify({"ok": True})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gagal menyimpan: {e}"}), 409
 
 
 @app.route("/api/master-data/status-kategori/<int:kategori_id>", methods=["DELETE"])
@@ -247,6 +297,20 @@ def api_md_status_pekerjaan_add():
     try:
         new_id = master_db_service.add_status_pekerjaan(body.get("kategori_id"), body.get("nama_status"))
         return jsonify({"ok": True, "id": new_id})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 409
+
+
+@app.route("/api/master-data/status-pekerjaan/<int:status_id>", methods=["PUT"])
+def api_md_status_pekerjaan_update(status_id):
+    err = _require_developer_json()
+    if err: return err
+    body = request.get_json(silent=True) or {}
+    try:
+        master_db_service.update_status_pekerjaan(status_id, body.get("kategori_id"), body.get("nama_status"))
+        return jsonify({"ok": True})
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
@@ -283,6 +347,18 @@ def api_md_projects_add():
         return jsonify({"ok": False, "error": f"Gagal menambah (mungkin sudah ada): {e}"}), 409
 
 
+@app.route("/api/master-data/projects/<project_code>", methods=["PUT"])
+def api_md_projects_update(project_code):
+    err = _require_developer_json()
+    if err: return err
+    body = request.get_json(silent=True) or {}
+    try:
+        master_db_service.update_project(project_code, body)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 409
+
+
 @app.route("/api/master-data/projects/<project_code>", methods=["DELETE"])
 def api_md_projects_delete(project_code):
     err = _require_developer_json()
@@ -312,12 +388,51 @@ def api_md_wok_add():
         return jsonify({"ok": False, "error": f"Gagal menambah (mungkin sudah ada): {e}"}), 409
 
 
+@app.route("/api/master-data/wok/<int:wok_id>", methods=["PUT"])
+def api_md_wok_update(wok_id):
+    err = _require_developer_json()
+    if err: return err
+    try:
+        master_db_service.update_wok(wok_id, request.get_json(silent=True) or {})
+        return jsonify({"ok": True})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gagal menyimpan: {e}"}), 409
+
+
 @app.route("/api/master-data/wok/<int:wok_id>", methods=["DELETE"])
 def api_md_wok_delete(wok_id):
     err = _require_developer_json()
     if err: return err
     master_db_service.delete_wok(wok_id)
     return jsonify({"ok": True})
+
+
+@app.route("/api/master-data/wok/bulk", methods=["POST"])
+def api_md_wok_bulk():
+    """Import banyak baris WOK sekaligus dari file CSV yang di-upload.
+    Kolom (dengan header, urutan bebas): sto,nama_sto,witel,regional,area"""
+    err = _require_developer_json()
+    if err: return err
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"ok": False, "error": "File tidak ditemukan"}), 400
+    text = file.read().decode("utf-8-sig", errors="ignore")
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return jsonify({"ok": True, "added": 0, "skipped": 0})
+    header = [h.strip().lower() for h in lines[0].split(",")]
+    rows = []
+    for line in lines[1:]:
+        cells = line.split(",")
+        row = {header[i]: (cells[i].strip() if i < len(cells) else "") for i in range(len(header))}
+        rows.append(row)
+    try:
+        result = master_db_service.bulk_add_wok(rows)
+        return jsonify({"ok": True, **result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
 # ── USERS ──

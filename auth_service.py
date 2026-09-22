@@ -28,8 +28,9 @@ ROLE_LABELS = {
     "developer": "Developer",
     "admin": "Admin",
     "manager": "Manager",
-    "user": "User",
-    "viewer": "Viewer",
+    "waspang": "Waspang",
+    "TIF": "TIF",
+    "Telkomsel": "Telkomsel",
 }
 
 

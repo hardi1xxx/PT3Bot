@@ -7,9 +7,6 @@ PENTING: ini connect ke service Postgres "DB MASTER" di Railway --
 service Postgres TERPISAH dari yang dipakai hem_db_service.py. Makanya
 dipakai env var sendiri (MASTER_DATABASE_URL), bukan DATABASE_URL yang
 dipakai HEM, supaya dua-duanya bisa jalan bersamaan tanpa bentrok.
-
-Cara isi MASTER_DATABASE_URL di service "web": lihat
-RAILWAY_CONNECT_STEPS.md.
 """
 import os
 import threading
@@ -20,6 +17,13 @@ from werkzeug.security import generate_password_hash
 
 MASTER_DATABASE_URL = os.environ.get("MASTER_DATABASE_URL")
 
+# Role yang berlaku di aplikasi ini. developer/admin/manager selalu bebas
+# akses semua menu (lihat auth_service.can_access_menu); waspang & TIF
+# dibatasi sesuai kolom project (sama seperti 'user' versi lama);
+# Telkomsel = view-only (sama seperti 'viewer' versi lama, lihat
+# is_viewer() di app.py).
+VALID_ROLES = ["developer", "admin", "manager", "waspang", "TIF", "Telkomsel"]
+
 
 def get_connection():
     if not MASTER_DATABASE_URL:
@@ -27,7 +31,7 @@ def get_connection():
             "MASTER_DATABASE_URL belum di-set di service 'web'. Ambil connection "
             "string dari service Postgres 'DB MASTER' (tab Variables, field "
             "DATABASE_URL), lalu tambahkan sebagai variable baru bernama "
-            "MASTER_DATABASE_URL di service 'web'. Lihat RAILWAY_CONNECT_STEPS.md."
+            "MASTER_DATABASE_URL di service 'web'."
         )
     return psycopg2.connect(MASTER_DATABASE_URL)
 
@@ -40,13 +44,10 @@ MITRA_TABLE = "mitra"
 
 _mitra_options_cache = {"ts": 0.0, "data": []}
 _mitra_options_lock = threading.Lock()
-_MITRA_OPTIONS_CACHE_TTL_SECONDS = 600  # 10 menit, sama seperti versi Sheets
+_MITRA_OPTIONS_CACHE_TTL_SECONDS = 600
 
 
 def get_mitra_options():
-    """Drop-in replacement utk sheets_service.get_mitra_options(): daftar
-    Nama Mitra unik (dedup case-insensitive, sort case-insensitive), dari
-    tabel Postgres `mitra` (DB MASTER) alih-alih sheet Google."""
     now = time.time()
     with _mitra_options_lock:
         cached = _mitra_options_cache["data"]
@@ -115,6 +116,20 @@ def add_mitra(nama_mitra):
     return new_id
 
 
+def update_mitra(mitra_id, nama_mitra):
+    nama_mitra = (nama_mitra or "").strip()
+    if not nama_mitra:
+        raise ValueError("Nama mitra tidak boleh kosong")
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(f"UPDATE {MITRA_TABLE} SET nama_mitra=%s WHERE id=%s", (nama_mitra, mitra_id))
+    finally:
+        conn.close()
+    _invalidate_mitra_cache()
+
+
 def delete_mitra(mitra_id):
     conn = get_connection()
     try:
@@ -124,6 +139,30 @@ def delete_mitra(mitra_id):
     finally:
         conn.close()
     _invalidate_mitra_cache()
+
+
+def bulk_add_mitra(names):
+    """Import banyak nama mitra sekaligus (dari upload CSV). Nama yang
+    sudah ada (duplikat) otomatis di-skip, bukan bikin gagal semuanya."""
+    added, skipped = 0, 0
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for raw in names:
+                    nama = (raw or "").strip()
+                    if not nama:
+                        continue
+                    try:
+                        cur.execute(f"INSERT INTO {MITRA_TABLE} (nama_mitra) VALUES (%s)", (nama,))
+                        added += 1
+                    except psycopg2.errors.UniqueViolation:
+                        conn.rollback()
+                        skipped += 1
+    finally:
+        conn.close()
+    _invalidate_mitra_cache()
+    return {"added": added, "skipped": skipped}
 
 
 # =============================================================================
@@ -169,6 +208,21 @@ def add_project(project_code, flags):
         conn.close()
 
 
+def update_project(project_code, flags):
+    values = [bool((flags or {}).get(k)) for k in _PROJECT_FLAG_KEYS]
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                set_sql = ", ".join(f"{k}=%s" for k in _PROJECT_FLAG_KEYS)
+                cur.execute(
+                    f"UPDATE projects SET {set_sql} WHERE project_code=%s",
+                    values + [project_code],
+                )
+    finally:
+        conn.close()
+
+
 def delete_project(project_code):
     conn = get_connection()
     try:
@@ -203,6 +257,19 @@ def add_status_kategori(kode):
             with conn.cursor() as cur:
                 cur.execute("INSERT INTO status_kategori (kode) VALUES (%s) RETURNING id", (kode,))
                 return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def update_status_kategori(kategori_id, kode):
+    kode = (kode or "").strip()
+    if not kode:
+        raise ValueError("Nama kategori tidak boleh kosong")
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE status_kategori SET kode=%s WHERE id=%s", (kode, kategori_id))
     finally:
         conn.close()
 
@@ -247,6 +314,22 @@ def add_status_pekerjaan(kategori_id, nama_status):
                     (kategori_id, nama_status),
                 )
                 return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def update_status_pekerjaan(status_id, kategori_id, nama_status):
+    nama_status = (nama_status or "").strip()
+    if not nama_status:
+        raise ValueError("Nama sub-status tidak boleh kosong")
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE status_pekerjaan SET kategori_id=%s, nama_status=%s WHERE id=%s",
+                    (kategori_id, nama_status, status_id),
+                )
     finally:
         conn.close()
 
@@ -297,6 +380,22 @@ def add_wok(data):
         conn.close()
 
 
+def update_wok(wok_id, data):
+    data = data or {}
+    sto = (data.get("sto") or "").strip().upper()
+    if not sto:
+        raise ValueError("Kode STO tidak boleh kosong")
+    values = [sto] + [(data.get(c) or "").strip() or None for c in _WOK_COLS[1:]]
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                set_sql = ", ".join(f"{c}=%s" for c in _WOK_COLS)
+                cur.execute(f"UPDATE wok SET {set_sql} WHERE id=%s", values + [wok_id])
+    finally:
+        conn.close()
+
+
 def delete_wok(wok_id):
     conn = get_connection()
     try:
@@ -307,16 +406,38 @@ def delete_wok(wok_id):
         conn.close()
 
 
-# =============================================================================
-# USERS -- login aplikasi ini. Sumber kebenaran SEKARANG di sini (Postgres),
-# BUKAN users.xlsx lagi -- dipakai langsung oleh auth_service.py.
-# =============================================================================
+def bulk_add_wok(rows):
+    """Import banyak baris WOK sekaligus (dari upload CSV). rows = list of
+    dict dengan key sto/nama_sto/witel/regional/area. STO yang sudah ada
+    di-skip, bukan bikin gagal semuanya."""
+    added, skipped = 0, 0
+    conn = get_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for row in rows:
+                    sto = (row.get("sto") or "").strip().upper()
+                    if not sto:
+                        continue
+                    values = [sto] + [(row.get(c) or "").strip() or None for c in _WOK_COLS[1:]]
+                    try:
+                        cols_sql = ", ".join(_WOK_COLS)
+                        placeholders = ", ".join(["%s"] * len(_WOK_COLS))
+                        cur.execute(f"INSERT INTO wok ({cols_sql}) VALUES ({placeholders})", values)
+                        added += 1
+                    except psycopg2.errors.UniqueViolation:
+                        conn.rollback()
+                        skipped += 1
+    finally:
+        conn.close()
+    return {"added": added, "skipped": skipped}
 
-VALID_ROLES = ["developer", "admin", "manager", "user", "viewer"]
 
+# =============================================================================
+# USERS -- login aplikasi ini.
+# =============================================================================
 
 def list_users():
-    """Buat halaman admin /master-data -- TIDAK termasuk password_hash."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -327,8 +448,7 @@ def list_users():
 
 
 def list_users_with_hash():
-    """Khusus dipakai auth_service.py buat proses login -- SATU-SATUNYA
-    tempat password_hash boleh keluar dari modul ini."""
+    """Khusus dipakai auth_service.py buat proses login."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -342,7 +462,7 @@ def list_users_with_hash():
 def add_user(nik, name, password, role, project):
     nik = (nik or "").strip()
     name = (name or "").strip()
-    role = (role or "").strip().lower()
+    role = (role or "").strip()
     project = (project or "ALL").strip().upper() or "ALL"
     if not nik or not name:
         raise ValueError("NIK dan nama wajib diisi")

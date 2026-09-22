@@ -190,6 +190,11 @@
     .menu-subitem:hover {
       background: #f8fafc;
     }
+    .menu-subitem.active {
+      background: #eaf1ff;
+      color: #2f6fed;
+      font-weight: 700;
+    }
   </style>
 </head>
 <!-- {% block active_category %}fbb{% endblock %} -->
@@ -246,6 +251,19 @@
           <a href="/hem/dashboard" class="menu-item menu-group-title {% block menu_hem %}{% endblock %}">HEM</a>
           <div class="menu-submenu">
             <a href="/hem/dashboard" class="menu-item menu-subitem">Semua Data</a>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if active_category == 'master' %}
+        <div class="menu-group">
+          <span class="menu-item menu-group-title">Master Data</span>
+          <div class="menu-submenu">
+            <a href="javascript:void(0)" class="menu-item menu-subitem md-side-link" data-tab="mitra" onclick="mdSwitchTab('mitra')">Mitra</a>
+            <a href="javascript:void(0)" class="menu-item menu-subitem md-side-link" data-tab="status" onclick="mdSwitchTab('status')">Status Progress</a>
+            <a href="javascript:void(0)" class="menu-item menu-subitem md-side-link" data-tab="project" onclick="mdSwitchTab('project')">Project</a>
+            <a href="javascript:void(0)" class="menu-item menu-subitem md-side-link" data-tab="wok" onclick="mdSwitchTab('wok')">WOK / Wilayah</a>
+            <a href="javascript:void(0)" class="menu-item menu-subitem md-side-link" data-tab="users" onclick="mdSwitchTab('users')">Users</a>
           </div>
         </div>
         {% endif %}
