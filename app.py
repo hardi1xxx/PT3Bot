@@ -412,7 +412,9 @@ def api_md_wok_delete(wok_id):
 @app.route("/api/master-data/wok/bulk", methods=["POST"])
 def api_md_wok_bulk():
     """Import banyak baris WOK sekaligus dari file CSV yang di-upload.
-    Kolom (dengan header, urutan bebas): sto,nama_sto,witel,regional,area"""
+    Kolom (dengan header, urutan bebas): sto,sto_conf_bu,duplicate_flag,
+    nama_sto,witel,datel,kab_telkom,kab_tsel,cluster,branch_old,
+    branch_new,regional,area,region_sap"""
     err = _require_developer_json()
     if err: return err
     file = request.files.get("file")

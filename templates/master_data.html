@@ -129,10 +129,12 @@
 <div class="md-panel" id="md-panel-project">
   <div class="md-card">
     <h2>Project</h2>
-    <p class="hint">Kode project + fitur apa yang aktif untuk project tsb. Cocokkan dengan kondisi aslinya di web: centang "Dashboard" kalau project itu sudah punya halaman dashboard, "Update" kalau sudah bisa diedit dari web, dst -- kalau project masih dalam pembangunan (belum ada halamannya sama sekali), biarkan semua kosong dulu.</p>
+    <p class="hint">Kode project (dari daftar menu di halaman utama) + fitur apa yang aktif. Cocokkan dengan kondisi aslinya di web.</p>
     <div class="md-error" id="mdProjectError"></div>
     <div class="md-add-row">
-      <div class="md-field"><label>Kode Project</label><input type="text" id="mdProjectInput" placeholder="mis. FBB"></div>
+      <div class="md-field"><label>Kode Project</label>
+        <select id="mdProjectInput"></select>
+      </div>
       <button type="button" onclick="mdAddProject()">Tambah</button>
     </div>
     <div class="md-checks">
@@ -168,15 +170,28 @@
     </div>
 
     <div class="md-add-row">
-      <div class="md-field"><label>STO</label><input type="text" id="mdWokSto" placeholder="mis. BAK"></div>
-      <div class="md-field"><label>Nama STO</label><input type="text" id="mdWokNama"></div>
-      <div class="md-field"><label>Witel</label><input type="text" id="mdWokWitel"></div>
-      <div class="md-field"><label>Regional</label><input type="text" id="mdWokRegional"></div>
-      <div class="md-field"><label>Area</label><input type="text" id="mdWokArea"></div>
+      <div class="md-field"><label>STO</label><input type="text" id="mdWok_sto" placeholder="BBL"></div>
+      <div class="md-field"><label>STO conf.BU</label><input type="text" id="mdWok_sto_conf_bu" placeholder="BBL"></div>
+      <div class="md-field"><label>Duplicate Flag</label><input type="text" id="mdWok_duplicate_flag" placeholder="N"></div>
+      <div class="md-field"><label>Nama STO</label><input type="text" id="mdWok_nama_sto" placeholder="BABELAN"></div>
+      <div class="md-field"><label>Witel</label><input type="text" id="mdWok_witel" placeholder="BEKASI"></div>
+      <div class="md-field"><label>Datel</label><input type="text" id="mdWok_datel" placeholder="BEKASI"></div>
+      <div class="md-field"><label>Kab Telkom</label><input type="text" id="mdWok_kab_telkom" placeholder="BEKASI"></div>
+      <div class="md-field"><label>Kab Tsel</label><input type="text" id="mdWok_kab_tsel" placeholder="BEKASI"></div>
+      <div class="md-field"><label>Cluster</label><input type="text" id="mdWok_cluster" placeholder="BEKASI"></div>
+      <div class="md-field"><label>Branch Old</label><input type="text" id="mdWok_branch_old" placeholder="KARAWANG"></div>
+      <div class="md-field"><label>Branch New</label><input type="text" id="mdWok_branch_new" placeholder="KARAWANG"></div>
+      <div class="md-field"><label>Regional</label><input type="text" id="mdWok_regional" placeholder="EASTERN JABOTABEK"></div>
+      <div class="md-field"><label>Area</label><input type="text" id="mdWok_area" placeholder="AREA 2"></div>
+      <div class="md-field"><label>Region SAP</label><input type="text" id="mdWok_region_sap" placeholder="Eastern Jabotabek"></div>
       <button type="button" onclick="mdAddWok()">Tambah</button>
     </div>
-    <div class="md-table"><table id="mdWokTable">
-      <thead><tr><th>STO</th><th>Nama STO</th><th>Witel</th><th>Regional</th><th>Area</th><th></th></tr></thead>
+    <div class="md-table" style="overflow-x:auto;"><table id="mdWokTable">
+      <thead><tr>
+        <th>STO</th><th>STO conf.BU</th><th>Dup.Flag</th><th>Nama STO</th><th>Witel</th><th>Datel</th>
+        <th>Kab Telkom</th><th>Kab Tsel</th><th>Cluster</th><th>Branch Old</th><th>Branch New</th>
+        <th>Regional</th><th>Area</th><th>Region SAP</th><th></th>
+      </tr></thead>
       <tbody></tbody>
     </table></div>
   </div>
@@ -202,8 +217,20 @@
           <option value="Telkomsel">Telkomsel</option>
         </select>
       </div>
-      <div class="md-field"><label>Project</label><input type="text" id="mdUserProject" placeholder="ALL"></div>
       <button type="button" onclick="mdAddUser()">Tambah</button>
+    </div>
+    <div class="md-field" style="margin-bottom:16px;">
+      <label>Project (akses menu sesuai yang dicentang)</label>
+      <div class="md-checks" id="mdUserProjectChecks">
+        <label><input type="checkbox" id="mdUserProjAll" value="ALL" onchange="mdToggleUserProjAll()"> ALL</label>
+        <label><input type="checkbox" class="md-user-proj-item" value="PT3"> PT3</label>
+        <label><input type="checkbox" class="md-user-proj-item" value="PT2"> PT2</label>
+        <label><input type="checkbox" class="md-user-proj-item" value="FBB"> FBB</label>
+        <label><input type="checkbox" class="md-user-proj-item" value="MBB"> MBB</label>
+        <label><input type="checkbox" class="md-user-proj-item" value="OLO"> OLO</label>
+        <label><input type="checkbox" class="md-user-proj-item" value="HEM"> HEM</label>
+        <label><input type="checkbox" class="md-user-proj-item" value="QE"> QE</label>
+      </div>
     </div>
     <div class="md-table"><table id="mdUserTable">
       <thead><tr><th>NIK</th><th>Nama</th><th>Role</th><th>Project</th><th></th></tr></thead>
@@ -244,7 +271,8 @@ function mdDownloadTemplate(kind) {
     csv = 'nama_mitra\nPT. CONTOH JAYA\nPT. CONTOH LAIN\n';
     filename = 'template_mitra.csv';
   } else {
-    csv = 'sto,nama_sto,witel,regional,area\nBAK,BAKONGAN,ACEH,SUMBAGUT,AREA 1\n';
+    csv = 'sto,sto_conf_bu,duplicate_flag,nama_sto,witel,datel,kab_telkom,kab_tsel,cluster,branch_old,branch_new,regional,area,region_sap\n'
+        + 'BBL,BBL,N,BABELAN,BEKASI,BEKASI,BEKASI,BEKASI,BEKASI,KARAWANG,KARAWANG,EASTERN JABOTABEK,AREA 2,Eastern Jabotabek\n';
     filename = 'template_wok.csv';
   }
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -488,7 +516,9 @@ async function mdDeleteProject(code) {
 // ── WOK (dengan edit inline) ──
 let mdWokEditingId = null;
 let mdWokRows = [];
-const MD_WOK_KEYS = ['sto','nama_sto','witel','regional','area'];
+const MD_WOK_KEYS = ["sto","sto_conf_bu","duplicate_flag","nama_sto","witel","datel",
+                      "kab_telkom","kab_tsel","cluster","branch_old","branch_new",
+                      "regional","area","region_sap"];
 
 async function mdLoadWok() {
   try {
@@ -507,27 +537,22 @@ function mdRenderWok() {
           <button type="button" class="md-cancel-btn" onclick="mdWokEditingId=null; mdRenderWok();">Batal</button>
         </td></tr>`;
     }
-    return `<tr><td>${mdEsc(r.sto)}</td><td>${mdEsc(r.nama_sto||'')}</td><td>${mdEsc(r.witel||'')}</td>
-      <td>${mdEsc(r.regional||'')}</td><td>${mdEsc(r.area||'')}</td>
+    const cells = MD_WOK_KEYS.map(k => `<td>${mdEsc(r[k] || '')}</td>`).join('');
+    return `<tr>${cells}
       <td class="md-row-actions">
         <button type="button" class="md-edit-btn" onclick="mdWokEditingId=${r.id}; mdRenderWok();">Edit</button>
         <button type="button" class="md-del-btn" onclick="mdDeleteWok(${r.id})">Hapus</button>
       </td></tr>`;
-  }).join('') : '<tr><td colspan="6" class="md-empty">Belum ada data WOK.</td></tr>';
+  }).join('') : '<tr><td colspan="15" class="md-empty">Belum ada data WOK.</td></tr>';
 }
 async function mdAddWok() {
-  const sto = document.getElementById('mdWokSto').value.trim();
+  const sto = document.getElementById('mdWok_sto').value.trim();
   if (!sto) return;
-  const body = {
-    sto,
-    nama_sto: document.getElementById('mdWokNama').value.trim(),
-    witel: document.getElementById('mdWokWitel').value.trim(),
-    regional: document.getElementById('mdWokRegional').value.trim(),
-    area: document.getElementById('mdWokArea').value.trim(),
-  };
+  const body = {};
+  MD_WOK_KEYS.forEach(k => body[k] = document.getElementById('mdWok_' + k).value.trim());
   try {
     await mdApi('/api/master-data/wok', 'POST', body);
-    ['mdWokSto','mdWokNama','mdWokWitel','mdWokRegional','mdWokArea'].forEach(id => document.getElementById(id).value = '');
+    MD_WOK_KEYS.forEach(k => document.getElementById('mdWok_' + k).value = '');
     mdLoadWok();
   } catch (e) { mdShowErr('mdWokError', e.message); }
 }
@@ -554,18 +579,29 @@ async function mdLoadUsers() {
     `).join('') : '<tr><td colspan="5" class="md-empty">Belum ada user.</td></tr>';
   } catch (e) { mdShowErr('mdUserError', e.message); }
 }
+function mdToggleUserProjAll() {
+  const allChecked = document.getElementById('mdUserProjAll').checked;
+  document.querySelectorAll('.md-user-proj-item').forEach(cb => { cb.disabled = allChecked; if (allChecked) cb.checked = false; });
+}
+function mdGetUserProjectValue() {
+  if (document.getElementById('mdUserProjAll').checked) return 'ALL';
+  const picked = Array.from(document.querySelectorAll('.md-user-proj-item:checked')).map(cb => cb.value);
+  return picked.length ? picked.join(',') : 'ALL';
+}
 async function mdAddUser() {
   const body = {
     nik: document.getElementById('mdUserNik').value.trim(),
     name: document.getElementById('mdUserName').value.trim(),
     password: document.getElementById('mdUserPassword').value,
     role: document.getElementById('mdUserRole').value,
-    project: document.getElementById('mdUserProject').value.trim() || 'ALL',
+    project: mdGetUserProjectValue(),
   };
   if (!body.nik || !body.name || !body.password) return mdShowErr('mdUserError', 'NIK, nama, dan password wajib diisi');
   try {
     await mdApi('/api/master-data/users', 'POST', body);
-    ['mdUserNik','mdUserName','mdUserPassword','mdUserProject'].forEach(id => document.getElementById(id).value = '');
+    ['mdUserNik','mdUserName','mdUserPassword'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('mdUserProjAll').checked = false;
+    document.querySelectorAll('.md-user-proj-item').forEach(cb => { cb.checked = false; cb.disabled = false; });
     mdLoadUsers();
   } catch (e) { mdShowErr('mdUserError', e.message); }
 }

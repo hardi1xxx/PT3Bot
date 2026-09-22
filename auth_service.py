@@ -81,13 +81,19 @@ def current_user():
 
 
 def can_access_menu(user, key):
-    """developer/admin/manager bebas akses semua menu, role 'user' cuma
-    menu sesuai kolom project-nya ('ALL' juga bebas akses semua)."""
+    """developer/admin/manager bebas akses semua menu. Role lain (waspang/
+    TIF/Telkomsel) dibatasi sesuai kolom project -- project berisi 'ALL'
+    ATAU beberapa kode project dipisah koma (mis. 'FBB,HEM'), diisi lewat
+    checklist di tab Users halaman /master-data."""
     if not user:
         return False
     if user["role"] in ("developer", "admin", "manager"):
         return True
-    return user["project"] == "ALL" or user["project"] == key
+    project = user.get("project") or ""
+    if project == "ALL":
+        return True
+    allowed = [p.strip() for p in project.split(",") if p.strip()]
+    return key in allowed
 
 
 def login_required(view_func):

@@ -348,7 +348,15 @@ def delete_status_pekerjaan(status_id):
 # WOK / WILAYAH
 # =============================================================================
 
-_WOK_COLS = ["sto", "nama_sto", "witel", "regional", "area"]
+# =============================================================================
+# WOK / WILAYAH -- kolom lengkap, sama dengan format sheet asli.
+# =============================================================================
+
+_WOK_COLS = [
+    "sto", "sto_conf_bu", "duplicate_flag", "nama_sto", "witel", "datel",
+    "kab_telkom", "kab_tsel", "cluster", "branch_old", "branch_new",
+    "regional", "area", "region_sap",
+]
 
 
 def list_wok():
