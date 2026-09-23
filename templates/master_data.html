@@ -81,10 +81,10 @@
 
     <div class="md-bulk-box">
       <span class="md-bulk-label">Isi banyak sekaligus lewat file, daripada satu-satu:</span>
-      <button type="button" class="md-btn secondary" onclick="mdDownloadTemplate('mitra')">Download Format (.csv)</button>
+      <button type="button" class="md-btn secondary" onclick="mdDownloadTemplate('mitra')">Download Format (.xlsx)</button>
       <label class="md-btn secondary" style="display:inline-flex;align-items:center;cursor:pointer;">
-        Upload .csv
-        <input type="file" accept=".csv" id="mdMitraUploadInput" style="display:none" onchange="mdUploadBulk('mitra', this)">
+        Upload .xlsx
+        <input type="file" accept=".xlsx" id="mdMitraUploadInput" style="display:none" onchange="mdUploadBulk('mitra', this)">
       </label>
       <span class="md-bulk-result" id="mdMitraBulkResult"></span>
     </div>
@@ -161,10 +161,10 @@
 
     <div class="md-bulk-box">
       <span class="md-bulk-label">Isi banyak sekaligus lewat file, daripada satu-satu:</span>
-      <button type="button" class="md-btn secondary" onclick="mdDownloadTemplate('wok')">Download Format (.csv)</button>
+      <button type="button" class="md-btn secondary" onclick="mdDownloadTemplate('wok')">Download Format (.xlsx)</button>
       <label class="md-btn secondary" style="display:inline-flex;align-items:center;cursor:pointer;">
-        Upload .csv
-        <input type="file" accept=".csv" id="mdWokUploadInput" style="display:none" onchange="mdUploadBulk('wok', this)">
+        Upload .xlsx
+        <input type="file" accept=".xlsx" id="mdWokUploadInput" style="display:none" onchange="mdUploadBulk('wok', this)">
       </label>
       <span class="md-bulk-result" id="mdWokBulkResult"></span>
     </div>
@@ -266,20 +266,8 @@ function mdShowErr(id, msg) {
 
 // ── Download template & upload bulk ──
 function mdDownloadTemplate(kind) {
-  let csv, filename;
-  if (kind === 'mitra') {
-    csv = 'nama_mitra\nPT. CONTOH JAYA\nPT. CONTOH LAIN\n';
-    filename = 'template_mitra.csv';
-  } else {
-    csv = 'sto,sto_conf_bu,duplicate_flag,nama_sto,witel,datel,kab_telkom,kab_tsel,cluster,branch_old,branch_new,regional,area,region_sap\n'
-        + 'BBL,BBL,N,BABELAN,BEKASI,BEKASI,BEKASI,BEKASI,BEKASI,KARAWANG,KARAWANG,EASTERN JABOTABEK,AREA 2,Eastern Jabotabek\n';
-    filename = 'template_wok.csv';
-  }
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
+  // File .xlsx dibuat di server (openpyxl), tinggal navigate ke endpoint-nya.
+  window.location.href = '/api/master-data/' + kind + '/template';
 }
 
 async function mdUploadBulk(kind, inputEl) {

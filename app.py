@@ -3,8 +3,10 @@ import traceback
 import datetime
 import threading
 import logging
+from io import BytesIO
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response, session
+import openpyxl
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response, session, send_file
 from werkzeug.utils import secure_filename
 from googleapiclient.errors import HttpError
 
@@ -215,21 +217,44 @@ def api_md_mitra_delete(mitra_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/master-data/mitra/template")
+def api_md_mitra_template():
+    err = _require_developer_json()
+    if err: return err
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Mitra"
+    ws.append(["nama_mitra"])
+    ws.append(["PT. CONTOH JAYA"])
+    ws.append(["PT. CONTOH LAIN"])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name="template_mitra.xlsx",
+                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.route("/api/master-data/mitra/bulk", methods=["POST"])
 def api_md_mitra_bulk():
-    """Import banyak nama mitra sekaligus dari file CSV yang di-upload
-    (1 nama per baris, kolom pertama)."""
+    """Import banyak nama mitra sekaligus dari file .xlsx yang di-upload
+    (kolom pertama = nama mitra, baris pertama boleh header atau langsung data)."""
     err = _require_developer_json()
     if err: return err
     file = request.files.get("file")
     if not file:
         return jsonify({"ok": False, "error": "File tidak ditemukan"}), 400
-    text = file.read().decode("utf-8-sig", errors="ignore")
+    try:
+        wb = openpyxl.load_workbook(BytesIO(file.read()), data_only=True)
+        ws = wb.active
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"File .xlsx tidak valid: {e}"}), 400
     names = []
-    for i, line in enumerate(text.splitlines()):
-        if i == 0 and line.strip().lower() in ("nama_mitra", "mitra", "nama mitra"):
+    for i, row in enumerate(ws.iter_rows(values_only=True)):
+        if not row:
+            continue
+        first_col = str(row[0]).strip() if row[0] is not None else ""
+        if i == 0 and first_col.lower() in ("nama_mitra", "mitra", "nama mitra"):
             continue  # baris header, skip
-        first_col = line.split(",")[0].strip()
         if first_col:
             names.append(first_col)
     try:
@@ -409,26 +434,53 @@ def api_md_wok_delete(wok_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/master-data/wok/template")
+def api_md_wok_template():
+    err = _require_developer_json()
+    if err: return err
+    headers = ["sto", "sto_conf_bu", "duplicate_flag", "nama_sto", "witel", "datel",
+               "kab_telkom", "kab_tsel", "cluster", "branch_old", "branch_new",
+               "regional", "area", "region_sap"]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "WOK"
+    ws.append(headers)
+    ws.append(["BBL", "BBL", "N", "BABELAN", "BEKASI", "BEKASI", "BEKASI", "BEKASI",
+                "BEKASI", "KARAWANG", "KARAWANG", "EASTERN JABOTABEK", "AREA 2", "Eastern Jabotabek"])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name="template_wok.xlsx",
+                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.route("/api/master-data/wok/bulk", methods=["POST"])
 def api_md_wok_bulk():
-    """Import banyak baris WOK sekaligus dari file CSV yang di-upload.
-    Kolom (dengan header, urutan bebas): sto,sto_conf_bu,duplicate_flag,
-    nama_sto,witel,datel,kab_telkom,kab_tsel,cluster,branch_old,
-    branch_new,regional,area,region_sap"""
+    """Import banyak baris WOK sekaligus dari file .xlsx yang di-upload.
+    Kolom (harus ada baris header, urutan bebas): sto,sto_conf_bu,
+    duplicate_flag,nama_sto,witel,datel,kab_telkom,kab_tsel,cluster,
+    branch_old,branch_new,regional,area,region_sap"""
     err = _require_developer_json()
     if err: return err
     file = request.files.get("file")
     if not file:
         return jsonify({"ok": False, "error": "File tidak ditemukan"}), 400
-    text = file.read().decode("utf-8-sig", errors="ignore")
-    lines = [l for l in text.splitlines() if l.strip()]
-    if not lines:
+    try:
+        wb = openpyxl.load_workbook(BytesIO(file.read()), data_only=True)
+        ws = wb.active
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"File .xlsx tidak valid: {e}"}), 400
+    rows_iter = ws.iter_rows(values_only=True)
+    try:
+        header = [str(h).strip().lower() if h is not None else "" for h in next(rows_iter)]
+    except StopIteration:
         return jsonify({"ok": True, "added": 0, "skipped": 0})
-    header = [h.strip().lower() for h in lines[0].split(",")]
     rows = []
-    for line in lines[1:]:
-        cells = line.split(",")
-        row = {header[i]: (cells[i].strip() if i < len(cells) else "") for i in range(len(header))}
+    for values in rows_iter:
+        if values is None or all(v is None for v in values):
+            continue
+        row = {header[i]: (str(values[i]).strip() if i < len(values) and values[i] is not None else "")
+               for i in range(len(header))}
         rows.append(row)
     try:
         result = master_db_service.bulk_add_wok(rows)
