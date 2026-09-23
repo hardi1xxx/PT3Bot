@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Data IHLD — INTRA{% endblock %}
+{% block active_category %}upload{% endblock %}
+{% block menu_upload_ihld %}active{% endblock %}
+
+{% block page_title %}Upload Data IHLD{% endblock %}
+{% block page_sub %}Cari, lihat daftar, dan unggah data IHLD dari file Excel/CSV.{% endblock %}
+
+{% block content %}
+<style>
+  :root {
+    --brand-blue: #2f6fed;
+    --brand-blue-dark: #1c4fc4;
+    --brand-blue-2: #eaf1ff;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --text: #0f172a;
+  }
+
+  .upl-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .upl-search-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 320px;
+    max-width: 420px;
+  }
+  .upl-search-form input[type="text"] {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.88rem;
+    outline: none;
+    background: #fff;
+  }
+  .upl-search-form input[type="text"]:focus {
+    border-color: var(--brand-blue);
+    box-shadow: 0 0 0 3px rgba(47,111,237,0.12);
+  }
+  .upl-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .upl-btn-primary {
+    background: var(--brand-blue);
+    color: #fff;
+  }
+  .upl-btn-primary:hover { background: var(--brand-blue-dark); }
+  .upl-btn-ghost {
+    background: #f1f5f9;
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .upl-btn-ghost:hover { background: #e2e8f0; }
+
+  .upl-panel {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .upl-table-wrap { overflow-x: auto; }
+  table.upl-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+    min-width: 920px;
+  }
+  table.upl-table thead th {
+    text-align: left;
+    background: #f8fafc;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  table.upl-table tbody td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+  table.upl-table tbody tr:last-child td { border-bottom: none; }
+  table.upl-table tbody tr:hover { background: #f8fafc; }
+  .upl-empty {
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .upl-status-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: var(--brand-blue-2);
+    color: var(--brand-blue);
+    white-space: nowrap;
+  }
+
+  .upl-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .upl-pagination {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .upl-page-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .upl-page-btn:hover { background: #f1f5f9; }
+  .upl-page-btn.active {
+    background: var(--brand-blue);
+    border-color: var(--brand-blue);
+    color: #fff;
+  }
+  .upl-page-btn.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+
+  /* Modal upload */
+  .upl-modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(15,23,42,0.45);
+    align-items: center; justify-content: center;
+    z-index: 100;
+    padding: 16px;
+  }
+  .upl-modal-overlay.open { display: flex; }
+  .upl-modal-box {
+    background: #fff;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 460px;
+    padding: 22px 22px 18px;
+  }
+  .upl-modal-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    margin: 0 0 4px;
+  }
+  .upl-modal-sub {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+  .upl-dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    padding: 26px 16px;
+    text-align: center;
+    cursor: pointer;
+    background: #f8fafc;
+  }
+  .upl-dropzone:hover { border-color: var(--brand-blue); background: var(--brand-blue-2); }
+  .upl-dropzone.has-file { border-style: solid; border-color: var(--brand-blue); background: var(--brand-blue-2); }
+  .upl-dropzone input[type="file"] { display: none; }
+  .upl-dropzone-icon { font-size: 1.6rem; margin-bottom: 6px; }
+  .upl-dropzone-text { font-size: 0.85rem; font-weight: 700; color: var(--text); }
+  .upl-dropzone-hint { font-size: 0.74rem; color: var(--muted); margin-top: 4px; }
+  .upl-filename { font-size: 0.82rem; font-weight: 700; color: var(--brand-blue-dark); margin-top: 4px; word-break: break-all; }
+
+  .upl-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .upl-error-text {
+    color: #dc2626;
+    font-size: 0.78rem;
+    margin-top: 8px;
+    display: none;
+  }
+</style>
+
+<div class="upl-toolbar">
+  <form class="upl-search-form" method="get" action="/upload-ihld">
+    <input
+      type="text"
+      name="q"
+      placeholder="Cari nama proyek, iHLD LoP ID, regional, atau witel..."
+      value="{{ search_query|default('') }}"
+    >
+    <button type="submit" class="upl-btn upl-btn-ghost">Cari</button>
+  </form>
+
+  <button type="button" class="upl-btn upl-btn-primary" id="uplOpenModalBtn">
+    &#8593; Upload Data
+  </button>
+</div>
+
+<div class="upl-panel">
+  <div class="upl-table-wrap">
+    <table class="upl-table">
+      <thead>
+        <tr>
+          <th>No</th>
+          <th>Nama Proyek</th>
+          <th>iHLD LoP ID</th>
+          <th>Regional</th>
+          <th>Witel</th>
+          <th>Status Order</th>
+          <th>Status Proyek</th>
+          <th>Tahun Program</th>
+          <th>Diperbarui</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in items|default([]) %}
+        <tr>
+          <td>{{ loop.index + ((page|default(1) - 1) * (per_page|default(10))) }}</td>
+          <td>{{ row.nama_proyek|default('-') }}</td>
+          <td>{{ row.ihld_lop_id|default('-') }}</td>
+          <td>{{ row.regional|default('-') }}</td>
+          <td>{{ row.witel|default('-') }}</td>
+          <td>{{ row.status_order|default('-') }}</td>
+          <td><span class="upl-status-chip">{{ row.status_proyek|default('-') }}</span></td>
+          <td>{{ row.tahun_program|default('-') }}</td>
+          <td>{{ row.diperbarui_pada|default('-') }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9">
+            <div class="upl-empty">
+              {% if search_query %}
+                Tidak ada data IHLD yang cocok dengan pencarian "{{ search_query }}".
+              {% else %}
+                Belum ada data IHLD. Klik <strong>Upload Data</strong> untuk mengunggah file pertama.
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="upl-footer">
+    <span>
+      Menampilkan {{ items|default([])|length }} dari {{ total_count|default(0) }} data
+      (halaman {{ page|default(1) }} dari {{ total_pages|default(1) }})
+    </span>
+
+    <div class="upl-pagination">
+      {% set cur_page = page|default(1) %}
+      {% set last_page = total_pages|default(1) %}
+      <a
+        class="upl-page-btn {% if cur_page <= 1 %}disabled{% endif %}"
+        href="/upload-ihld?q={{ search_query|default('') }}&page={{ cur_page - 1 }}"
+      >&#8249;</a>
+
+      {% for p in range(1, last_page + 1) %}
+        <a
+          class="upl-page-btn {% if p == cur_page %}active{% endif %}"
+          href="/upload-ihld?q={{ search_query|default('') }}&page={{ p }}"
+        >{{ p }}</a>
+      {% endfor %}
+
+      <a
+        class="upl-page-btn {% if cur_page >= last_page %}disabled{% endif %}"
+        href="/upload-ihld?q={{ search_query|default('') }}&page={{ cur_page + 1 }}"
+      >&#8250;</a>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Upload -->
+<div class="upl-modal-overlay" id="uplModalOverlay">
+  <div class="upl-modal-box">
+    <div class="upl-modal-title">Upload Data IHLD</div>
+    <p class="upl-modal-sub">Unggah data dalam format Excel (.xlsx) atau CSV (.csv), maks. 10MB.</p>
+
+    <form id="uplUploadForm" method="post" action="/upload-ihld/import" enctype="multipart/form-data">
+      <label class="upl-dropzone" id="uplDropzone">
+        <input type="file" id="uplFileInput" name="file" accept=".xlsx,.csv">
+        <div class="upl-dropzone-icon">&#128193;</div>
+        <div class="upl-dropzone-text">Klik untuk pilih file</div>
+        <div class="upl-dropzone-hint">Format didukung: .xlsx, .csv</div>
+        <div class="upl-filename" id="uplFilename"></div>
+      </label>
+      <div class="upl-error-text" id="uplErrorText">Format file tidak didukung. Gunakan file .xlsx atau .csv.</div>
+
+      <div class="upl-modal-actions">
+        <button type="button" class="upl-btn upl-btn-ghost" id="uplCancelBtn">Batal</button>
+        <button type="submit" class="upl-btn upl-btn-primary" id="uplSubmitBtn" disabled>Upload</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  const openBtn = document.getElementById('uplOpenModalBtn');
+  const cancelBtn = document.getElementById('uplCancelBtn');
+  const overlay = document.getElementById('uplModalOverlay');
+  const dropzone = document.getElementById('uplDropzone');
+  const fileInput = document.getElementById('uplFileInput');
+  const filenameEl = document.getElementById('uplFilename');
+  const errorEl = document.getElementById('uplErrorText');
+  const submitBtn = document.getElementById('uplSubmitBtn');
+  const form = document.getElementById('uplUploadForm');
+
+  const ALLOWED_EXT = ['xlsx', 'csv'];
+
+  function resetModal() {
+    fileInput.value = '';
+    filenameEl.textContent = '';
+    dropzone.classList.remove('has-file');
+    errorEl.style.display = 'none';
+    submitBtn.disabled = true;
+  }
+
+  function openModal() {
+    overlay.classList.add('open');
+  }
+  function closeModal() {
+    overlay.classList.remove('open');
+    resetModal();
+  }
+
+  openBtn.addEventListener('click', openModal);
+  cancelBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (!file) { resetModal(); return; }
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!ALLOWED_EXT.includes(ext)) {
+      errorEl.style.display = 'block';
+      dropzone.classList.remove('has-file');
+      submitBtn.disabled = true;
+      filenameEl.textContent = '';
+      return;
+    }
+
+    errorEl.style.display = 'none';
+    dropzone.classList.add('has-file');
+    filenameEl.textContent = file.name;
+    submitBtn.disabled = false;
+  });
+
+  form.addEventListener('submit', (e) => {
+    const file = fileInput.files[0];
+    if (!file) { e.preventDefault(); return; }
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!ALLOWED_EXT.includes(ext)) {
+      e.preventDefault();
+      errorEl.style.display = 'block';
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Mengunggah...';
+    // form akan submit normal ke /upload-ihld/import (backend Flask
+    // yang memproses file & redirect kembali ke halaman ini)
+  });
+})();
+</script>
+{% endblock %}
