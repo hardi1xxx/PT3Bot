@@ -189,6 +189,27 @@ def list_projects():
         conn.close()
 
 
+def get_project_flags(project_code):
+    """Ambil flag Dashboard/Search/Create/Update/Delete/Priority untuk 1
+    project_code. Return None kalau project_code belum terdaftar sama
+    sekali di tabel projects -- dipakai app.py buat benar-benar mengunci
+    fitur (bukan cuma checklist), lihat require_project_feature()."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT " + ", ".join(_PROJECT_FLAG_KEYS) +
+                " FROM projects WHERE project_code = %s",
+                (project_code,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return dict(zip(_PROJECT_FLAG_KEYS, row))
+    finally:
+        conn.close()
+
+
 def add_project(project_code, flags):
     project_code = (project_code or "").strip().upper()
     if not project_code:

@@ -250,45 +250,64 @@ def upload_ihld_page():
 
 @app.route("/upload-ihld/import", methods=["POST"])
 def upload_ihld_import():
-    if is_viewer():
-        flash("Akun Anda hanya memiliki akses lihat saja (view only).", "error")
-        return redirect(url_for("upload_ihld_page"))
-
-    file = request.files.get("file")
-    if not file or not file.filename:
-        flash("Tidak ada file yang dipilih.", "error")
-        return redirect(url_for("upload_ihld_page"))
-
-    filename = secure_filename(file.filename)
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in UPLOAD_IHLD_ALLOWED_EXT:
-        flash("Format file tidak didukung. Gunakan .xlsx atau .csv.", "error")
-        return redirect(url_for("upload_ihld_page"))
-
     try:
-        if ext == "csv":
-            rows = ihld_db_service.parse_ihld_csv(file.stream)
-        else:
-            wb = openpyxl.load_workbook(BytesIO(file.read()), data_only=True)
-            rows = ihld_db_service.parse_ihld_worksheet(wb.active)
-    except Exception as e:
-        logger.exception("Gagal membaca file upload IHLD")
-        flash(f"File tidak valid / gagal dibaca: {e}", "error")
+        if is_viewer():
+            flash("Akun Anda hanya memiliki akses lihat saja (view only).", "error")
+            return redirect(url_for("upload_ihld_page"))
+
+        file = request.files.get("file")
+        if not file or not file.filename:
+            flash("Tidak ada file yang dipilih.", "error")
+            return redirect(url_for("upload_ihld_page"))
+
+        filename = secure_filename(file.filename)
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext not in UPLOAD_IHLD_ALLOWED_EXT:
+            flash("Format file tidak didukung. Gunakan .xlsx atau .csv.", "error")
+            return redirect(url_for("upload_ihld_page"))
+
+        # Guard ukuran file (maks 10MB) supaya file yang kebesaran gagal
+        # cepat dengan pesan jelas, bukan menggantung lama lalu crash.
+        MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+        if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+            flash("Ukuran file melebihi 10MB.", "error")
+            return redirect(url_for("upload_ihld_page"))
+
+        try:
+            if ext == "csv":
+                rows = ihld_db_service.parse_ihld_csv(file.stream)
+            else:
+                wb = openpyxl.load_workbook(
+                    BytesIO(file.read()), data_only=True, read_only=True
+                )
+                rows = ihld_db_service.parse_ihld_worksheet(wb.active)
+                wb.close()
+        except Exception as e:
+            logger.exception("Gagal membaca file upload IHLD")
+            flash(f"File tidak valid / gagal dibaca: {e}", "error")
+            return redirect(url_for("upload_ihld_page"))
+
+        if not rows:
+            flash("Tidak ada baris data yang bisa diimpor dari file ini.", "error")
+            return redirect(url_for("upload_ihld_page"))
+
+        try:
+            inserted = ihld_db_service.bulk_insert_ihld(rows)
+        except Exception as e:
+            logger.exception("Gagal menyimpan data IHLD ke database")
+            flash(f"Gagal menyimpan data ke database: {e}", "error")
+            return redirect(url_for("upload_ihld_page"))
+
+        flash(f"Berhasil mengunggah {inserted} baris data IHLD.", "success")
         return redirect(url_for("upload_ihld_page"))
 
-    if not rows:
-        flash("Tidak ada baris data yang bisa diimpor dari file ini.", "error")
+    except Exception:
+        # Jaring pengaman terakhir: apa pun yang lolos dari try/except di
+        # atas (bug tak terduga) tetap berakhir sebagai pesan flash yang
+        # rapi, bukan halaman 500 polos.
+        logger.exception("Unexpected error saat upload IHLD")
+        flash("Terjadi kesalahan tak terduga saat memproses upload. Coba lagi.", "error")
         return redirect(url_for("upload_ihld_page"))
-
-    try:
-        inserted = ihld_db_service.bulk_insert_ihld(rows)
-    except Exception as e:
-        logger.exception("Gagal menyimpan data IHLD ke database")
-        flash(f"Gagal menyimpan data ke database: {e}", "error")
-        return redirect(url_for("upload_ihld_page"))
-
-    flash(f"Berhasil mengunggah {inserted} baris data IHLD.", "success")
-    return redirect(url_for("upload_ihld_page"))
 
 
 # ── MITRA ──
