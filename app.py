@@ -15,6 +15,7 @@ import sheets_service
 import auth_service
 import hem_db_service
 import master_db_service
+import ihld_db_service
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
@@ -152,12 +153,20 @@ def handle_unexpected_error(e):
     frontend (fetch gagal parse HTML sebagai JSON). Untuk /api/*, selalu
     balas JSON supaya frontend selalu bisa menampilkan pesan yang jelas.
     Route non-/api/* (halaman biasa) tetap pakai halaman error default
-    Flask/Werkzeug seperti sebelumnya."""
+    Flask/Werkzeug seperti sebelumnya -- PENTING: untuk itu handler ini
+    harus me-*return* HTTPException apa adanya (mis. 404/403), BUKAN
+    me-raise ulang -- raise di dalam errorhandler membuat Werkzeug gagal
+    render halaman error aslinya dan malah jatuh ke 500 generik, jadi
+    404 murni (route belum ada) pun tampak seperti "Internal Server
+    Error" yang membingungkan."""
+    from werkzeug.exceptions import HTTPException
     if request.path.startswith("/api/"):
-        from werkzeug.exceptions import HTTPException
         status = e.code if isinstance(e, HTTPException) else 500
         logger.exception("Unhandled error on %s", request.path)
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), status
+    if isinstance(e, HTTPException):
+        return e
+    logger.exception("Unhandled error on %s", request.path)
     raise e
 
 
@@ -205,6 +214,81 @@ def master_data_page():
         user=user,
         role_label=auth_service.ROLE_LABELS.get(user["role"], user["role"]),
     )
+
+
+UPLOAD_IHLD_PER_PAGE = 10
+UPLOAD_IHLD_ALLOWED_EXT = {"xlsx", "csv"}
+
+
+@app.route("/upload-ihld")
+def upload_ihld_page():
+    """Halaman list + search + upload data IHLD (batch 10 baris/halaman).
+    Sumber data: tabel lop_regional di Postgres (lihat ihld_db_service.py)."""
+    q = (request.args.get("q") or "").strip()
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+
+    try:
+        result = ihld_db_service.list_ihld(search=q, page=page, per_page=UPLOAD_IHLD_PER_PAGE)
+    except Exception:
+        logger.exception("Gagal mengambil data IHLD (halaman /upload-ihld)")
+        flash("Gagal memuat data IHLD dari database. Coba lagi sebentar lagi.", "error")
+        result = {"items": [], "page": 1, "total_pages": 1, "total_count": 0}
+
+    return render_template(
+        "upload_ihld.html",
+        items=result["items"],
+        search_query=q,
+        page=result["page"],
+        per_page=UPLOAD_IHLD_PER_PAGE,
+        total_pages=result["total_pages"],
+        total_count=result["total_count"],
+    )
+
+
+@app.route("/upload-ihld/import", methods=["POST"])
+def upload_ihld_import():
+    if is_viewer():
+        flash("Akun Anda hanya memiliki akses lihat saja (view only).", "error")
+        return redirect(url_for("upload_ihld_page"))
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        flash("Tidak ada file yang dipilih.", "error")
+        return redirect(url_for("upload_ihld_page"))
+
+    filename = secure_filename(file.filename)
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in UPLOAD_IHLD_ALLOWED_EXT:
+        flash("Format file tidak didukung. Gunakan .xlsx atau .csv.", "error")
+        return redirect(url_for("upload_ihld_page"))
+
+    try:
+        if ext == "csv":
+            rows = ihld_db_service.parse_ihld_csv(file.stream)
+        else:
+            wb = openpyxl.load_workbook(BytesIO(file.read()), data_only=True)
+            rows = ihld_db_service.parse_ihld_worksheet(wb.active)
+    except Exception as e:
+        logger.exception("Gagal membaca file upload IHLD")
+        flash(f"File tidak valid / gagal dibaca: {e}", "error")
+        return redirect(url_for("upload_ihld_page"))
+
+    if not rows:
+        flash("Tidak ada baris data yang bisa diimpor dari file ini.", "error")
+        return redirect(url_for("upload_ihld_page"))
+
+    try:
+        inserted = ihld_db_service.bulk_insert_ihld(rows)
+    except Exception as e:
+        logger.exception("Gagal menyimpan data IHLD ke database")
+        flash(f"Gagal menyimpan data ke database: {e}", "error")
+        return redirect(url_for("upload_ihld_page"))
+
+    flash(f"Berhasil mengunggah {inserted} baris data IHLD.", "success")
+    return redirect(url_for("upload_ihld_page"))
 
 
 # ── MITRA ──
