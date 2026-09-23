@@ -111,6 +111,38 @@ def _require_developer_json():
     return None
 
 
+def project_feature_allowed(project_code, feature_key):
+    """True kalau fitur ini boleh dipakai untuk project_code tsb.
+    DEFAULT AMAN: kalau project_code belum ada row-nya sama sekali di
+    tabel `projects` (belum pernah diisi lewat tab Project di
+    /master-data), dianggap BOLEH -- supaya fitur ini tidak mendadak
+    mengunci semua orang sebelum tabel projects diisi lengkap. Begitu
+    row-nya sudah ada, nilai centang yang menentukan. Kalau DB MASTER
+    lagi bermasalah, juga dianggap BOLEH (jangan sampai fitur utama ikut
+    mati gara-gara DB referensi down)."""
+    try:
+        flags = master_db_service.get_project_flags(project_code)
+    except Exception:
+        logger.exception("Gagal cek project_feature_allowed untuk %s/%s", project_code, feature_key)
+        return True
+    if flags is None:
+        return True
+    return bool(flags.get(feature_key))
+
+
+def require_project_feature(project_code, feature_key, feature_label):
+    """Kalau fitur belum diaktifkan, return response 403 (JSON kalau
+    request-nya ke /api/..., teks biasa kalau bukan) -- panggil ini di
+    baris pertama view function, kalau hasilnya bukan None langsung
+    `return` hasilnya."""
+    if not project_feature_allowed(project_code, feature_key):
+        msg = f"Fitur '{feature_label}' untuk project {project_code} belum diaktifkan developer (lihat tab Project di /master-data)."
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "error": msg}), 403
+        return msg, 403
+    return None
+
+
 @app.errorhandler(Exception)
 def handle_unexpected_error(e):
     """Jaring pengaman terakhir: kalau ADA route /api/* yang lolos tanpa
@@ -521,11 +553,15 @@ def api_md_users_delete(nik):
 
 @app.route("/pt3")
 def pt3_dashboard():
+    err = require_project_feature("PT3", "dashboard_enabled", "Dashboard")
+    if err: return err
     return render_template("PT3.html")
 
 
 @app.route("/api/search")
 def api_search():
+    err = require_project_feature("PT3", "search_enabled", "Search")
+    if err: return err
     q = request.args.get("q", "")
     try:
         results = sheets_service.search_rows(q)
@@ -596,6 +632,8 @@ def api_row_detail(row_num):
 def api_row_update(row_num):
     if is_viewer():
         return viewer_blocked_json()
+    err = require_project_feature("PT3", "update_enabled", "Update")
+    if err: return err
     payload = request.get_json(silent=True) or {}
     z_value = (payload.get("status_z") or "").strip()
     aa_value = (payload.get("status_aa") or "").strip()
@@ -652,6 +690,8 @@ def api_row_document_upload(row_num, doc_key):
     validasinya di sisi JS supaya user dikasih tahu sebelum upload jalan."""
     if is_viewer():
         return viewer_blocked_json()
+    err = require_project_feature("PT3", "update_enabled", "Update")
+    if err: return err
     if doc_key not in config.DOCUMENT_TYPES:
         return jsonify({"ok": False, "error": "Jenis dokumen tidak dikenal."}), 400
 
@@ -734,6 +774,8 @@ def api_row_kml_upload(row_num):
     file per LOP (tidak menimpa yang lama)."""
     if is_viewer():
         return viewer_blocked_json()
+    err = require_project_feature("PT3", "update_enabled", "Update")
+    if err: return err
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"ok": False, "error": "File belum dipilih."}), 400
@@ -780,6 +822,8 @@ def api_row_boq_upload(row_num):
     menimpa yang lama)."""
     if is_viewer():
         return viewer_blocked_json()
+    err = require_project_feature("PT3", "update_enabled", "Update")
+    if err: return err
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"ok": False, "error": "File belum dipilih."}), 400
@@ -850,6 +894,8 @@ def api_pt3_import():
     baris lainnya -- lihat hasil per baris di response `results`."""
     if is_viewer():
         return viewer_blocked_json()
+    err = require_project_feature("PT3", "update_enabled", "Update")
+    if err: return err
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"ok": False, "error": "File belum dipilih."}), 400
@@ -867,6 +913,8 @@ def hem_input_page():
     """Halaman "Input Data Semesta" (form manual / upload Excel-CSV /
     generate SQL) -- lihat templates/hem.html. Datanya masuk ke tabel
     Postgres data_semesta lewat /api/hem/insert di bawah."""
+    err = require_project_feature("HEM", "create_enabled", "Create")
+    if err: return err
     return render_template("hem.html")
 
 
@@ -879,6 +927,8 @@ def api_hem_insert():
     saveRowsDirectly())."""
     if is_viewer():
         return viewer_blocked_json()
+    err = require_project_feature("HEM", "create_enabled", "Create")
+    if err: return err
     payload = request.get_json(silent=True) or {}
     rows = payload.get("rows") or []
     try:
@@ -902,6 +952,8 @@ def api_hem_insert_ihld():
     hem_db_service.py."""
     if is_viewer():
         return viewer_blocked_json()
+    err = require_project_feature("HEM", "create_enabled", "Create")
+    if err: return err
     payload = request.get_json(silent=True) or {}
     rows = payload.get("rows") or []
     try:
@@ -927,6 +979,8 @@ def hem_dashboard_page():
     """Dashboard "Data Semesta" (data_semesta, Postgres) -- lihat
     templates/hem_dashboard.html. Data & filter diambil lewat
     /api/hem-dashboard, export lewat /api/hem-export."""
+    err = require_project_feature("HEM", "dashboard_enabled", "Dashboard")
+    if err: return err
     return render_template("hem_dashboard.html")
 
 
@@ -985,6 +1039,8 @@ def api_pending_updates():
 
 @app.route("/pt2")
 def pt2_page():
+    err = require_project_feature("PT2", "dashboard_enabled", "Dashboard")
+    if err: return err
     return render_template("pt2.html")
 
 
@@ -999,6 +1055,8 @@ def api_pt2_dashboard():
 
 @app.route("/fbb")
 def fbb_page():
+    err = require_project_feature("FBB", "dashboard_enabled", "Dashboard")
+    if err: return err
     return render_template("fbb.html")
 
 
@@ -1008,6 +1066,8 @@ def fbb_laporan_page():
     tombol 'Buat Laporan' di halaman FBB. Semua data diambil lewat
     /api/fbb-data dan /api/fbb-summary yang sudah ada, jadi tidak perlu
     fungsi baru di sheets_service.py."""
+    err = require_project_feature("FBB", "dashboard_enabled", "Dashboard")
+    if err: return err
     return render_template("Laporan fbb.html")
 
 
@@ -1032,6 +1092,8 @@ def api_fbb_summary():
 
 @app.route("/aging")
 def aging_page():
+    err = require_project_feature("FBB", "dashboard_enabled", "Dashboard")
+    if err: return err
     return render_template("aging.html")
 
 
@@ -1043,6 +1105,10 @@ def mbb_olo_page():
     sama (lihat get_mbb_rows/get_olo_rows di sheets_service.py), bukan
     lagi CSV export publik dari browser. Tampilan ditentukan lewat
     ?view=... dari link menu MBB/OLO di sidebar (mis. /mbb-olo?view=mbb-newinfra)."""
+    view = (request.args.get("view") or "").lower()
+    project_code = "OLO" if view.startswith("olo") else "MBB"
+    err = require_project_feature(project_code, "dashboard_enabled", "Dashboard")
+    if err: return err
     return render_template("mbb-olo.html")
 
 
@@ -1125,6 +1191,9 @@ def do_update(row_num):
     # ini tetap ditolak walau request-nya tidak lewat form di browser.
     if is_viewer():
         flash("Akun Anda hanya memiliki akses lihat saja (view only) -- tidak bisa melakukan update.", "error")
+        return redirect(url_for("update_form", row_num=row_num))
+    if not project_feature_allowed("PT3", "update_enabled"):
+        flash("Fitur Update untuk project PT3 belum diaktifkan developer (lihat tab Project di /master-data).", "error")
         return redirect(url_for("update_form", row_num=row_num))
 
     z_value = request.form.get("status_z", "").strip()

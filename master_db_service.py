@@ -208,6 +208,25 @@ def add_project(project_code, flags):
         conn.close()
 
 
+def get_project_flags(project_code):
+    """Flag untuk 1 project_code, atau None kalau project itu belum ada
+    row-nya sama sekali di tabel projects (dipakai app.py buat mutuskan
+    default aman: belum diisi = jangan diblokir)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT " + ", ".join(_PROJECT_FLAG_KEYS) + " FROM projects WHERE project_code=%s",
+                (project_code,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return dict(zip(_PROJECT_FLAG_KEYS, row))
+    finally:
+        conn.close()
+
+
 def update_project(project_code, flags):
     values = [bool((flags or {}).get(k)) for k in _PROJECT_FLAG_KEYS]
     conn = get_connection()
