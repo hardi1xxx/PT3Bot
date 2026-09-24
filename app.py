@@ -293,13 +293,17 @@ def upload_ihld_import():
             return redirect(url_for("upload_ihld_page"))
 
         try:
-            inserted = ihld_db_service.bulk_insert_ihld(rows)
+            result = ihld_db_service.bulk_upsert_ihld(rows)
         except Exception as e:
             logger.exception("Gagal menyimpan data IHLD ke database")
             flash(f"Gagal menyimpan data ke database: {e}", "error")
             return redirect(url_for("upload_ihld_page"))
 
-        flash(f"Berhasil mengunggah {inserted} baris data IHLD.", "success")
+        msg = f"Selesai: {result['written']} baris disimpan (baru/diperbarui)"
+        if result["skipped_same"]:
+            msg += f", {result['skipped_same']} baris dilewati (data sama persis)"
+        msg += f" dari total {result['total']} baris di file."
+        flash(msg, "success")
         return redirect(url_for("upload_ihld_page"))
 
     except Exception:

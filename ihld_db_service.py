@@ -6,29 +6,21 @@ Modul akses data untuk halaman /upload-ihld (list + search + pagination
 / hem_db_service.py di project ini: app.py cukup memanggil fungsi di
 modul ini dan membungkusnya dengan try/except sendiri.
 
-PENTING -- sesuaikan get_connection() di bawah ini:
-Saya belum punya isi master_db_service.py / hem_db_service.py kamu,
-jadi fungsi get_connection() di sini pakai psycopg2 + env var
-DATABASE_URL (konvensi umum Railway Postgres). Kalau master_db_service.py
-kamu punya cara koneksi sendiri (mis. connection pool, nama env var
-beda, atau pakai SQLAlchemy), ganti isi get_connection() supaya SATU
-sumber koneksi yang dipakai semua modul -- idealnya import & pakai
-langsung helper koneksi yang sudah ada di master_db_service.py,
-misalnya:
-
-    from master_db_service import get_connection
-
-lalu hapus fungsi get_connection() versi di bawah ini.
+Koneksi database: pakai env var DATABASE_URL, yang di Railway sudah
+otomatis mengarah ke service Postgres terpisah "Upload IHLD" (lihat
+project Railway kamu -- beda dari MASTER_DATABASE_URL yang dipakai
+master_db_service.py). Dibaca langsung dari os.environ (bukan lewat
+config.py) supaya tidak tergantung nama atribut di config.py.
 """
 
 import csv
 import io
 import math
+import os
 
 import psycopg2
 import psycopg2.extras
 
-import config
 
 # Tabel sumber data -- ini tabel yang dibuat lewat lop_regional.sql
 # sebelumnya. Ganti nama tabelnya di sini kalau nama aslinya berbeda.
@@ -59,9 +51,13 @@ NUMERIC_COLUMNS = {
 
 
 def get_connection():
-    # TODO: samakan dengan cara koneksi yang dipakai master_db_service.py
-    # kalau berbeda dari ini (lihat catatan di docstring atas file).
-    return psycopg2.connect(config.DATABASE_URL)
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError(
+            "Environment variable DATABASE_URL tidak ditemukan. "
+            "Cek tab Variables di service 'web' pada project Railway."
+        )
+    return psycopg2.connect(database_url)
 
 
 def _normalize_header(name):
@@ -88,7 +84,16 @@ def _clean_value(col, value):
 
 def parse_ihld_worksheet(ws):
     """Baca sheet openpyxl aktif -> list of dict, kolom sudah dinormalisasi
-    & dicocokkan ke IMPORT_COLUMNS. Baris pertama dianggap header."""
+    & dicocokkan ke IMPORT_COLUMNS. Baris pertama dianggap header.
+
+    Berhenti otomatis setelah menemukan banyak baris kosong berturut-turut
+    (MAX_CONSECUTIVE_EMPTY) -- ini jaga-jaga terhadap file Excel yang
+    punya "phantom rows" (baris kosong tapi ter-format sampai ratusan
+    ribu baris), yang kalau tidak dibatasi bisa membuat upload jadi
+    sangat lambat / timeout."""
+    MAX_CONSECUTIVE_EMPTY = 30
+    MAX_ROWS = 50_000  # batas wajar jumlah baris data per upload
+
     rows_iter = ws.iter_rows(values_only=True)
     try:
         header_row = next(rows_iter)
@@ -101,14 +106,22 @@ def parse_ihld_worksheet(ws):
         raise ValueError("Header kolom di file tidak ada yang cocok dengan format IHLD yang diharapkan.")
 
     results = []
+    consecutive_empty = 0
     for raw_row in rows_iter:
         if raw_row is None or all(v in (None, "") for v in raw_row):
+            consecutive_empty += 1
+            if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                break
             continue
+        consecutive_empty = 0
+
         record = {}
         for col, idx in col_index.items():
             record[col] = _clean_value(col, raw_row[idx] if idx < len(raw_row) else None)
         if any(v is not None for v in record.values()):
             results.append(record)
+            if len(results) >= MAX_ROWS:
+                break
     return results
 
 
@@ -141,32 +154,76 @@ def parse_ihld_csv(file_stream):
             record[col] = _clean_value(col, raw_row[idx] if idx < len(raw_row) else None)
         if any(v is not None for v in record.values()):
             results.append(record)
+            if len(results) >= 50_000:
+                break
     return results
 
 
-def bulk_insert_ihld(rows):
-    """rows: list of dict (key = nama kolom di IMPORT_COLUMNS). Insert
-    semua baris sekaligus, kolom yang tidak diisi jadi NULL."""
+def bulk_upsert_ihld(rows, page_size=1000):
+    """rows: list of dict (key = nama kolom di IMPORT_COLUMNS).
+
+    Upsert cepat berdasar ihld_lop_id (butuh unique partial index --
+    lihat migration_unique_ihld_lop_id.sql):
+      - ihld_lop_id BELUM ada di tabel  -> insert baris baru
+      - ihld_lop_id SUDAH ada, data BEDA -> baris lama diganti (UPDATE)
+      - ihld_lop_id SUDAH ada, data SAMA PERSIS -> dilewati, tidak disentuh
+      - ihld_lop_id kosong/NULL -> selalu insert sebagai baris baru
+        (tidak ada ID buat dibandingkan)
+
+    Pakai execute_values (bukan execute_batch satu-satu) supaya ribuan
+    baris tetap terkirim dalam beberapa statement besar saja -- jauh
+    lebih cepat dan tidak gampang kena request timeout.
+
+    Return dict: {"total", "written", "skipped_same"}.
+    """
     if not rows:
-        return 0
+        return {"total": 0, "written": 0, "skipped_same": 0}
 
     cols = sorted({c for r in rows for c in r.keys()})
-    cols_sql = ", ".join(cols)
-    placeholders = ", ".join(["%s"] * len(cols))
-    insert_sql = f"INSERT INTO {TABLE_NAME} ({cols_sql}) VALUES ({placeholders})"
+    if "ihld_lop_id" not in cols:
+        cols.append("ihld_lop_id")
+        cols.sort()
+
+    update_cols = [c for c in cols if c != "ihld_lop_id"]
+    col_list_sql = ", ".join(cols)
+
+    if update_cols:
+        set_sql = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+        old_tuple_sql = ", ".join(f"{TABLE_NAME}.{c}" for c in update_cols)
+        new_tuple_sql = ", ".join(f"EXCLUDED.{c}" for c in update_cols)
+        conflict_action_sql = (
+            f"DO UPDATE SET {set_sql} "
+            f"WHERE ({old_tuple_sql}) IS DISTINCT FROM ({new_tuple_sql})"
+        )
+    else:
+        # Cuma ada kolom ihld_lop_id, tidak ada kolom lain untuk dibandingkan.
+        conflict_action_sql = "DO NOTHING"
+
+    insert_sql = f"""
+        INSERT INTO {TABLE_NAME} ({col_list_sql})
+        VALUES %s
+        ON CONFLICT (ihld_lop_id) WHERE ihld_lop_id IS NOT NULL
+        {conflict_action_sql}
+        RETURNING 1
+    """
     values = [tuple(r.get(c) for c in cols) for r in rows]
 
     conn = get_connection()
     try:
         cur = conn.cursor()
-        psycopg2.extras.execute_batch(cur, insert_sql, values)
+        written_rows = psycopg2.extras.execute_values(
+            cur, insert_sql, values, page_size=page_size, fetch=True
+        )
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-    return len(values)
+
+    total = len(values)
+    written = len(written_rows)
+    return {"total": total, "written": written, "skipped_same": total - written}
 
 
 def list_ihld(search="", page=1, per_page=10):
