@@ -1,29 +1,36 @@
 """
 ihld_db_service.py
 
-Modul akses data untuk halaman /upload-ihld (list + search + pagination
-+ import xlsx/csv), mengikuti pola yang sama dengan master_db_service.py
-/ hem_db_service.py di project ini: app.py cukup memanggil fungsi di
-modul ini dan membungkusnya dengan try/except sendiri.
+Modul akses data untuk halaman /upload-ihld: list + search + pagination,
+dan import xlsx/csv untuk dataset BESAR (ratusan ribu baris, akan terus
+bertambah).
 
-Koneksi database: pakai env var DATABASE_URL, yang di Railway sudah
-otomatis mengarah ke service Postgres terpisah "Upload IHLD" (lihat
-project Railway kamu -- beda dari MASTER_DATABASE_URL yang dipakai
-master_db_service.py). Dibaca langsung dari os.environ (bukan lewat
-config.py) supaya tidak tergantung nama atribut di config.py.
+Desain import (PENTING -- ini yang menghindari server "tidak kuat"):
+  1. app.py HANYA menyimpan file upload ke disk (streaming, cepat, tidak
+     menahan banyak RAM) lalu langsung balas ke browser.
+  2. Proses baca + simpan ke database jalan di THREAD BACKGROUND terpisah
+     (lihat run_import_job()), dibaca & di-upsert per BATCH (default 5000
+     baris) -- jadi RAM yang dipakai selalu kecil & konstan, tidak peduli
+     filenya 50 ribu atau 5 juta baris.
+  3. Progres tiap job dicatat di tabel ihld_import_jobs (lihat
+     migration_import_jobs_table.sql) supaya halaman /upload-ihld bisa
+     menampilkan status (menunggu/diproses/selesai/gagal) tanpa perlu
+     browser menunggu di request yang sama.
+
+Koneksi database: pakai env var DATABASE_URL (Postgres "Upload IHLD" di
+Railway, terpisah dari MASTER_DATABASE_URL yang dipakai master_db_service.py).
 """
 
 import csv
-import io
 import math
 import os
 
+import openpyxl
 import psycopg2
 import psycopg2.extras
 
 
-# Tabel sumber data -- ini tabel yang dibuat lewat lop_regional.sql
-# sebelumnya. Ganti nama tabelnya di sini kalau nama aslinya berbeda.
+# Tabel sumber data -- dibuat lewat lop_regional.sql.
 TABLE_NAME = "lop_regional"
 
 # Kolom yang diterima dari file upload (header di file akan dinormalisasi
@@ -48,6 +55,13 @@ NUMERIC_COLUMNS = {
     "total_boq", "capex_per_port", "tahun_program", "odp_plan", "odp_real",
     "total_port", "nilai_po", "nilai_gr", "nilai_ir",
 }
+
+IMPORT_BATCH_SIZE = 5000
+
+# Berhenti membaca setelah baris kosong berturut-turut sebanyak ini --
+# jaga-jaga file Excel dengan "phantom rows" (baris kosong ter-format
+# sampai jutaan baris) supaya tidak membaca selamanya.
+MAX_CONSECUTIVE_EMPTY = 30
 
 
 def get_connection():
@@ -82,30 +96,31 @@ def _clean_value(col, value):
     return text
 
 
-def parse_ihld_worksheet(ws):
-    """Baca sheet openpyxl aktif -> list of dict, kolom sudah dinormalisasi
-    & dicocokkan ke IMPORT_COLUMNS. Baris pertama dianggap header.
-
-    Berhenti otomatis setelah menemukan banyak baris kosong berturut-turut
-    (MAX_CONSECUTIVE_EMPTY) -- ini jaga-jaga terhadap file Excel yang
-    punya "phantom rows" (baris kosong tapi ter-format sampai ratusan
-    ribu baris), yang kalau tidak dibatasi bisa membuat upload jadi
-    sangat lambat / timeout."""
-    MAX_CONSECUTIVE_EMPTY = 30
-    MAX_ROWS = 50_000  # batas wajar jumlah baris data per upload
-
-    rows_iter = ws.iter_rows(values_only=True)
-    try:
-        header_row = next(rows_iter)
-    except StopIteration:
-        return []
-
+def _build_col_index(header_row):
     headers = [_normalize_header(h) for h in header_row]
     col_index = {h: i for i, h in enumerate(headers) if h in IMPORT_COLUMNS}
     if not col_index:
         raise ValueError("Header kolom di file tidak ada yang cocok dengan format IHLD yang diharapkan.")
+    return col_index
 
-    results = []
+
+def _row_to_record(col_index, raw_row):
+    record = {}
+    for col, idx in col_index.items():
+        record[col] = _clean_value(col, raw_row[idx] if idx < len(raw_row) else None)
+    return record if any(v is not None for v in record.values()) else None
+
+
+def iter_ihld_records_from_worksheet(ws):
+    """Generator -- baca sheet openpyxl (read_only) baris demi baris,
+    TIDAK menumpuk semuanya di memori sekaligus."""
+    rows_iter = ws.iter_rows(values_only=True)
+    try:
+        header_row = next(rows_iter)
+    except StopIteration:
+        return
+    col_index = _build_col_index(header_row)
+
     consecutive_empty = 0
     for raw_row in rows_iter:
         if raw_row is None or all(v in (None, "") for v in raw_row):
@@ -114,65 +129,54 @@ def parse_ihld_worksheet(ws):
                 break
             continue
         consecutive_empty = 0
-
-        record = {}
-        for col, idx in col_index.items():
-            record[col] = _clean_value(col, raw_row[idx] if idx < len(raw_row) else None)
-        if any(v is not None for v in record.values()):
-            results.append(record)
-            if len(results) >= MAX_ROWS:
-                break
-    return results
+        record = _row_to_record(col_index, raw_row)
+        if record is not None:
+            yield record
 
 
-def parse_ihld_csv(file_stream):
-    """Baca file .csv (delimiter otomatis dideteksi antara ',' dan ';')
-    -> list of dict, sama seperti parse_ihld_worksheet()."""
-    raw = file_stream.read()
-    text = raw.decode("utf-8-sig") if isinstance(raw, bytes) else raw
+def iter_ihld_records_from_csv_path(path):
+    """Generator -- baca file .csv langsung dari path baris demi baris
+    (delimiter otomatis dideteksi antara ',' dan ';'), tanpa memuat
+    seluruh isi file ke memori sekaligus."""
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        sample = f.read(4096)
+        f.seek(0)
+        delimiter = ";" if sample.count(";") >= sample.count(",") else ","
+        reader = csv.reader(f, delimiter=delimiter)
 
-    sample = text[:2048]
-    delimiter = ";" if sample.count(";") >= sample.count(",") else ","
-    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+        try:
+            header_row = next(reader)
+        except StopIteration:
+            return
+        col_index = _build_col_index(header_row)
 
+        for raw_row in reader:
+            if not raw_row or all((v or "").strip() == "" for v in raw_row):
+                continue
+            record = _row_to_record(col_index, raw_row)
+            if record is not None:
+                yield record
+
+
+def iter_ihld_records_from_xlsx_path(path):
+    """Generator -- buka file .xlsx dari path (mode read_only, hemat
+    memori) dan yield record baris demi baris."""
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     try:
-        header_row = next(reader)
-    except StopIteration:
-        return []
-
-    headers = [_normalize_header(h) for h in header_row]
-    col_index = {h: i for i, h in enumerate(headers) if h in IMPORT_COLUMNS}
-    if not col_index:
-        raise ValueError("Header kolom di file tidak ada yang cocok dengan format IHLD yang diharapkan.")
-
-    results = []
-    for raw_row in reader:
-        if not raw_row or all((v or "").strip() == "" for v in raw_row):
-            continue
-        record = {}
-        for col, idx in col_index.items():
-            record[col] = _clean_value(col, raw_row[idx] if idx < len(raw_row) else None)
-        if any(v is not None for v in record.values()):
-            results.append(record)
-            if len(results) >= 50_000:
-                break
-    return results
+        yield from iter_ihld_records_from_worksheet(wb.active)
+    finally:
+        wb.close()
 
 
 def bulk_upsert_ihld(rows, page_size=1000):
     """rows: list of dict (key = nama kolom di IMPORT_COLUMNS).
 
-    Upsert cepat berdasar ihld_lop_id (butuh unique partial index --
-    lihat migration_unique_ihld_lop_id.sql):
-      - ihld_lop_id BELUM ada di tabel  -> insert baris baru
+    Upsert berdasar ihld_lop_id (butuh unique partial index -- lihat
+    migration_unique_ihld_lop_id.sql):
+      - ihld_lop_id BELUM ada di tabel   -> insert baris baru
       - ihld_lop_id SUDAH ada, data BEDA -> baris lama diganti (UPDATE)
-      - ihld_lop_id SUDAH ada, data SAMA PERSIS -> dilewati, tidak disentuh
+      - ihld_lop_id SUDAH ada, SAMA PERSIS -> dilewati, tidak disentuh
       - ihld_lop_id kosong/NULL -> selalu insert sebagai baris baru
-        (tidak ada ID buat dibandingkan)
-
-    Pakai execute_values (bukan execute_batch satu-satu) supaya ribuan
-    baris tetap terkirim dalam beberapa statement besar saja -- jauh
-    lebih cepat dan tidak gampang kena request timeout.
 
     Return dict: {"total", "written", "skipped_same"}.
     """
@@ -196,7 +200,6 @@ def bulk_upsert_ihld(rows, page_size=1000):
             f"WHERE ({old_tuple_sql}) IS DISTINCT FROM ({new_tuple_sql})"
         )
     else:
-        # Cuma ada kolom ihld_lop_id, tidak ada kolom lain untuk dibandingkan.
         conflict_action_sql = "DO NOTHING"
 
     insert_sql = f"""
@@ -224,6 +227,106 @@ def bulk_upsert_ihld(rows, page_size=1000):
     total = len(values)
     written = len(written_rows)
     return {"total": total, "written": written, "skipped_same": total - written}
+
+
+# ── Job tracking (tabel ihld_import_jobs) ──────────────────────────────
+
+def create_import_job(filename):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO ihld_import_jobs (filename, status) VALUES (%s, 'queued') RETURNING id",
+            (filename,),
+        )
+        job_id = cur.fetchone()[0]
+        conn.commit()
+    finally:
+        conn.close()
+    return job_id
+
+
+def update_import_job(job_id, **fields):
+    if not fields:
+        return
+    set_sql = ", ".join(f"{k} = %s" for k in fields)
+    values = list(fields.values()) + [job_id]
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"UPDATE ihld_import_jobs SET {set_sql} WHERE id = %s", values)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_recent_import_jobs(limit=5):
+    conn = get_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            """
+            SELECT id, filename, status, total_rows, processed_rows,
+                   written_rows, skipped_rows, error_message,
+                   created_at, updated_at
+            FROM ihld_import_jobs
+            ORDER BY id DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def run_import_job(job_id, file_path, ext, batch_size=IMPORT_BATCH_SIZE):
+    """Dipanggil di THREAD BACKGROUND (lihat app.py) -- baca file dari
+    disk baris demi baris, upsert per batch, update progres job setelah
+    tiap batch. File sumber dihapus di akhir (berhasil maupun gagal)."""
+    update_import_job(job_id, status="processing")
+    total = written = skipped = 0
+    try:
+        record_iter = (
+            iter_ihld_records_from_csv_path(file_path)
+            if ext == "csv"
+            else iter_ihld_records_from_xlsx_path(file_path)
+        )
+
+        batch = []
+        for record in record_iter:
+            batch.append(record)
+            if len(batch) >= batch_size:
+                result = bulk_upsert_ihld(batch)
+                total += result["total"]
+                written += result["written"]
+                skipped += result["skipped_same"]
+                batch = []
+                update_import_job(
+                    job_id, processed_rows=total, written_rows=written, skipped_rows=skipped,
+                )
+
+        if batch:
+            result = bulk_upsert_ihld(batch)
+            total += result["total"]
+            written += result["written"]
+            skipped += result["skipped_same"]
+
+        update_import_job(
+            job_id,
+            status="done",
+            total_rows=total,
+            processed_rows=total,
+            written_rows=written,
+            skipped_rows=skipped,
+        )
+    except Exception as e:
+        update_import_job(job_id, status="error", error_message=f"{type(e).__name__}: {e}")
+    finally:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
 
 
 def list_ihld(search="", page=1, per_page=10):

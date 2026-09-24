@@ -4,6 +4,8 @@ import datetime
 import threading
 import functools
 import logging
+import os
+import uuid
 from io import BytesIO
 
 import openpyxl
@@ -219,7 +221,8 @@ def master_data_page():
 
 UPLOAD_IHLD_PER_PAGE = 10
 UPLOAD_IHLD_ALLOWED_EXT = {"xlsx", "csv"}
-UPLOAD_IHLD_MAX_BYTES = 10 * 1024 * 1024
+UPLOAD_IHLD_MAX_BYTES = 200 * 1024 * 1024  # 200MB -- aman untuk file ratusan ribu baris
+UPLOAD_IHLD_TMP_DIR = "/tmp/ihld_uploads"
 
 
 @app.route("/upload-ihld")
@@ -240,6 +243,12 @@ def upload_ihld_page():
         flash("Gagal memuat data IHLD dari database. Coba lagi sebentar lagi.", "error")
         result = {"items": [], "page": 1, "total_pages": 1, "total_count": 0}
 
+    try:
+        import_jobs = ihld_db_service.get_recent_import_jobs(limit=5)
+    except Exception:
+        logger.exception("Gagal mengambil riwayat import IHLD")
+        import_jobs = []
+
     return render_template(
         "upload_ihld.html",
         items=result["items"],
@@ -248,11 +257,19 @@ def upload_ihld_page():
         per_page=UPLOAD_IHLD_PER_PAGE,
         total_pages=result["total_pages"],
         total_count=result["total_count"],
+        import_jobs=import_jobs,
     )
 
 
 @app.route("/upload-ihld/import", methods=["POST"])
 def upload_ihld_import():
+    """Upload file IHLD (xlsx/csv) -- BISA sangat besar (ratusan ribu
+    baris, akan terus bertambah). Supaya server tidak kehabisan
+    memori/timeout, endpoint ini HANYA menyimpan file ke disk (cepat,
+    streaming) lalu memproses isinya di THREAD BACKGROUND terpisah
+    (lihat ihld_db_service.run_import_job) -- response langsung
+    dibalas, progresnya dipantau lewat panel "Riwayat Upload" di
+    halaman /upload-ihld (tabel ihld_import_jobs)."""
     try:
         if is_viewer():
             flash("Akun Anda hanya memiliki akses lihat saja (view only).", "error")
@@ -269,48 +286,39 @@ def upload_ihld_import():
             flash("Format file tidak didukung. Gunakan .xlsx atau .csv.", "error")
             return redirect(url_for("upload_ihld_page"))
 
-        # Guard ukuran file (maks 10MB) supaya file yang kebesaran gagal
-        # cepat dengan pesan jelas, bukan menggantung lama lalu crash
-        # (request timeout) -- lihat catatan di ihld_db_service.py.
         if request.content_length and request.content_length > UPLOAD_IHLD_MAX_BYTES:
-            flash("Ukuran file melebihi 10MB.", "error")
+            flash(f"Ukuran file melebihi {UPLOAD_IHLD_MAX_BYTES // (1024 * 1024)}MB.", "error")
             return redirect(url_for("upload_ihld_page"))
+
+        os.makedirs(UPLOAD_IHLD_TMP_DIR, exist_ok=True)
+        saved_path = os.path.join(UPLOAD_IHLD_TMP_DIR, f"{uuid.uuid4().hex}.{ext}")
+        # file.save() menulis ke disk secara streaming (chunk demi chunk),
+        # BUKAN memuat seluruh file ke RAM sekaligus -- aman untuk file besar.
+        file.save(saved_path)
 
         try:
-            if ext == "csv":
-                rows = ihld_db_service.parse_ihld_csv(file.stream)
-            else:
-                wb = openpyxl.load_workbook(BytesIO(file.read()), data_only=True, read_only=True)
-                rows = ihld_db_service.parse_ihld_worksheet(wb.active)
-                wb.close()
+            job_id = ihld_db_service.create_import_job(filename)
         except Exception as e:
-            logger.exception("Gagal membaca file upload IHLD")
-            flash(f"File tidak valid / gagal dibaca: {e}", "error")
+            logger.exception("Gagal membuat job import IHLD")
+            flash(f"Gagal memulai proses upload: {e}", "error")
             return redirect(url_for("upload_ihld_page"))
 
-        if not rows:
-            flash("Tidak ada baris data yang bisa diimpor dari file ini.", "error")
-            return redirect(url_for("upload_ihld_page"))
+        threading.Thread(
+            target=ihld_db_service.run_import_job,
+            args=(job_id, saved_path, ext),
+            daemon=True,
+        ).start()
 
-        try:
-            result = ihld_db_service.bulk_upsert_ihld(rows)
-        except Exception as e:
-            logger.exception("Gagal menyimpan data IHLD ke database")
-            flash(f"Gagal menyimpan data ke database: {e}", "error")
-            return redirect(url_for("upload_ihld_page"))
-
-        msg = f"Selesai: {result['written']} baris disimpan (baru/diperbarui)"
-        if result["skipped_same"]:
-            msg += f", {result['skipped_same']} baris dilewati (data sama persis)"
-        msg += f" dari total {result['total']} baris di file."
-        flash(msg, "success")
+        flash(
+            f"File '{filename}' diterima dan sedang diproses di background (job #{job_id}). "
+            "Refresh halaman ini beberapa saat lagi untuk melihat progres & hasilnya -- "
+            "file besar bisa makan waktu beberapa menit.",
+            "success",
+        )
         return redirect(url_for("upload_ihld_page"))
 
     except Exception:
-        # Jaring pengaman terakhir: apa pun yang lolos dari try/except di
-        # atas (bug tak terduga) tetap berakhir sebagai pesan flash yang
-        # rapi, bukan halaman 500 polos.
-        logger.exception("Unexpected error saat upload IHLD")
+        logger.exception("Unexpected error saat memulai upload IHLD")
         flash("Terjadi kesalahan tak terduga saat memproses upload. Coba lagi.", "error")
         return redirect(url_for("upload_ihld_page"))
 

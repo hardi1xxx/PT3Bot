@@ -217,7 +217,66 @@
     margin-top: 8px;
     display: none;
   }
+  .upl-jobs-panel { margin-bottom: 18px; }
+  .upl-jobs-panel-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 700;
+    font-size: 0.82rem;
+  }
 </style>
+
+<!-- Auto-refresh halaman ini kalau masih ada job yang diproses/menunggu,
+     supaya progres upload besar (ratusan ribu baris) terlihat tanpa perlu
+     klik refresh manual. -->
+{% set _active_jobs = (import_jobs|default([])) | selectattr('status', 'in', ['queued', 'processing']) | list %}
+{% if _active_jobs %}
+<meta http-equiv="refresh" content="10">
+{% endif %}
+
+{% if import_jobs %}
+<div class="upl-panel upl-jobs-panel">
+  <div class="upl-jobs-panel-head">Riwayat Upload Terbaru</div>
+  <div class="upl-table-wrap">
+    <table class="upl-table" style="min-width: 680px;">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Status</th>
+          <th>Baris Diproses</th>
+          <th>Disimpan</th>
+          <th>Dilewati (sama persis)</th>
+          <th>Diperbarui</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in import_jobs %}
+        <tr>
+          <td>{{ job.filename }}</td>
+          <td>
+            {% if job.status == 'done' %}
+              <span class="upl-status-chip" style="background:#dcfce7;color:#16a34a;">Selesai</span>
+            {% elif job.status == 'error' %}
+              <span class="upl-status-chip" style="background:#fee2e2;color:#dc2626;" title="{{ job.error_message or '' }}">Gagal</span>
+            {% elif job.status == 'processing' %}
+              <span class="upl-status-chip" style="background:#fef3c7;color:#b45309;">Diproses...</span>
+            {% else %}
+              <span class="upl-status-chip">Menunggu</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ job.processed_rows or 0 }}{% if job.status == 'done' and job.total_rows %} / {{ job.total_rows }}{% endif %}
+          </td>
+          <td>{{ job.written_rows or 0 }}</td>
+          <td>{{ job.skipped_rows or 0 }}</td>
+          <td>{{ job.updated_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <div class="upl-toolbar">
   <form class="upl-search-form" method="get" action="/upload-ihld">
