@@ -1844,6 +1844,7 @@ def get_fbb_data():
         "odp_golive": _col_to_index(config.COL_SEMESTA_ODP_GOLIVE) - 1,
         "keterangan": _col_to_index(config.COL_SEMESTA_KETERANGAN) - 1,
         "potensi": _col_to_index(config.COL_SEMESTA_POTENSI) - 1,
+        "prioritas": _col_to_index(config.COL_SEMESTA_PRIORITAS) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW_SEMESTA - 1:]
@@ -1905,6 +1906,7 @@ def get_fbb_data():
             "odp_golive": cell("odp_golive"),
             "keterangan": cell("keterangan"),
             "potensi": cell("potensi"),
+            "prioritas": cell("prioritas"),
         })
 
     return {
@@ -2233,7 +2235,7 @@ def get_pt2_dashboard_data():
         "final_port": _col_to_index(config.COL_PT2_FINAL_PORT) - 1,
         "tgl_close_wo": _col_to_index(config.COL_PT2_TGL_CLOSE_WO) - 1,
         "progress_h1": _col_to_index(config.COL_PT2_PROGRESS_H1) - 1,
-        "progress_h1": _col_to_index(config.COL_PT2_PROGRESS_H1) - 1,
+        "prioritas": _col_to_index(config.COL_PT2_PRIORITAS) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW_PT2 - 1:]
@@ -2285,6 +2287,7 @@ def get_pt2_dashboard_data():
             "odp_golive": cell("odp_golive"),
             "tgl_close_wo_formatted": tgl_close_wo_date.strftime("%d/%m/%Y") if tgl_close_wo_date else tgl_close_wo_raw,
             "status_h1": _match_pt2_status(cell("progress_h1")),
+            "prioritas": cell("prioritas"),  # kolom AS -- tabel "Monitoring Order Prioritas" PT2, khusus awalan "P1"
             "tgl_close_wo_iso": tgl_close_wo_date.isoformat() if tgl_close_wo_date else None,
             "is_golive_today": is_golive_today,
             "is_golive_month": is_golive_month,

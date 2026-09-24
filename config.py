@@ -421,6 +421,7 @@ COL_SEMESTA_BRANCH = "G"
 COL_SEMESTA_REGIONAL = "H"      # BANTEN / JAKARTA / Eastern Jabotabek / Jabar / dst
 COL_SEMESTA_STATUS_LOP = "I"    # posisi aktual di sheet
 COL_SEMESTA_POTENSI = "W"       # baru: isian "P1 AUG", "P2 SEP", dst
+COL_SEMESTA_PRIORITAS = "X"     # Order Priority ("P1" dst) -- tabel "Monitoring Order Prioritas" FBB
 COL_SEMESTA_FINAL_PORT = "J"
 COL_SEMESTA_TGL_FI = "K"
 COL_SEMESTA_TGL_GOLIVE = "L"
@@ -491,6 +492,7 @@ COL_PT2_FINAL_PORT = "AC"
 COL_PT2_TGL_CLOSE_WO = "AE"
 COL_PT2_PROGRESS_H1 = "AH"  # snapshot status per baris di H-1 (kemarin)
 COL_PT2_PROGRESS_H1 = "AH"      # status LOP versi kemarin (H-1), buat baris pembanding di tabel
+COL_PT2_PRIORITAS = "AS"        # Order Priority ("P1" dst) -- tabel "Monitoring Order Prioritas" PT2
 
 # Urutan status LOP persis seperti dikonfirmasi (loncat dari 3 ke 5 memang disengaja).
 PT2_STATUSES = ["0.DROP", "0.KENDALA", "1.DESIGN", "2.APPROVAL", "3.OGP DEPLOY", "5.GOLIVE"]

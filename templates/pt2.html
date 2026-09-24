@@ -122,6 +122,17 @@
   <div class="pivot-table-wrap" id="pt2ProgressPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
 </div>
 
+<!-- Monitoring Order Prioritas (kolom AS, awalan "P1") -->
+<div class="section-title">
+  Monitoring Order Prioritas
+  <span class="hint">kolom AS, khusus yang berawalan "P1"</span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="pt2PriorityTableWrap" style="max-height:420px; overflow-y:auto;">
+    <div class="skeleton">Memuat data...</div>
+  </div>
+</div>
+
 <!-- Pencarian Data -->
 <div class="section-title">Pencarian Data</div>
 <div class="card" style="margin-bottom:22px;">
@@ -1334,11 +1345,38 @@ document.getElementById('pt2FilterClearAllBtn').addEventListener('click', () => 
 });
 
 // ── Load ─────────────────────────────────────────────────────────────
+// ── Monitoring Order Prioritas (kolom AS, field `prioritas`, khusus yang
+// berawalan "P1") ──────────────────────────────────────────────────────
+function pt2RenderPriorityTable(data) {
+  const el = document.getElementById('pt2PriorityTableWrap');
+  const rows = data.rows.filter(r => (r.prioritas || '').trim().toUpperCase().startsWith('P1'));
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">Tidak ada order prioritas P1 saat ini.</div>'; return; }
+
+  let html = '<table class="pt2-pivot"><thead><tr>';
+  ['IHLD', 'Lokasi', 'Batch', 'Branch', 'Status', 'Prioritas'].forEach((h, i) => {
+    html += `<th${i < 4 ? ' style="text-align:left;"' : ''}>${pt2Esc(h)}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+  rows.forEach(r => {
+    html += `<tr>
+      <td style="text-align:left;">${pt2Esc(r.ihld) || '-'}</td>
+      <td style="text-align:left;">${pt2Esc(r.lokasi) || '-'}</td>
+      <td style="text-align:left;">${pt2Esc(r.batch) || '-'}</td>
+      <td style="text-align:left;">${pt2Esc(r.branch) || '-'}</td>
+      <td><span class="badge status">${pt2Esc(r.status || r.status_raw) || '-'}</span></td>
+      <td><span class="badge priority-order" style="background:#fef2f2; color:#b91c1c; border:1px solid #fca5a5; font-weight:800;">&#9888; ${pt2Esc(r.prioritas)}</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
 function pt2RenderDashboardBody() {
   if (!pt2Cache) return;
   pt2RenderPivotTable(pt2Cache);
   pt2RenderBatchPivotTable(pt2Cache);
   pt2RenderProgressPivotTable(pt2Cache);
+  pt2RenderPriorityTable(pt2Cache);
   pt2RenderKendala(pt2Cache);
   pt2RenderNotif(pt2Cache);
   pt2RenderTrendChart();
