@@ -359,7 +359,7 @@ def list_ihld(search="", page=1, per_page=10):
 
         cur.execute(
             f"""
-            SELECT nama_proyek, ihld_lop_id, regional, witel,
+            SELECT id, nama_proyek, ihld_lop_id, regional, witel,
                    status_order, status_proyek, tahun_program,
                    diperbarui_pada
             FROM {TABLE_NAME}
@@ -379,3 +379,17 @@ def list_ihld(search="", page=1, per_page=10):
         "total_pages": total_pages,
         "total_count": total_count,
     }
+
+
+def get_ihld_detail(row_id):
+    """Ambil SEMUA kolom untuk satu baris (dipakai panel detail saat
+    baris di klik di halaman /upload-ihld). Return dict, atau None kalau
+    id tidak ditemukan."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(f"SELECT * FROM {TABLE_NAME} WHERE id = %s", (row_id,))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None

@@ -323,6 +323,20 @@ def upload_ihld_import():
         return redirect(url_for("upload_ihld_page"))
 
 
+@app.route("/api/upload-ihld/<int:row_id>")
+def api_upload_ihld_detail(row_id):
+    """Detail lengkap 1 baris IHLD (semua kolom) -- dipanggil lewat fetch()
+    dari JS saat baris di tabel /upload-ihld di klik."""
+    try:
+        detail = ihld_db_service.get_ihld_detail(row_id)
+    except Exception as e:
+        logger.exception("Gagal mengambil detail IHLD id=%s", row_id)
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    if not detail:
+        return jsonify({"ok": False, "error": "Data tidak ditemukan."}), 404
+    return jsonify({"ok": True, "data": detail})
+
+
 # ── MITRA ──
 @app.route("/api/master-data/mitra")
 def api_md_mitra_list():

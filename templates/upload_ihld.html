@@ -224,6 +224,56 @@
     font-weight: 700;
     font-size: 0.82rem;
   }
+
+  /* Baris tabel yang bisa diklik untuk lihat detail */
+  .upl-row-clickable { cursor: pointer; }
+  .upl-row-clickable:hover td { background: var(--brand-blue-2); }
+
+  /* Modal detail lokasi */
+  .upl-detail-box {
+    max-width: 720px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .upl-detail-section + .upl-detail-section {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .upl-detail-section-title {
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--brand-blue);
+    margin-bottom: 10px;
+  }
+  .upl-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px 18px;
+  }
+  .upl-detail-field dt {
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    margin-bottom: 2px;
+  }
+  .upl-detail-field dd {
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--text);
+    word-break: break-word;
+  }
+  .upl-detail-loading, .upl-detail-error {
+    padding: 30px 10px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+  .upl-detail-error { color: #dc2626; }
 </style>
 
 <!-- Auto-refresh halaman ini kalau masih ada job yang diproses/menunggu,
@@ -312,7 +362,7 @@
       </thead>
       <tbody>
         {% for row in items|default([]) %}
-        <tr>
+        <tr class="upl-row-clickable" data-row-id="{{ row.id }}">
           <td>{{ loop.index + ((page|default(1) - 1) * (per_page|default(10))) }}</td>
           <td>{{ row.nama_proyek|default('-') }}</td>
           <td>{{ row.ihld_lop_id|default('-') }}</td>
@@ -365,6 +415,20 @@
         class="upl-page-btn {% if cur_page >= last_page %}disabled{% endif %}"
         href="/upload-ihld?q={{ search_query|default('') }}&page={{ cur_page + 1 }}"
       >&#8250;</a>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Detail Lokasi -->
+<div class="upl-modal-overlay" id="uplDetailOverlay">
+  <div class="upl-modal-box upl-detail-box">
+    <div class="upl-modal-title" id="uplDetailTitle">Detail Lokasi</div>
+    <p class="upl-modal-sub" id="uplDetailSub">iHLD LoP ID: -</p>
+    <div id="uplDetailBody">
+      <div class="upl-detail-loading">Memuat detail...</div>
+    </div>
+    <div class="upl-modal-actions">
+      <button type="button" class="upl-btn upl-btn-ghost" id="uplDetailCloseBtn">Tutup</button>
     </div>
   </div>
 </div>
@@ -460,6 +524,159 @@
     // form akan submit normal ke /upload-ihld/import (backend Flask
     // yang memproses file & redirect kembali ke halaman ini)
   });
+})();
+
+// ── Detail lokasi (klik baris tabel) ──────────────────────────────────
+(function () {
+  const overlay = document.getElementById('uplDetailOverlay');
+  const titleEl = document.getElementById('uplDetailTitle');
+  const subEl = document.getElementById('uplDetailSub');
+  const bodyEl = document.getElementById('uplDetailBody');
+  const closeBtn = document.getElementById('uplDetailCloseBtn');
+
+  // Label & pengelompokan kolom, mengikuti urutan header file asli.
+  const SECTIONS = [
+    {
+      title: 'Info Proyek',
+      fields: [
+        ['status_order', 'Status Order'],
+        ['tipe_desain', 'Tipe Desain'],
+        ['nama_proyek', 'Nama Proyek'],
+        ['ihld_lop_id', 'iHLD LoP ID'],
+        ['smart_planning_polygon_id', 'Smart Planning Polygon ID'],
+        ['eproposal_lop_id', 'eProposal LoP ID'],
+        ['eproposal_lop_parent_id', 'eProposal LoP Parent ID'],
+        ['kode_program', 'Kode Program'],
+        ['revenue_plan', 'Revenue Plan'],
+        ['nama_cfu', 'Nama CFU'],
+        ['kategori', 'Kategori'],
+        ['jenis_program', 'Jenis Program'],
+        ['batch_program', 'Batch Program'],
+      ],
+    },
+    {
+      title: 'Lokasi',
+      fields: [
+        ['regional', 'Regional'],
+        ['witel', 'Witel'],
+        ['witel_lama', 'Witel Lama'],
+        ['datel', 'Datel'],
+        ['sto', 'STO'],
+        ['wok', 'WOK'],
+        ['telkomsel_area', 'Telkomsel Area'],
+        ['telkomsel_regional', 'Telkomsel Regional'],
+        ['telkomsel_branch', 'Telkomsel Branch'],
+        ['telkomsel_cluster', 'Telkomsel Cluster'],
+      ],
+    },
+    {
+      title: 'Desain & Kapasitas',
+      fields: [
+        ['durasi_desain', 'Durasi Desain'],
+        ['total_boq', 'Total BOQ'],
+        ['capex_per_port', 'Capex per Port'],
+        ['tahun_program', 'Tahun Program'],
+        ['odp_plan', 'ODP Plan'],
+        ['odp_real', 'Odp Real'],
+        ['alpro_mtel', 'Alpro MTEL'],
+        ['jenis_kebutuhan_olt', 'Jenis Kebutuhan OLT'],
+        ['jenis_kebutuhan_otn', 'Jenis Kebutuhan OTN'],
+        ['site_bts_csf', 'Site BTS CSF'],
+        ['total_port', 'Total Port'],
+      ],
+    },
+    {
+      title: 'Pengadaan (PR/PO/GR/IR)',
+      fields: [
+        ['no_pr', 'No PR'],
+        ['no_po', 'No PO'],
+        ['nilai_po', 'Nilai PO'],
+        ['no_gr', 'No GR'],
+        ['nilai_gr', 'Nilai GR'],
+        ['no_ir', 'No IR'],
+        ['nilai_ir', 'Nilai IR'],
+      ],
+    },
+    {
+      title: 'Status & Progress',
+      fields: [
+        ['status_eproposal', 'Status eProposal'],
+        ['status_tomps', 'Status Tomps'],
+        ['status_tomps_last_activity', 'Status Tomps - Last Activity'],
+        ['status_sap', 'Status SAP'],
+        ['status_proyek', 'Status Proyek'],
+        ['estimasi_go_live', 'Estimasi Go Live'],
+        ['odp_go_live', 'ODP Go Live'],
+      ],
+    },
+    {
+      title: 'Mitra & Lainnya',
+      fields: [
+        ['kategori_mitra', 'Kategori Mitra'],
+        ['nama_mitra', 'Nama Mitra'],
+        ['star_click_id', 'Star Click ID'],
+        ['dibuat_oleh', 'Dibuat Oleh'],
+        ['username_nik_pembuat', 'Username / NIK Pembuat'],
+        ['diperbarui_pada', 'Diperbarui Pada'],
+      ],
+    },
+  ];
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderDetail(data) {
+    let html = '';
+    SECTIONS.forEach((section) => {
+      const rows = section.fields.filter(([key]) => data[key] !== null && data[key] !== undefined && data[key] !== '');
+      if (rows.length === 0) return;
+      html += `<div class="upl-detail-section">`;
+      html += `<div class="upl-detail-section-title">${escapeHtml(section.title)}</div>`;
+      html += `<dl class="upl-detail-grid">`;
+      rows.forEach(([key, label]) => {
+        html += `<div class="upl-detail-field"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(data[key]))}</dd></div>`;
+      });
+      html += `</dl></div>`;
+    });
+    bodyEl.innerHTML = html || '<div class="upl-detail-loading">Tidak ada data tambahan untuk lokasi ini.</div>';
+  }
+
+  function openDetail(rowId) {
+    overlay.classList.add('open');
+    titleEl.textContent = 'Detail Lokasi';
+    subEl.textContent = 'Memuat...';
+    bodyEl.innerHTML = '<div class="upl-detail-loading">Memuat detail...</div>';
+
+    fetch(`/api/upload-ihld/${rowId}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!json.ok) throw new Error(json.error || 'Gagal memuat detail.');
+        const data = json.data;
+        titleEl.textContent = data.nama_proyek || 'Detail Lokasi';
+        subEl.textContent = `iHLD LoP ID: ${data.ihld_lop_id || '-'}`;
+        renderDetail(data);
+      })
+      .catch((err) => {
+        bodyEl.innerHTML = `<div class="upl-detail-error">${escapeHtml(err.message)}</div>`;
+      });
+  }
+
+  function closeDetail() {
+    overlay.classList.remove('open');
+  }
+
+  document.querySelectorAll('.upl-row-clickable').forEach((tr) => {
+    tr.addEventListener('click', () => {
+      const rowId = tr.getAttribute('data-row-id');
+      if (rowId) openDetail(rowId);
+    });
+  });
+
+  closeBtn.addEventListener('click', closeDetail);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetail(); });
 })();
 </script>
 {% endblock %}
