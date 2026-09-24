@@ -2,6 +2,7 @@ import json
 import traceback
 import datetime
 import threading
+import functools
 import logging
 from io import BytesIO
 
@@ -218,12 +219,14 @@ def master_data_page():
 
 UPLOAD_IHLD_PER_PAGE = 10
 UPLOAD_IHLD_ALLOWED_EXT = {"xlsx", "csv"}
+UPLOAD_IHLD_MAX_BYTES = 10 * 1024 * 1024
 
 
 @app.route("/upload-ihld")
 def upload_ihld_page():
     """Halaman list + search + upload data IHLD (batch 10 baris/halaman).
-    Sumber data: tabel lop_regional di Postgres (lihat ihld_db_service.py)."""
+    Sumber data: tabel lop_regional di Postgres (lihat ihld_db_service.py,
+    service Postgres terpisah "Upload IHLD" -- env var DATABASE_URL)."""
     q = (request.args.get("q") or "").strip()
     try:
         page = max(int(request.args.get("page", 1)), 1)
@@ -267,9 +270,9 @@ def upload_ihld_import():
             return redirect(url_for("upload_ihld_page"))
 
         # Guard ukuran file (maks 10MB) supaya file yang kebesaran gagal
-        # cepat dengan pesan jelas, bukan menggantung lama lalu crash.
-        MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-        if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+        # cepat dengan pesan jelas, bukan menggantung lama lalu crash
+        # (request timeout) -- lihat catatan di ihld_db_service.py.
+        if request.content_length and request.content_length > UPLOAD_IHLD_MAX_BYTES:
             flash("Ukuran file melebihi 10MB.", "error")
             return redirect(url_for("upload_ihld_page"))
 
@@ -277,9 +280,7 @@ def upload_ihld_import():
             if ext == "csv":
                 rows = ihld_db_service.parse_ihld_csv(file.stream)
             else:
-                wb = openpyxl.load_workbook(
-                    BytesIO(file.read()), data_only=True, read_only=True
-                )
+                wb = openpyxl.load_workbook(BytesIO(file.read()), data_only=True, read_only=True)
                 rows = ihld_db_service.parse_ihld_worksheet(wb.active)
                 wb.close()
         except Exception as e:
