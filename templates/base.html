@@ -8,12 +8,19 @@
   <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
   <style>
     /* ── Sidebar: bisa disembunyikan + grup menu FBB (kotak berbayang + garis penghubung) ── */
+    .app-shell {
+      align-items: stretch;
+      min-height: 100vh;
+    }
     .sidebar {
       transition: width .22s ease, opacity .18s ease, padding .22s ease;
-      position: relative;
+      position: sticky;
+      top: 0;
+      align-self: flex-start;
       display: flex;
       flex-direction: column;
-      height: 100%;
+      height: 100vh;
+      overflow-y: auto;
     }
     .sidebar nav {
       flex: 1 1 auto;
@@ -196,12 +203,16 @@
       font-weight: 700;
     }
 
-    /* Submenu dengan tag di kanan (dipakai grup "Upload Data") */
+    /* Submenu dengan status icon (dipakai grup "Upload Data") -- label di kiri,
+       ikon status bulat kecil di kanan, biar ringkas dan tidak makan tempat. */
     .menu-subitem-flex {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+    }
+    .menu-subitem-flex > span:first-child {
+      white-space: nowrap;
     }
     .menu-subitem-disabled {
       color: var(--muted, #94a3b8);
@@ -212,13 +223,17 @@
       background: transparent !important;
     }
     .subitem-tag {
-      font-size: 0.6rem;
-      font-weight: 800;
-      letter-spacing: .03em;
-      padding: 2px 7px;
-      border-radius: 999px;
-      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
       flex-shrink: 0;
+    }
+    .subitem-tag svg {
+      width: 12px;
+      height: 12px;
     }
     .subitem-tag.tag-progress {
       background: #fef3c7; color: #b45309; border: 1px solid #fde68a;
@@ -308,15 +323,21 @@
             </span>
             <a href="/upload-ihld" class="menu-item menu-subitem menu-subitem-flex {% block menu_upload_ihld %}{% endblock %}">
               <span>Upload Data IHLD</span>
-              <span class="subitem-tag tag-progress">ON PROGRESS</span>
+              <span class="subitem-tag tag-progress" title="On Progress">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+              </span>
             </a>
-            <span class="menu-item menu-subitem menu-subitem-disabled menu-subitem-flex" title="Segera hadir">
+            <span class="menu-item menu-subitem menu-subitem-disabled menu-subitem-flex" title="Under Construction">
               <span>Upload Data DSI</span>
-              <span class="subitem-tag tag-construction">UNDER CONSTRUCTION</span>
+              <span class="subitem-tag tag-construction" title="Under Construction">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 21h20L12 2z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+              </span>
             </span>
-            <span class="menu-item menu-subitem menu-subitem-disabled menu-subitem-flex" title="Segera hadir">
+            <span class="menu-item menu-subitem menu-subitem-disabled menu-subitem-flex" title="Under Construction">
               <span>Upload Data Lensa Pro</span>
-              <span class="subitem-tag tag-construction">UNDER CONSTRUCTION</span>
+              <span class="subitem-tag tag-construction" title="Under Construction">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 21h20L12 2z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+              </span>
             </span>
           </div>
         </div>
