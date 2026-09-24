@@ -147,6 +147,14 @@
   .card.dev-only:hover { border-color: #7c3aed; border-left-color: #7c3aed; box-shadow: 0 10px 26px rgba(124,58,237,0.14); }
   .card.dev-only .icon { background: #ede9fe; color: #7c3aed; }
 
+  /* Card status "on progress" / maintenance -- dipakai buat "Upload Data IHLD" */
+  .card.maintenance .icon { background: #fef3c7; color: #b45309; }
+  .card.maintenance .status-tag { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+  .card.maintenance:hover { border-color: #f59e0b; border-left-color: #f59e0b; box-shadow: 0 10px 26px rgba(245,158,11,0.14); }
+
+  /* Card status "under construction" -- selaras dengan tag-construction di sidebar */
+  .card.soon.construction .status-tag { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+
   /* ── Partners ─────────────────────────────────────────────────── */
   .partners { text-align: center; padding-top: 26px; border-top: 1px solid var(--border); }
   .partners .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 14px; }
@@ -235,21 +243,30 @@
       {% endif %}
     {% endfor %}
 
-    <a class="card active" href="/upload-ihld">
-      <div class="icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"></path><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path></svg>
-      </div>
-      <div class="label">Upload Data</div>
-      <div class="desc">Unggah &amp; kelola data IHLD, DSI, dan Lensa Pro dari file Excel/CSV.</div>
-      <div class="status-tag">AKTIF</div>
-    </a>
-
     <div class="card soon">
       <div class="icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l6-6M14 10l7-7M14 10l-3 3M14 10l4 4-3 3-4-4M3 21l3-3"></path></svg>
       </div>
       <div class="label">Kolaborasi Data Fallout</div>
       <div class="desc">Integrasi data fallout lintas project.</div>
+      <div class="status-tag">UNDER CONSTRUCTION</div>
+    </div>
+
+    <a class="card active maintenance" href="/upload-ihld">
+      <div class="icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+      </div>
+      <div class="label">Upload Data IHLD</div>
+      <div class="desc">Unggah &amp; kelola data IHLD dari file Excel/CSV.</div>
+      <div class="status-tag">ON PROGRESS</div>
+    </a>
+
+    <div class="card soon construction">
+      <div class="icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 21h20L12 2z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+      </div>
+      <div class="label">Upload Data DSI &amp; Lensa Pro</div>
+      <div class="desc">Unggah data DSI dan Lensa Pro dari file Excel/CSV.</div>
       <div class="status-tag">UNDER CONSTRUCTION</div>
     </div>
 
