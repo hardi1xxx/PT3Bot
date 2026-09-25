@@ -20,6 +20,7 @@ import hem_db_service
 import master_db_service
 import ihld_db_service
 import rilis_order_db_service
+import rilis_order_db_service
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
