@@ -71,7 +71,23 @@ def _get_credentials():
             "Paste the full service-account JSON key content as this variable "
             "in Railway's environment settings."
         )
-    info = json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON)
+    raw_json = config.GOOGLE_SERVICE_ACCOUNT_JSON.strip()
+    try:
+        info = json.loads(raw_json)
+        if isinstance(info, str):
+            info = json.loads(info)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON bukan JSON valid. "
+            "Isi Railway harus berupa isi file service-account JSON asli "
+            "dengan double quote (\"). Jangan gunakan format Python dict, "
+            "single quote, atau placeholder seperti {type: ...}."
+        ) from exc
+    if not isinstance(info, dict) or info.get("type") != "service_account":
+        raise RuntimeError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON harus berisi object service account "
+            "dengan field type=service_account."
+        )
     return Credentials.from_service_account_info(info, scopes=SCOPES)
 
 

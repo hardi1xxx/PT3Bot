@@ -87,8 +87,10 @@ def get_table_name(conn):
         return TABLE_CANDIDATES[0]
     if staging_table_name:
         return TABLE_CANDIDATES[1]
+    database_name = conn.info.dbname
     raise RuntimeError(
-        "Tabel IHLD tidak ditemukan. Database aktif harus memiliki "
+        f"Tabel IHLD tidak ditemukan di database '{database_name}'. "
+        "DATABASE_URL_ihld harus menunjuk service Upload IHLD yang memiliki "
         "public.lop_regional atau public.staging_lop_regional."
     )
 
@@ -256,7 +258,7 @@ def create_import_job(filename):
     try:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO ihld_import_jobs (filename, status) VALUES (%s, 'queued') RETURNING id",
+            "INSERT INTO public.ihld_import_jobs (filename, status) VALUES (%s, 'queued') RETURNING id",
             (filename,),
         )
         job_id = cur.fetchone()[0]
@@ -274,7 +276,7 @@ def update_import_job(job_id, **fields):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(f"UPDATE ihld_import_jobs SET {set_sql} WHERE id = %s", values)
+        cur.execute(f"UPDATE public.ihld_import_jobs SET {set_sql} WHERE id = %s", values)
         conn.commit()
     finally:
         conn.close()
@@ -289,7 +291,7 @@ def get_recent_import_jobs(limit=5):
             SELECT id, filename, status, total_rows, processed_rows,
                    written_rows, skipped_rows, error_message,
                    created_at, updated_at
-            FROM ihld_import_jobs
+            FROM public.ihld_import_jobs
             ORDER BY id DESC
             LIMIT %s
             """,
