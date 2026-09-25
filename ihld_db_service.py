@@ -65,6 +65,28 @@ IMPORT_BATCH_SIZE = 5000
 MAX_CONSECUTIVE_EMPTY = 30
 
 
+def ensure_import_jobs_table(conn):
+    """Create the upload-progress table when the IHLD database is new."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.ihld_import_jobs (
+                id BIGSERIAL PRIMARY KEY,
+                filename TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                total_rows INTEGER,
+                processed_rows INTEGER NOT NULL DEFAULT 0,
+                written_rows INTEGER NOT NULL DEFAULT 0,
+                skipped_rows INTEGER NOT NULL DEFAULT 0,
+                error_message TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+    conn.commit()
+
+
 def get_connection():
     database_url = os.environ.get("DATABASE_URL_ihld") or os.environ.get("DATABASE_URL")
     if not database_url:
@@ -256,6 +278,7 @@ def bulk_upsert_ihld(rows, page_size=1000):
 def create_import_job(filename):
     conn = get_connection()
     try:
+        ensure_import_jobs_table(conn)
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO public.ihld_import_jobs (filename, status) VALUES (%s, 'queued') RETURNING id",
@@ -285,6 +308,7 @@ def update_import_job(job_id, **fields):
 def get_recent_import_jobs(limit=5):
     conn = get_connection()
     try:
+        ensure_import_jobs_table(conn)
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
             """

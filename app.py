@@ -10,6 +10,7 @@ from io import BytesIO
 
 import openpyxl
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response, session, send_file
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 from googleapiclient.errors import HttpError
 
@@ -24,6 +25,7 @@ import rilis_order_db_service
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
+app.config["MAX_CONTENT_LENGTH"] = 210 * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +167,10 @@ def handle_unexpected_error(e):
     404 murni (route belum ada) pun tampak seperti "Internal Server
     Error" yang membingungkan."""
     from werkzeug.exceptions import HTTPException
+    if request.path == "/upload-ihld/import":
+        logger.exception("Unhandled error on %s", request.path)
+        flash(f"Upload IHLD gagal ({type(e).__name__}: {e}).", "error")
+        return redirect(url_for("upload_ihld_page"))
     if request.path.startswith("/api/"):
         status = e.code if isinstance(e, HTTPException) else 500
         logger.exception("Unhandled error on %s", request.path)
@@ -173,6 +179,14 @@ def handle_unexpected_error(e):
         return e
     logger.exception("Unhandled error on %s", request.path)
     raise e
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_upload_too_large(e):
+    if request.path == "/upload-ihld/import":
+        flash("File terlalu besar. Ukuran maksimum upload IHLD adalah 200MB.", "error")
+        return redirect(url_for("upload_ihld_page"))
+    return e
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -272,6 +286,7 @@ def upload_ihld_import():
     (lihat ihld_db_service.run_import_job) -- response langsung
     dibalas, progresnya dipantau lewat panel "Riwayat Upload" di
     halaman /upload-ihld (tabel ihld_import_jobs)."""
+    saved_path = None
     try:
         if is_viewer():
             flash("Akun Anda hanya memiliki akses lihat saja (view only).", "error")
@@ -319,9 +334,14 @@ def upload_ihld_import():
         )
         return redirect(url_for("upload_ihld_page"))
 
-    except Exception:
+    except Exception as e:
         logger.exception("Unexpected error saat memulai upload IHLD")
-        flash("Terjadi kesalahan tak terduga saat memproses upload. Coba lagi.", "error")
+        if saved_path:
+            try:
+                os.remove(saved_path)
+            except OSError:
+                pass
+        flash(f"Upload IHLD gagal ({type(e).__name__}: {e}).", "error")
         return redirect(url_for("upload_ihld_page"))
 
 
