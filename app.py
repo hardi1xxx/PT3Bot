@@ -1570,25 +1570,31 @@ def debug_postgres_check():
             conn = service.get_connection()
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-                    "WHERE table_schema = 'public' AND table_name = %s)",
+                    "SELECT current_database(), current_schema(), current_setting('search_path')"
+                )
+                database_name, schema_name, search_path = cur.fetchone()
+                entry["database"] = database_name
+                entry["current_schema"] = schema_name
+                entry["search_path"] = search_path
+                cur.execute(
+                    "SELECT table_schema, column_name FROM information_schema.columns "
+                    "WHERE table_name = %s ORDER BY table_schema, ordinal_position",
                     (check["table"],),
                 )
-                entry["table_exists"] = cur.fetchone()[0]
+                column_rows = cur.fetchall()
+                entry["table_schemas"] = sorted({row[0] for row in column_rows})
+                entry["table_exists"] = "public" in entry["table_schemas"]
                 if entry["table_exists"]:
-                    cur.execute(
-                        "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_schema = 'public' AND table_name = %s",
-                        (check["table"],),
-                    )
-                    actual_columns = {row[0] for row in cur.fetchall()}
+                    actual_columns = {
+                        row[1] for row in column_rows if row[0] == "public"
+                    }
                     entry["missing_columns"] = [
                         column for column in check["columns"] if column not in actual_columns
                     ]
             entry["ok"] = bool(entry["table_exists"]) and not entry.get("missing_columns")
             if not entry["ok"]:
                 if not entry["table_exists"]:
-                    entry["error"] = f"Tabel public.{check['table']} belum ada di database ini."
+                    entry["error"] = f"Tabel {check['table']} belum ada di database ini."
                 else:
                     entry["error"] = "Kolom wajib belum lengkap: " + ", ".join(entry["missing_columns"])
         except Exception as exc:

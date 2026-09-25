@@ -31,7 +31,7 @@ import psycopg2.extras
 
 
 # Tabel sumber data -- dibuat lewat lop_regional.sql.
-TABLE_NAME = "lop_regional"
+TABLE_NAME = "public.lop_regional"
 
 # Kolom yang diterima dari file upload (header di file akan dinormalisasi
 # lalu dicocokkan ke daftar ini -- kolom lain di file akan diabaikan).
