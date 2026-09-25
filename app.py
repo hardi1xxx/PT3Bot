@@ -1511,17 +1511,20 @@ def healthz():
 def debug_postgres_check():
     """Check both application databases without exposing connection strings."""
     checks = {
-        "ihld": {"env": "DATABASE_URL", "table": "lop_regional"},
-        "rilis_order": {"env": "RILIS_ORDER_DATABASE_URL", "table": "rilis_order"},
+        "ihld": {"envs": ("DATABASE_URL",), "table": "lop_regional"},
+        "rilis_order": {
+            "envs": ("RILIS_ORDER_DATABASE_URL", "DATABASE_URL_rilis_order"),
+            "table": "rilis_order",
+        },
     }
     report = {}
 
     for name, check in checks.items():
-        env_name = check["env"]
-        entry = {"env_set": bool(os.environ.get(env_name)), "table": check["table"]}
+        env_name = next((name for name in check["envs"] if os.environ.get(name)), None)
+        entry = {"env_set": env_name is not None, "env_used": env_name, "table": check["table"]}
         if not entry["env_set"]:
             entry["ok"] = False
-            entry["error"] = f"{env_name} belum di-set di Railway service web."
+            entry["error"] = f"Salah satu variable {', '.join(check['envs'])} harus di-set di Railway service web."
             report[name] = entry
             continue
 

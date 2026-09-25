@@ -15,7 +15,7 @@ import time
 import psycopg2
 from werkzeug.security import generate_password_hash
 
-MASTER_DATABASE_URL = os.environ.get("MASTER_DATABASE_URL")
+MASTER_DATABASE_URL = os.environ.get("MASTER_DATABASE_URL") or os.environ.get("DATABASE_URL_masterdata")
 
 # Role yang berlaku di aplikasi ini. developer/admin/manager selalu bebas
 # akses semua menu (lihat auth_service.can_access_menu); waspang & TIF
