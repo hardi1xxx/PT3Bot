@@ -20,7 +20,6 @@ import hem_db_service
 import master_db_service
 import ihld_db_service
 import rilis_order_db_service
-import rilis_order_db_service
 
 app = Flask(__name__)
 app.secret_key = config.FLASK_SECRET_KEY
@@ -345,6 +344,30 @@ RILIS_ORDER_MAX_BYTES = 200 * 1024 * 1024  # 200MB
 RILIS_ORDER_TMP_DIR = "/tmp/rilis_order_uploads"
 
 
+@app.route("/rilis-order")
+def rilis_order_page():
+    """Halaman list + search + upload data Rilis Order. Duplikat
+    ihld_lop_id tetap ditampilkan (ditandai merah di UI), dan tiap baris
+    dicocokkan ke database IHLD (lop_regional) berdasarkan iHLD LoP ID."""
+    q = (request.args.get("q") or "").strip()
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+
+    try:
+        result = rilis_order_db_service.list_rilis_order(search=q, page=page, per_page=RILIS_ORDER_PER_PAGE)
+    except Exception:
+        logger.exception("Gagal mengambil data Rilis Order")
+        flash("Gagal memuat data Rilis Order dari database. Coba lagi sebentar lagi.", "error")
+        result = {"items": [], "page": 1, "total_pages": 1, "total_count": 0}
+
+    try:
+        uploads = rilis_order_db_service.get_recent_uploads(limit=5)
+    except Exception:
+        logger.exception("Gagal mengambil riwayat upload Rilis Order")
+        uploads = []
+
     return render_template(
         "rilis_order.html",
         items=result["items"],
@@ -422,137 +445,6 @@ def api_rilis_order_detail(row_id):
     if not detail:
         return jsonify({"ok": False, "error": "Data tidak ditemukan."}), 404
     return jsonify({"ok": True, "data": detail})
-
-
-RILIS_ORDER_PER_PAGE = 10
-RILIS_ORDER_ALLOWED_EXT = {"xlsx", "csv"}
-RILIS_ORDER_MAX_BYTES = 50 * 1024 * 1024  # 50MB
-
-
-@app.route("/rilis-order")
-def rilis_order_page():
-    """Halaman Rilis Order: tabel data yang diupload (dengan tanda merah
-    di baris duplikat berdasar iHLD LoP ID), riwayat upload, dan
-    pencocokan live ke database IHLD saat baris diklik."""
-    q = (request.args.get("q") or "").strip()
-    try:
-        page = max(int(request.args.get("page", 1)), 1)
-    except (TypeError, ValueError):
-        page = 1
-
-    try:
-        result = rilis_order_db_service.list_items(search=q, page=page, per_page=RILIS_ORDER_PER_PAGE)
-    except Exception:
-        logger.exception("Gagal mengambil data Rilis Order")
-        flash("Gagal memuat data Rilis Order dari database. Coba lagi sebentar lagi.", "error")
-        result = {"items": [], "page": 1, "total_pages": 1, "total_count": 0}
-
-    # Cocokkan ke database IHLD -- HANYA untuk baris yang tampil di
-    # halaman ini (ringan), bukan seluruh data.
-    ihld_ids = [row["ihld_lop_id"] for row in result["items"] if row.get("ihld_lop_id")]
-    try:
-        ihld_matches = rilis_order_db_service.match_ihld_for_ids(ihld_ids) if ihld_ids else {}
-    except Exception:
-        logger.exception("Gagal mencocokkan data Rilis Order ke database IHLD")
-        ihld_matches = {}
-
-    try:
-        uploads = rilis_order_db_service.list_uploads(limit=10)
-    except Exception:
-        logger.exception("Gagal mengambil riwayat upload Rilis Order")
-        uploads = []
-
-    try:
-        duplicate_count = rilis_order_db_service.count_duplicates()
-    except Exception:
-        logger.exception("Gagal menghitung duplikat Rilis Order")
-        duplicate_count = None
-
-    return render_template(
-        "rilis_order.html",
-        items=result["items"],
-        ihld_matches=ihld_matches,
-        search_query=q,
-        page=result["page"],
-        per_page=RILIS_ORDER_PER_PAGE,
-        total_pages=result["total_pages"],
-        total_count=result["total_count"],
-        uploads=uploads,
-        duplicate_count=duplicate_count,
-    )
-
-
-@app.route("/rilis-order/import", methods=["POST"])
-def rilis_order_import():
-    if is_viewer():
-        flash("Akun Anda hanya memiliki akses lihat saja (view only).", "error")
-        return redirect(url_for("rilis_order_page"))
-
-    file = request.files.get("file")
-    if not file or not file.filename:
-        flash("Tidak ada file yang dipilih.", "error")
-        return redirect(url_for("rilis_order_page"))
-
-    filename = secure_filename(file.filename)
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in RILIS_ORDER_ALLOWED_EXT:
-        flash("Format file tidak didukung. Gunakan .xlsx atau .csv.", "error")
-        return redirect(url_for("rilis_order_page"))
-
-    if request.content_length and request.content_length > RILIS_ORDER_MAX_BYTES:
-        flash(f"Ukuran file melebihi {RILIS_ORDER_MAX_BYTES // (1024 * 1024)}MB.", "error")
-        return redirect(url_for("rilis_order_page"))
-
-    try:
-        if ext == "csv":
-            rows = rilis_order_db_service.parse_rilis_order_csv(file.stream)
-        else:
-            wb = openpyxl.load_workbook(BytesIO(file.read()), data_only=True, read_only=True)
-            rows = list(rilis_order_db_service.iter_rilis_order_worksheet(wb.active))
-            wb.close()
-    except Exception as e:
-        logger.exception("Gagal membaca file Rilis Order")
-        flash(f"File tidak valid / gagal dibaca: {e}", "error")
-        return redirect(url_for("rilis_order_page"))
-
-    if not rows:
-        flash("Tidak ada baris data yang bisa diimpor dari file ini.", "error")
-        return redirect(url_for("rilis_order_page"))
-
-    try:
-        user = session.get("user") or {}
-        uploader = user.get("name") or user.get("nik") or "-"
-        upload_id = rilis_order_db_service.create_upload_with_items(filename, uploader, rows)
-    except Exception as e:
-        logger.exception("Gagal menyimpan data Rilis Order")
-        flash(f"Gagal menyimpan data ke database: {e}", "error")
-        return redirect(url_for("rilis_order_page"))
-
-    flash(f"Berhasil mengunggah {len(rows)} baris Rilis Order (upload #{upload_id}).", "success")
-    return redirect(url_for("rilis_order_page"))
-
-
-@app.route("/api/rilis-order/<int:item_id>")
-def api_rilis_order_detail(item_id):
-    """Detail 1 baris Rilis Order + hasil pencocokan live ke database
-    IHLD (dipanggil lewat fetch() saat baris di tabel diklik)."""
-    try:
-        detail = rilis_order_db_service.get_item_detail(item_id)
-    except Exception as e:
-        logger.exception("Gagal mengambil detail Rilis Order id=%s", item_id)
-        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-    if not detail:
-        return jsonify({"ok": False, "error": "Data tidak ditemukan."}), 404
-
-    ihld_match = None
-    if detail.get("ihld_lop_id"):
-        try:
-            matches = rilis_order_db_service.match_ihld_for_ids([detail["ihld_lop_id"]])
-            ihld_match = matches.get(detail["ihld_lop_id"])
-        except Exception:
-            logger.exception("Gagal mencocokkan detail Rilis Order ke IHLD")
-
-    return jsonify({"ok": True, "data": detail, "ihld_match": ihld_match})
 
 
 # ── MITRA ──
