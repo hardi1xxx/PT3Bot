@@ -173,7 +173,10 @@
     <input type="text" name="q" placeholder="Cari nama proyek, iHLD LoP ID, regional, witel, atau STO..." value="{{ search_query|default('') }}">
     <button type="submit" class="upl-btn upl-btn-ghost">Cari</button>
   </form>
-  <button type="button" class="upl-btn upl-btn-primary" id="uplOpenModalBtn">&#8593; Upload Data</button>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <a class="upl-btn upl-btn-ghost" href="/rilis-order/template" download>&#8595; Download Format</a>
+    <button type="button" class="upl-btn upl-btn-primary" id="uplOpenModalBtn">&#8593; Upload Data</button>
+  </div>
 </div>
 
 <div class="upl-panel">

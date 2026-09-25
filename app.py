@@ -240,9 +240,9 @@ def upload_ihld_page():
 
     try:
         result = ihld_db_service.list_ihld(search=q, page=page, per_page=UPLOAD_IHLD_PER_PAGE)
-    except Exception:
+    except Exception as e:
         logger.exception("Gagal mengambil data IHLD (halaman /upload-ihld)")
-        flash("Gagal memuat data IHLD dari database. Coba lagi sebentar lagi.", "error")
+        flash(f"Gagal memuat data IHLD dari database ({type(e).__name__}: {e}).", "error")
         result = {"items": [], "page": 1, "total_pages": 1, "total_count": 0}
 
     try:
@@ -343,6 +343,34 @@ RILIS_ORDER_PER_PAGE = 10
 RILIS_ORDER_ALLOWED_EXT = {"xlsx", "csv"}
 RILIS_ORDER_MAX_BYTES = 200 * 1024 * 1024  # 200MB
 RILIS_ORDER_TMP_DIR = "/tmp/rilis_order_uploads"
+
+
+@app.route("/rilis-order/template")
+def rilis_order_template():
+    """Download a blank Excel template for Rilis Order uploads."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Rilis Order"
+    ws.append(rilis_order_db_service.IMPORT_COLUMNS)
+    ws.append([
+        "TIF-01", "REGIONAL 1", "REGION A", "WITEL CONTOH", "STO-001",
+        "CONTOH NAMA PROYEK", "IHLD-0001", 10, 24, 1500000, "BATCH-1", 0,
+    ])
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    for column_cells in ws.columns:
+        width = max(len(str(cell.value or "")) for cell in column_cells) + 2
+        ws.column_dimensions[column_cells[0].column_letter].width = min(width, 28)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="format_rilis_order.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.route("/rilis-order")
@@ -1511,10 +1539,18 @@ def healthz():
 def debug_postgres_check():
     """Check both application databases without exposing connection strings."""
     checks = {
-        "ihld": {"envs": ("DATABASE_URL",), "table": "lop_regional"},
+        "ihld": {
+            "envs": ("DATABASE_URL",),
+            "table": "lop_regional",
+            "columns": (
+                "id", "nama_proyek", "ihld_lop_id", "regional", "witel",
+                "status_order", "status_proyek", "tahun_program", "diperbarui_pada",
+            ),
+        },
         "rilis_order": {
             "envs": ("RILIS_ORDER_DATABASE_URL", "DATABASE_URL_rilis_order"),
             "table": "rilis_order",
+            "columns": ("id", "nama_proyek", "ihld_lop_id"),
         },
     }
     report = {}
@@ -1539,9 +1575,22 @@ def debug_postgres_check():
                     (check["table"],),
                 )
                 entry["table_exists"] = cur.fetchone()[0]
-            entry["ok"] = bool(entry["table_exists"])
+                if entry["table_exists"]:
+                    cur.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = %s",
+                        (check["table"],),
+                    )
+                    actual_columns = {row[0] for row in cur.fetchall()}
+                    entry["missing_columns"] = [
+                        column for column in check["columns"] if column not in actual_columns
+                    ]
+            entry["ok"] = bool(entry["table_exists"]) and not entry.get("missing_columns")
             if not entry["ok"]:
-                entry["error"] = f"Tabel public.{check['table']} belum ada di database ini."
+                if not entry["table_exists"]:
+                    entry["error"] = f"Tabel public.{check['table']} belum ada di database ini."
+                else:
+                    entry["error"] = "Kolom wajib belum lengkap: " + ", ".join(entry["missing_columns"])
         except Exception as exc:
             entry["ok"] = False
             entry["error"] = f"{type(exc).__name__}: {exc}"
