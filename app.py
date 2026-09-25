@@ -1507,6 +1507,49 @@ def healthz():
     return {"status": "ok"}
 
 
+@app.route("/debug/postgres-check")
+def debug_postgres_check():
+    """Check both application databases without exposing connection strings."""
+    checks = {
+        "ihld": {"env": "DATABASE_URL", "table": "lop_regional"},
+        "rilis_order": {"env": "RILIS_ORDER_DATABASE_URL", "table": "rilis_order"},
+    }
+    report = {}
+
+    for name, check in checks.items():
+        env_name = check["env"]
+        entry = {"env_set": bool(os.environ.get(env_name)), "table": check["table"]}
+        if not entry["env_set"]:
+            entry["ok"] = False
+            entry["error"] = f"{env_name} belum di-set di Railway service web."
+            report[name] = entry
+            continue
+
+        service = ihld_db_service if name == "ihld" else rilis_order_db_service
+        conn = None
+        try:
+            conn = service.get_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = %s)",
+                    (check["table"],),
+                )
+                entry["table_exists"] = cur.fetchone()[0]
+            entry["ok"] = bool(entry["table_exists"])
+            if not entry["ok"]:
+                entry["error"] = f"Tabel public.{check['table']} belum ada di database ini."
+        except Exception as exc:
+            entry["ok"] = False
+            entry["error"] = f"{type(exc).__name__}: {exc}"
+        finally:
+            if conn is not None:
+                conn.close()
+        report[name] = entry
+
+    return jsonify(report), 200 if all(item["ok"] for item in report.values()) else 500
+
+
 @app.route("/debug/sheet-check")
 def debug_sheet_check():
     """
