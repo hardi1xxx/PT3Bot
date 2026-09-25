@@ -345,30 +345,6 @@ RILIS_ORDER_MAX_BYTES = 200 * 1024 * 1024  # 200MB
 RILIS_ORDER_TMP_DIR = "/tmp/rilis_order_uploads"
 
 
-@app.route("/rilis-order")
-def rilis_order_page():
-    """Halaman list + search + upload data Rilis Order. Duplikat
-    ihld_lop_id tetap ditampilkan (ditandai merah di UI), dan tiap baris
-    dicocokkan ke database IHLD (lop_regional) berdasarkan iHLD LoP ID."""
-    q = (request.args.get("q") or "").strip()
-    try:
-        page = max(int(request.args.get("page", 1)), 1)
-    except (TypeError, ValueError):
-        page = 1
-
-    try:
-        result = rilis_order_db_service.list_rilis_order(search=q, page=page, per_page=RILIS_ORDER_PER_PAGE)
-    except Exception:
-        logger.exception("Gagal mengambil data Rilis Order")
-        flash("Gagal memuat data Rilis Order dari database. Coba lagi sebentar lagi.", "error")
-        result = {"items": [], "page": 1, "total_pages": 1, "total_count": 0}
-
-    try:
-        uploads = rilis_order_db_service.get_recent_uploads(limit=5)
-    except Exception:
-        logger.exception("Gagal mengambil riwayat upload Rilis Order")
-        uploads = []
-
     return render_template(
         "rilis_order.html",
         items=result["items"],
