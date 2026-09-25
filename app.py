@@ -1540,7 +1540,7 @@ def debug_postgres_check():
     """Check both application databases without exposing connection strings."""
     checks = {
         "ihld": {
-            "envs": ("DATABASE_URL",),
+            "envs": ("DATABASE_URL_ihld", "DATABASE_URL"),
             "table": "lop_regional",
             "columns": (
                 "id", "nama_proyek", "ihld_lop_id", "regional", "witel",

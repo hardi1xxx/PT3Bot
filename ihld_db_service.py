@@ -65,10 +65,10 @@ MAX_CONSECUTIVE_EMPTY = 30
 
 
 def get_connection():
-    database_url = os.environ.get("DATABASE_URL")
+    database_url = os.environ.get("DATABASE_URL_ihld") or os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError(
-            "Environment variable DATABASE_URL tidak ditemukan. "
+            "Environment variable DATABASE_URL_ihld atau DATABASE_URL tidak ditemukan. "
             "Cek tab Variables di service 'web' pada project Railway."
         )
     return psycopg2.connect(database_url)
