@@ -32,6 +32,7 @@ import psycopg2.extras
 
 # Tabel sumber data -- dibuat lewat lop_regional.sql.
 TABLE_NAME = "public.lop_regional"
+TABLE_CANDIDATES = ("public.lop_regional", "public.staging_lop_regional")
 
 # Kolom yang diterima dari file upload (header di file akan dinormalisasi
 # lalu dicocokkan ke daftar ini -- kolom lain di file akan diabaikan).
@@ -72,6 +73,24 @@ def get_connection():
             "Cek tab Variables di service 'web' pada project Railway."
         )
     return psycopg2.connect(database_url)
+
+
+def get_table_name(conn):
+    """Return the IHLD table present in the connected database."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT to_regclass(%s), to_regclass(%s)",
+            TABLE_CANDIDATES,
+        )
+        table_name, staging_table_name = cur.fetchone()
+    if table_name:
+        return TABLE_CANDIDATES[0]
+    if staging_table_name:
+        return TABLE_CANDIDATES[1]
+    raise RuntimeError(
+        "Tabel IHLD tidak ditemukan. Database aktif harus memiliki "
+        "public.lop_regional atau public.staging_lop_regional."
+    )
 
 
 def _normalize_header(name):
@@ -188,12 +207,14 @@ def bulk_upsert_ihld(rows, page_size=1000):
         cols.append("ihld_lop_id")
         cols.sort()
 
+    conn = get_connection()
+    table_name = get_table_name(conn)
     update_cols = [c for c in cols if c != "ihld_lop_id"]
     col_list_sql = ", ".join(cols)
 
     if update_cols:
         set_sql = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
-        old_tuple_sql = ", ".join(f"{TABLE_NAME}.{c}" for c in update_cols)
+        old_tuple_sql = ", ".join(f"{table_name}.{c}" for c in update_cols)
         new_tuple_sql = ", ".join(f"EXCLUDED.{c}" for c in update_cols)
         conflict_action_sql = (
             f"DO UPDATE SET {set_sql} "
@@ -203,7 +224,7 @@ def bulk_upsert_ihld(rows, page_size=1000):
         conflict_action_sql = "DO NOTHING"
 
     insert_sql = f"""
-        INSERT INTO {TABLE_NAME} ({col_list_sql})
+        INSERT INTO {table_name} ({col_list_sql})
         VALUES %s
         ON CONFLICT (ihld_lop_id) WHERE ihld_lop_id IS NOT NULL
         {conflict_action_sql}
@@ -211,7 +232,6 @@ def bulk_upsert_ihld(rows, page_size=1000):
     """
     values = [tuple(r.get(c) for c in cols) for r in rows]
 
-    conn = get_connection()
     try:
         cur = conn.cursor()
         written_rows = psycopg2.extras.execute_values(
@@ -349,9 +369,10 @@ def list_ihld(search="", page=1, per_page=10):
 
     conn = get_connection()
     try:
+        table_name = get_table_name(conn)
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        cur.execute(f"SELECT COUNT(*) AS total FROM {TABLE_NAME} {where_sql}", params)
+        cur.execute(f"SELECT COUNT(*) AS total FROM {table_name} {where_sql}", params)
         total_count = cur.fetchone()["total"]
         total_pages = max(math.ceil(total_count / per_page), 1)
         page = min(page, total_pages)
@@ -362,7 +383,7 @@ def list_ihld(search="", page=1, per_page=10):
             SELECT id, nama_proyek, ihld_lop_id, regional, witel,
                    status_order, status_proyek, tahun_program,
                    diperbarui_pada
-            FROM {TABLE_NAME}
+            FROM {table_name}
             {where_sql}
             ORDER BY diperbarui_pada DESC NULLS LAST
             LIMIT %s OFFSET %s
@@ -387,8 +408,9 @@ def get_ihld_detail(row_id):
     id tidak ditemukan."""
     conn = get_connection()
     try:
+        table_name = get_table_name(conn)
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(f"SELECT * FROM {TABLE_NAME} WHERE id = %s", (row_id,))
+        cur.execute(f"SELECT * FROM {table_name} WHERE id = %s", (row_id,))
         row = cur.fetchone()
     finally:
         conn.close()

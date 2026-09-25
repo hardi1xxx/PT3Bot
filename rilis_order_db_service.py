@@ -264,12 +264,13 @@ def match_against_ihld(rilis_order_ids):
     if lop_ids:
         ihld_conn = ihld_db_service.get_connection()
         try:
+            ihld_table = ihld_db_service.get_table_name(ihld_conn)
             icur = ihld_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             icur.execute(
                 f"""
                 SELECT ihld_lop_id, nama_proyek, regional, witel,
                        status_order, status_proyek, tahun_program
-                FROM {ihld_db_service.TABLE_NAME}
+                FROM {ihld_table}
                 WHERE ihld_lop_id = ANY(%s)
                 """,
                 (lop_ids,),

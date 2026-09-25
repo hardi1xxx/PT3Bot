@@ -1541,7 +1541,7 @@ def debug_postgres_check():
     checks = {
         "ihld": {
             "envs": ("DATABASE_URL_ihld", "DATABASE_URL"),
-            "table": "lop_regional",
+            "tables": ("lop_regional", "staging_lop_regional"),
             "columns": (
                 "id", "nama_proyek", "ihld_lop_id", "regional", "witel",
                 "status_order", "status_proyek", "tahun_program", "diperbarui_pada",
@@ -1549,7 +1549,7 @@ def debug_postgres_check():
         },
         "rilis_order": {
             "envs": ("RILIS_ORDER_DATABASE_URL", "DATABASE_URL_rilis_order"),
-            "table": "rilis_order",
+            "tables": ("rilis_order",),
             "columns": ("id", "nama_proyek", "ihld_lop_id"),
         },
     }
@@ -1557,7 +1557,7 @@ def debug_postgres_check():
 
     for name, check in checks.items():
         env_name = next((name for name in check["envs"] if os.environ.get(name)), None)
-        entry = {"env_set": env_name is not None, "env_used": env_name, "table": check["table"]}
+        entry = {"env_set": env_name is not None, "env_used": env_name, "tables": check["tables"]}
         if not entry["env_set"]:
             entry["ok"] = False
             entry["error"] = f"Salah satu variable {', '.join(check['envs'])} harus di-set di Railway service web."
@@ -1577,16 +1577,22 @@ def debug_postgres_check():
                 entry["current_schema"] = schema_name
                 entry["search_path"] = search_path
                 cur.execute(
-                    "SELECT table_schema, column_name FROM information_schema.columns "
-                    "WHERE table_name = %s ORDER BY table_schema, ordinal_position",
-                    (check["table"],),
+                    "SELECT table_schema, table_name, column_name FROM information_schema.columns "
+                    "WHERE table_name = ANY(%s) ORDER BY table_schema, table_name, ordinal_position",
+                    (list(check["tables"]),),
                 )
                 column_rows = cur.fetchall()
-                entry["table_schemas"] = sorted({row[0] for row in column_rows})
-                entry["table_exists"] = "public" in entry["table_schemas"]
+                entry["found_tables"] = sorted({f"{row[0]}.{row[1]}" for row in column_rows})
+                entry["table_exists"] = any(row[0] == "public" for row in column_rows)
                 if entry["table_exists"]:
+                    selected_table = next(
+                        table for table in check["tables"]
+                        if any(row[0] == "public" and row[1] == table for row in column_rows)
+                    )
+                    entry["selected_table"] = f"public.{selected_table}"
                     actual_columns = {
-                        row[1] for row in column_rows if row[0] == "public"
+                        row[2] for row in column_rows
+                        if row[0] == "public" and row[1] == selected_table
                     }
                     entry["missing_columns"] = [
                         column for column in check["columns"] if column not in actual_columns
@@ -1594,7 +1600,7 @@ def debug_postgres_check():
             entry["ok"] = bool(entry["table_exists"]) and not entry.get("missing_columns")
             if not entry["ok"]:
                 if not entry["table_exists"]:
-                    entry["error"] = f"Tabel {check['table']} belum ada di database ini."
+                    entry["error"] = "Tabel IHLD belum ada di database ini."
                 else:
                     entry["error"] = "Kolom wajib belum lengkap: " + ", ".join(entry["missing_columns"])
         except Exception as exc:
