@@ -79,10 +79,19 @@ def ensure_import_jobs_table(conn):
                 written_rows INTEGER NOT NULL DEFAULT 0,
                 skipped_rows INTEGER NOT NULL DEFAULT 0,
                 error_message TEXT,
+                source_file_name TEXT,
+                source_file_mimetype TEXT,
+                source_file_data BYTEA,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
             """
+        )
+        cur.execute(
+            "ALTER TABLE public.ihld_import_jobs "
+            "ADD COLUMN IF NOT EXISTS source_file_name TEXT, "
+            "ADD COLUMN IF NOT EXISTS source_file_mimetype TEXT, "
+            "ADD COLUMN IF NOT EXISTS source_file_data BYTEA"
         )
     conn.commit()
 
@@ -275,14 +284,24 @@ def bulk_upsert_ihld(rows, page_size=1000):
 
 # ── Job tracking (tabel ihld_import_jobs) ──────────────────────────────
 
-def create_import_job(filename):
+def create_import_job(filename, source_file_data=None, source_file_mimetype=None):
     conn = get_connection()
     try:
         ensure_import_jobs_table(conn)
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO public.ihld_import_jobs (filename, status) VALUES (%s, 'queued') RETURNING id",
-            (filename,),
+            """
+            INSERT INTO public.ihld_import_jobs
+                (filename, status, source_file_name, source_file_mimetype, source_file_data)
+            VALUES (%s, 'queued', %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                filename,
+                filename,
+                source_file_mimetype or "application/octet-stream",
+                psycopg2.Binary(source_file_data) if source_file_data else None,
+            ),
         )
         job_id = cur.fetchone()[0]
         conn.commit()
@@ -314,7 +333,8 @@ def get_recent_import_jobs(limit=5):
             """
             SELECT id, filename, status, total_rows, processed_rows,
                    written_rows, skipped_rows, error_message,
-                   created_at, updated_at
+                     created_at, updated_at, source_file_name,
+                     (source_file_data IS NOT NULL) AS has_source_file
             FROM public.ihld_import_jobs
             ORDER BY id DESC
             LIMIT %s
@@ -324,6 +344,24 @@ def get_recent_import_jobs(limit=5):
         return cur.fetchall()
     finally:
         conn.close()
+
+
+def get_import_file(job_id):
+    conn = get_connection()
+    try:
+        ensure_import_jobs_table(conn)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT source_file_name, source_file_mimetype, source_file_data "
+            "FROM public.ihld_import_jobs WHERE id = %s",
+            (job_id,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row or row[2] is None:
+        return None
+    return row[0] or f"ihld-upload-{job_id}", row[1] or "application/octet-stream", bytes(row[2])
 
 
 def run_import_job(job_id, file_path, ext, batch_size=IMPORT_BATCH_SIZE):

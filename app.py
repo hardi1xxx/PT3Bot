@@ -258,12 +258,25 @@ def upload_ihld_page():
         logger.exception("Gagal mengambil data IHLD (halaman /upload-ihld)")
         flash(f"Gagal memuat data IHLD dari database ({type(e).__name__}: {e}).", "error")
         result = {"items": [], "page": 1, "total_pages": 1, "total_count": 0}
+    page = result["page"]
 
     try:
         import_jobs = ihld_db_service.get_recent_import_jobs(limit=5)
     except Exception:
         logger.exception("Gagal mengambil riwayat import IHLD")
         import_jobs = []
+
+    first_pages = list(range(1, min(result["total_pages"], 10) + 1))
+    ten_page_anchors = list(range(20, result["total_pages"] + 1, 10))
+    if page <= 10:
+        selected_anchors = ten_page_anchors[:5]
+        pagination_pages = first_pages + selected_anchors
+    elif page % 10 == 0:
+        selected_anchors = sorted(ten_page_anchors, key=lambda anchor: abs(anchor - page))[:5]
+        pagination_pages = first_pages + sorted(selected_anchors)
+    else:
+        selected_anchors = sorted(ten_page_anchors, key=lambda anchor: abs(anchor - page))[:4]
+        pagination_pages = first_pages + [page] + sorted(selected_anchors)
 
     return render_template(
         "upload_ihld.html",
@@ -273,6 +286,7 @@ def upload_ihld_page():
         per_page=UPLOAD_IHLD_PER_PAGE,
         total_pages=result["total_pages"],
         total_count=result["total_count"],
+        pagination_pages=pagination_pages,
         import_jobs=import_jobs,
     )
 
@@ -314,9 +328,20 @@ def upload_ihld_import():
         file.save(saved_path)
 
         try:
-            job_id = ihld_db_service.create_import_job(filename)
+            with open(saved_path, "rb") as source_file:
+                source_file_data = source_file.read()
+            job_id = ihld_db_service.create_import_job(
+                filename,
+                source_file_data=source_file_data,
+                source_file_mimetype=file.mimetype,
+            )
+            del source_file_data
         except Exception as e:
             logger.exception("Gagal membuat job import IHLD")
+            try:
+                os.remove(saved_path)
+            except OSError:
+                pass
             flash(f"Gagal memulai proses upload: {e}", "error")
             return redirect(url_for("upload_ihld_page"))
 
@@ -345,6 +370,20 @@ def upload_ihld_import():
         return redirect(url_for("upload_ihld_page"))
 
 
+@app.route("/upload-ihld/history/<int:job_id>/download")
+def download_ihld_import_file(job_id):
+    file_info = ihld_db_service.get_import_file(job_id)
+    if not file_info:
+        return "File upload tidak ditemukan di riwayat.", 404
+    filename, mimetype, data = file_info
+    return send_file(
+        BytesIO(data),
+        as_attachment=True,
+        download_name=filename,
+        mimetype=mimetype,
+    )
+
+
 @app.route("/api/upload-ihld/<int:row_id>")
 def api_upload_ihld_detail(row_id):
     """Detail lengkap 1 baris IHLD (semua kolom) -- dipanggil lewat fetch()
@@ -369,20 +408,48 @@ RILIS_ORDER_TMP_DIR = "/tmp/rilis_order_uploads"
 
 @app.route("/rilis-order/template")
 def rilis_order_template():
-    """Download a blank Excel template for Rilis Order uploads."""
+    """Download a guided Excel template matching the current import parser."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Rilis Order"
-    ws.append(rilis_order_db_service.IMPORT_COLUMNS)
+    headers = [
+        "TIF Area", "Regional", "REGION", "Witel", "STO", "Nama Proyek",
+        "iHLD LoP ID", "ODP Plan", "Port Plan", "Total BOQ", "CPP",
+    ]
+    ws.append(headers)
     ws.append([
         "TIF-01", "REGIONAL 1", "REGION A", "WITEL CONTOH", "STO-001",
-        "CONTOH NAMA PROYEK", "IHLD-0001", 10, 24, 1500000, "BATCH-1", 0,
+        "CONTOH NAMA PROYEK", "IHLD-0001", 10, 24, 1500000, 0,
     ])
+    header_fill = openpyxl.styles.PatternFill("solid", fgColor="1C4FC4")
+    header_font = openpyxl.styles.Font(color="FFFFFF", bold=True)
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for cell in ws[2]:
+        cell.fill = openpyxl.styles.PatternFill("solid", fgColor="EAF1FF")
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
     for column_cells in ws.columns:
         width = max(len(str(cell.value or "")) for cell in column_cells) + 2
         ws.column_dimensions[column_cells[0].column_letter].width = min(width, 28)
+
+    guide = wb.create_sheet("Petunjuk")
+    guide.append(["PANDUAN PENGISIAN FORMAT RILIS ORDER"])
+    guide.append(["Isi data pada sheet 'Rilis Order'. Baris pertama adalah header, jangan diubah atau dihapus."])
+    guide.append(["Hapus atau timpa baris contoh berwarna biru muda sebelum mengunggah."])
+    guide.append(["Satu baris Excel mewakili satu data/proyek. Jangan menggabungkan atau menggeser kolom."])
+    guide.append(["ODP Plan, Port Plan, Total BOQ, dan CPP diisi angka. Kolom lain diisi teks."])
+    guide.append(["Jenis Program, Tanggal NDE Rilis, dan Batch diisi pada form upload, bukan sebagai kolom Excel."])
+    guide.append(["Simpan sebagai .xlsx atau .csv. Untuk CSV, gunakan baris pertama sebagai header yang sama."])
+    guide.column_dimensions["A"].width = 110
+    guide.freeze_panes = "A2"
+    for cell in guide[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for row in guide.iter_rows(min_row=2):
+        row[0].alignment = openpyxl.styles.Alignment(wrap_text=True, vertical="top")
+    guide.row_dimensions[2].height = 32
 
     buf = BytesIO()
     wb.save(buf)
@@ -428,6 +495,24 @@ def rilis_order_page():
         total_pages=result["total_pages"],
         total_count=result["total_count"],
         uploads=uploads,
+    )
+
+
+@app.route("/rilis-order/file/<int:upload_id>/<kind>")
+def download_rilis_order_file(upload_id, kind):
+    if kind not in {"excel", "nde"}:
+        return "Jenis file tidak valid.", 404
+    file_info = rilis_order_db_service.get_upload_file(
+        upload_id, "source" if kind == "excel" else "nde"
+    )
+    if not file_info:
+        return "File tidak ditemukan di riwayat upload.", 404
+    filename, mimetype, data = file_info
+    return send_file(
+        BytesIO(data),
+        as_attachment=True,
+        download_name=filename,
+        mimetype=mimetype,
     )
 
 

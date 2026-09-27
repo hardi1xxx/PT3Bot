@@ -295,7 +295,7 @@
 <div class="upl-panel upl-jobs-panel">
   <div class="upl-jobs-panel-head">Riwayat Upload Terbaru</div>
   <div class="upl-table-wrap">
-    <table class="upl-table" style="min-width: 680px;">
+    <table class="upl-table" style="min-width: 760px;">
       <thead>
         <tr>
           <th>File</th>
@@ -303,6 +303,7 @@
           <th>Baris Diproses</th>
           <th>Disimpan</th>
           <th>Dilewati (sama persis)</th>
+          <th>Unduh File</th>
           <th>Diperbarui</th>
         </tr>
       </thead>
@@ -326,6 +327,11 @@
           </td>
           <td>{{ job.written_rows or 0 }}</td>
           <td>{{ job.skipped_rows or 0 }}</td>
+          <td>
+            {% if job.has_source_file %}
+              <a class="upl-btn upl-btn-ghost" href="{{ url_for('download_ihld_import_file', job_id=job.id) }}" style="padding:4px 10px;font-size:0.72rem;">Unduh Excel/CSV</a>
+            {% else %}-{% endif %}
+          </td>
           <td>{{ job.updated_at }}</td>
         </tr>
         {% endfor %}
@@ -411,10 +417,10 @@
         href="/upload-ihld?q={{ search_query|default('') }}&page={{ cur_page - 1 }}"
       >&#8249;</a>
 
-      {% for p in range(1, last_page + 1) %}
+      {% for p in pagination_pages|default(range(1, last_page + 1)) %}
         <a
           class="upl-page-btn {% if p == cur_page %}active{% endif %}"
-          href="/upload-ihld?q={{ search_query|default('') }}&page={{ p }}"
+          href="{{ url_for('upload_ihld_page', q=search_query|default(''), page=p) }}"
         >{{ p }}</a>
       {% endfor %}
 
