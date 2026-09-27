@@ -1,27 +1,23 @@
 """
 rilis_order_db_service.py
 
-Akses data untuk halaman /rilis-order: upload data rilis order (No, TIF
-Area, Regional, REGION, Witel, STO, Nama Proyek, iHLD LoP ID, ODP Plan,
-Port Plan, Total BOQ, Batch, CPP), riwayat upload, dan pencocokan tiap
-baris terhadap data IHLD (database "Upload IHLD", tabel lop_regional)
-berdasarkan iHLD LoP ID.
+Akses data untuk halaman /rilis-order.
+
+Perubahan penting (menyusul permintaan tambahan):
+  - "Jenis Program", "Tanggal NDE Rilis", dan "Batch" TIDAK LAGI dibaca
+    dari kolom Excel -- diinput manual (teks) SEKALI per upload lewat
+    form, lalu otomatis "digabungkan" ke SETIAP baris data Excel yang
+    diupload bersamaan (disalin ke kolom jenis_program/tanggal_nde_rilis/
+    batch di tabel rilis_order untuk tiap baris).
+  - File Excel/CSV asli dan file "Surat NDE" (PDF/gambar) disimpan
+    LANGSUNG DI DATABASE (kolom BYTEA di rilis_order_uploads) -- BUKAN
+    di disk server, karena filesystem container Railway bersifat
+    sementara (hilang tiap redeploy/restart).
 
 Dua database TERPISAH dipakai di sini:
-  - RILIS_ORDER_DATABASE_URL -- database "Rilis Order" sendiri (tabel
-    rilis_order, rilis_order_uploads, rilis_order_ihld_match).
+  - RILIS_ORDER_DATABASE_URL -- database "Rilis Order" sendiri.
   - DATABASE_URL -- database "Upload IHLD" (tabel lop_regional), HANYA
-    dibaca (read-only) untuk pencocokan -- pakai ulang koneksi dari
-    ihld_db_service supaya tidak dobel logic.
-
-PENTING soal duplikat: TIDAK ada upsert/skip di sini seperti tabel
-IHLD -- setiap baris yang diupload SELALU disimpan apa adanya (lihat
-catatan di rilis_order_schema.sql). "Duplikat" (ihld_lop_id yang sama
-muncul lebih dari sekali) dideteksi saat list_rilis_order() dipanggil,
-lewat window function SQL -- baris PERTAMA untuk satu ihld_lop_id
-dianggap normal, baris ke-2/3/dst untuk ihld_lop_id yang sama ditandai
-is_duplicate=True (baru ditandai merah di UI, datanya tetap disimpan
-semua, tidak dihapus).
+    dibaca untuk pencocokan -- pakai ulang koneksi dari ihld_db_service.
 """
 
 import csv
@@ -39,9 +35,11 @@ TABLE = "rilis_order"
 UPLOADS_TABLE = "rilis_order_uploads"
 MATCH_TABLE = "rilis_order_ihld_match"
 
+# "batch" SENGAJA tidak ada di sini lagi -- sekarang input manual per
+# upload (lihat catatan di atas), bukan dibaca dari kolom Excel.
 IMPORT_COLUMNS = [
     "tif_area", "regional", "region", "witel", "sto", "nama_proyek",
-    "ihld_lop_id", "odp_plan", "port_plan", "total_boq", "batch", "cpp",
+    "ihld_lop_id", "odp_plan", "port_plan", "total_boq", "cpp",
 ]
 
 NUMERIC_COLUMNS = {"odp_plan", "port_plan", "total_boq", "cpp"}
@@ -51,18 +49,16 @@ MAX_CONSECUTIVE_EMPTY = 30
 
 
 def get_connection():
-    database_url = os.environ.get("RILIS_ORDER_DATABASE_URL") or os.environ.get("DATABASE_URL_rilis_order")
+    database_url = os.environ.get("RILIS_ORDER_DATABASE_URL")
     if not database_url:
         raise RuntimeError(
-            "Environment variable RILIS_ORDER_DATABASE_URL atau DATABASE_URL_rilis_order tidak ditemukan. "
-            "Cek tab Variables di service 'web' pada project Railway -- "
-            "kalau nama env var untuk database Rilis Order kamu berbeda, "
-            "sesuaikan baris ini."
+            "Environment variable RILIS_ORDER_DATABASE_URL tidak ditemukan. "
+            "Cek tab Variables di service 'web' pada project Railway."
         )
     return psycopg2.connect(database_url)
 
 
-# ── Parsing file upload (sama pola dengan ihld_db_service) ─────────────
+# ── Parsing file upload ─────────────────────────────────────────────────
 
 def _normalize_header(name):
     return str(name or "").strip().lower().replace(" ", "_").replace("/", "_").replace("-", "_")
@@ -93,7 +89,7 @@ def _build_col_index(header_row):
         raise ValueError(
             "Header kolom di file tidak ada yang cocok dengan format Rilis Order "
             "(TIF Area, Regional, REGION, Witel, STO, Nama Proyek, iHLD LoP ID, "
-            "ODP Plan, Port Plan, Total BOQ, Batch, CPP)."
+            "ODP Plan, Port Plan, Total BOQ, CPP)."
         )
     return col_index
 
@@ -155,15 +151,42 @@ def iter_records_from_xlsx_path(path):
         wb.close()
 
 
-# ── Tabel 2: riwayat / status upload ────────────────────────────────────
+# ── Tabel 2: riwayat/status upload + metadata manual + file storage ────
 
-def create_upload(filename):
+def create_upload(
+    filename,
+    jenis_program=None,
+    tanggal_nde_rilis=None,
+    batch=None,
+    source_file_name=None,
+    source_file_mimetype=None,
+    source_file_data=None,
+    nde_file_name=None,
+    nde_file_mimetype=None,
+    nde_file_data=None,
+):
+    """Buat 1 baris riwayat upload. File Excel asli & Surat NDE (kalau
+    ada) langsung disimpan sebagai BYTEA di baris ini juga -- supaya
+    tetap ada meski server redeploy."""
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute(
-            f"INSERT INTO {UPLOADS_TABLE} (filename, status) VALUES (%s, 'queued') RETURNING id",
-            (filename,),
+            f"""
+            INSERT INTO {UPLOADS_TABLE}
+                (filename, status, jenis_program, tanggal_nde_rilis, batch,
+                 source_file_name, source_file_mimetype, source_file_data,
+                 nde_file_name, nde_file_mimetype, nde_file_data)
+            VALUES (%s, 'queued', %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                filename, jenis_program, tanggal_nde_rilis, batch,
+                source_file_name, source_file_mimetype,
+                psycopg2.Binary(source_file_data) if source_file_data else None,
+                nde_file_name, nde_file_mimetype,
+                psycopg2.Binary(nde_file_data) if nde_file_data else None,
+            ),
         )
         upload_id = cur.fetchone()[0]
         conn.commit()
@@ -193,7 +216,10 @@ def get_recent_uploads(limit=5):
         cur.execute(
             f"""
             SELECT id, filename, status, total_rows, processed_rows,
-                   matched_rows, error_message, uploaded_at, updated_at
+                   matched_rows, error_message, uploaded_at, updated_at,
+                   jenis_program, tanggal_nde_rilis, batch,
+                   source_file_name, (source_file_data IS NOT NULL) AS has_source_file,
+                   nde_file_name, (nde_file_data IS NOT NULL) AS has_nde_file
             FROM {UPLOADS_TABLE}
             ORDER BY id DESC
             LIMIT %s
@@ -205,19 +231,53 @@ def get_recent_uploads(limit=5):
         conn.close()
 
 
+def get_upload_file(upload_id, kind):
+    """kind: 'source' (file Excel/CSV asli) atau 'nde' (Surat NDE).
+    Return (filename, mimetype, data_bytes) atau None kalau tidak ada."""
+    name_col, mime_col, data_col = {
+        "source": ("source_file_name", "source_file_mimetype", "source_file_data"),
+        "nde": ("nde_file_name", "nde_file_mimetype", "nde_file_data"),
+    }[kind]
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT {name_col}, {mime_col}, {data_col} FROM {UPLOADS_TABLE} WHERE id = %s",
+            (upload_id,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+
+    if not row or row[2] is None:
+        return None
+    filename, mimetype, data = row
+    return (filename or f"{kind}-{upload_id}", mimetype or "application/octet-stream", bytes(data))
+
+
 # ── Tabel 1: insert data rilis order (SELALU insert, tidak upsert) ─────
 
-def bulk_insert_rilis_order(rows, upload_id, page_size=1000):
+def bulk_insert_rilis_order(rows, upload_id, batch_meta, page_size=1000):
     """Insert semua baris apa adanya (duplikat ihld_lop_id TETAP masuk
-    semua) -- return list of id baris yang baru dibuat, dipakai untuk
-    langsung dicocokkan ke IHLD lewat match_against_ihld()."""
+    semua). batch_meta = dict {jenis_program, tanggal_nde_rilis, batch}
+    -- nilai yang sama disalin ke SETIAP baris ("digabungkan" dengan
+    data Excel). Return list of id baris yang baru dibuat."""
     if not rows:
         return []
 
-    cols = IMPORT_COLUMNS
-    col_list_sql = ", ".join(cols + ["upload_id"])
+    cols = IMPORT_COLUMNS + ["jenis_program", "tanggal_nde_rilis", "batch", "upload_id"]
+    col_list_sql = ", ".join(cols)
     insert_sql = f"INSERT INTO {TABLE} ({col_list_sql}) VALUES %s RETURNING id"
-    values = [tuple(r.get(c) for c in cols) + (upload_id,) for r in rows]
+    values = [
+        tuple(r.get(c) for c in IMPORT_COLUMNS) + (
+            batch_meta.get("jenis_program"),
+            batch_meta.get("tanggal_nde_rilis"),
+            batch_meta.get("batch"),
+            upload_id,
+        )
+        for r in rows
+    ]
 
     conn = get_connection()
     try:
@@ -245,7 +305,6 @@ def match_against_ihld(rilis_order_ids):
     if not rilis_order_ids:
         return 0
 
-    # 1) Ambil ihld_lop_id untuk id-id ini dari database Rilis Order.
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -268,7 +327,7 @@ def match_against_ihld(rilis_order_ids):
                 f"""
                 SELECT ihld_lop_id, nama_proyek, regional, witel,
                        status_order, status_proyek, tahun_program
-                FROM {ihld_table}
+                FROM {ihld_db_service.TABLE_NAME}
                 WHERE ihld_lop_id = ANY(%s)
                 """,
                 (lop_ids,),
@@ -278,7 +337,6 @@ def match_against_ihld(rilis_order_ids):
         finally:
             ihld_conn.close()
 
-    # 3) Susun baris untuk upsert ke rilis_order_ihld_match.
     match_rows = []
     for rid, lop_id in id_to_lop.items():
         ihld = ihld_by_lop.get(lop_id) if lop_id else None
@@ -331,7 +389,7 @@ def match_against_ihld(rilis_order_ids):
 
 # ── Job background: upload -> insert -> cocokkan ke IHLD ───────────────
 
-def run_import_job(upload_id, file_path, ext, batch_size=IMPORT_BATCH_SIZE):
+def run_import_job(upload_id, file_path, ext, batch_meta, batch_size=IMPORT_BATCH_SIZE):
     update_upload(upload_id, status="processing")
     total = matched = 0
     try:
@@ -345,14 +403,14 @@ def run_import_job(upload_id, file_path, ext, batch_size=IMPORT_BATCH_SIZE):
         for record in record_iter:
             batch.append(record)
             if len(batch) >= batch_size:
-                new_ids = bulk_insert_rilis_order(batch, upload_id)
+                new_ids = bulk_insert_rilis_order(batch, upload_id, batch_meta)
                 matched += match_against_ihld(new_ids)
                 total += len(new_ids)
                 batch = []
                 update_upload(upload_id, processed_rows=total, matched_rows=matched)
 
         if batch:
-            new_ids = bulk_insert_rilis_order(batch, upload_id)
+            new_ids = bulk_insert_rilis_order(batch, upload_id, batch_meta)
             matched += match_against_ihld(new_ids)
             total += len(new_ids)
 
@@ -371,10 +429,43 @@ def run_import_job(upload_id, file_path, ext, batch_size=IMPORT_BATCH_SIZE):
 
 # ── List + search + pagination (dengan flag duplikat & info IHLD) ──────
 
+# ── Input manual (teks, 1 baris) -- tergabung ke tabel yang sama ───────
+
+def build_manual_record(form):
+    """form: werkzeug MultiDict (request.form) dari form input manual --
+    key-nya sama persis dengan IMPORT_COLUMNS."""
+    return {col: _clean_value(col, form.get(col)) for col in IMPORT_COLUMNS}
+
+
+def create_manual_entry(record, jenis_program=None, tanggal_nde_rilis=None, batch=None):
+    """Insert 1 baris manual (upload_id NULL -- tidak terkait file
+    apa pun), lalu langsung dicocokkan ke IHLD. Return id baris baru."""
+    cols = IMPORT_COLUMNS + ["jenis_program", "tanggal_nde_rilis", "batch"]
+    col_list_sql = ", ".join(cols)
+    placeholders = ", ".join(["%s"] * len(cols))
+    values = tuple(record.get(c) for c in IMPORT_COLUMNS) + (jenis_program, tanggal_nde_rilis, batch)
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"INSERT INTO {TABLE} ({col_list_sql}) VALUES ({placeholders}) RETURNING id",
+            values,
+        )
+        new_id = cur.fetchone()[0]
+        conn.commit()
+    finally:
+        conn.close()
+
+    try:
+        match_against_ihld([new_id])
+    except Exception:
+        pass  # non-fatal -- baris tetap tersimpan walau pencocokan IHLD gagal
+
+    return new_id
+
+
 def list_rilis_order(search="", page=1, per_page=10):
-    """is_duplicate = True untuk baris ke-2/3/dst yang ihld_lop_id-nya
-    sama dengan baris lain (baris paling lama/id terkecil tetap normal).
-    ditemukan_di_ihld & info IHLD diambil dari rilis_order_ihld_match."""
     search = (search or "").strip()
     page = max(int(page or 1), 1)
 
@@ -387,9 +478,10 @@ def list_rilis_order(search="", page=1, per_page=10):
                OR r.regional ILIKE %s
                OR r.witel ILIKE %s
                OR r.sto ILIKE %s
+               OR r.batch ILIKE %s
         """
         like_q = f"%{search}%"
-        params = [like_q, like_q, like_q, like_q, like_q]
+        params = [like_q] * 6
 
     conn = get_connection()
     try:
@@ -406,7 +498,8 @@ def list_rilis_order(search="", page=1, per_page=10):
             SELECT
                 r.id, r.tif_area, r.regional, r.region, r.witel, r.sto,
                 r.nama_proyek, r.ihld_lop_id, r.odp_plan, r.port_plan,
-                r.total_boq, r.batch, r.cpp, r.created_at,
+                r.total_boq, r.batch, r.cpp, r.jenis_program,
+                r.tanggal_nde_rilis, r.created_at,
                 (ROW_NUMBER() OVER (
                     PARTITION BY r.ihld_lop_id
                     ORDER BY r.id
@@ -443,9 +536,12 @@ def get_rilis_order_detail(row_id):
             SELECT r.*, COALESCE(m.found, false) AS found_in_ihld,
                    m.ihld_nama_proyek, m.ihld_regional, m.ihld_witel,
                    m.ihld_status_order, m.ihld_status_proyek,
-                   m.ihld_tahun_program, m.checked_at
+                   m.ihld_tahun_program, m.checked_at,
+                   u.source_file_name, (u.source_file_data IS NOT NULL) AS has_source_file,
+                   u.nde_file_name, (u.nde_file_data IS NOT NULL) AS has_nde_file
             FROM {TABLE} r
             LEFT JOIN {MATCH_TABLE} m ON m.rilis_order_id = r.id
+            LEFT JOIN {UPLOADS_TABLE} u ON u.id = r.upload_id
             WHERE r.id = %s
             """,
             (row_id,),

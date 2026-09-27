@@ -121,6 +121,14 @@
   .upl-detail-field dd { margin: 0; font-size: 0.86rem; font-weight: 600; color: var(--text); word-break: break-word; }
   .upl-detail-loading, .upl-detail-error { padding: 30px 10px; text-align: center; color: var(--muted); font-size: 0.88rem; }
   .upl-detail-error { color: #dc2626; }
+
+  .upl-form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .upl-form-field { display: flex; flex-direction: column; gap: 4px; }
+  .upl-form-field label { font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+  .upl-form-field input {
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.84rem; outline: none;
+  }
+  .upl-form-field input:focus { border-color: var(--brand-blue); box-shadow: 0 0 0 3px rgba(47,111,237,0.12); }
 </style>
 
 {% set _active_uploads = (uploads|default([])) | selectattr('status', 'in', ['queued', 'processing']) | list %}
@@ -130,22 +138,29 @@
 
 {% if uploads %}
 <div class="upl-panel upl-jobs-panel">
-  <div class="upl-jobs-panel-head">Riwayat Upload Terbaru</div>
+  <div class="upl-jobs-panel-head">Riwayat Upload / Batch Terbaru</div>
   <div class="upl-table-wrap">
-    <table class="upl-table" style="min-width: 720px;">
+    <table class="upl-table" style="min-width: 900px;">
       <thead>
         <tr>
+          <th>Batch</th>
           <th>File</th>
+          <th>Jenis Program</th>
+          <th>Tanggal NDE</th>
           <th>Status</th>
-          <th>Baris Diproses</th>
-          <th>Cocok di IHLD</th>
+          <th>Baris</th>
+          <th>Cocok IHLD</th>
+          <th>Dokumen</th>
           <th>Diupload</th>
         </tr>
       </thead>
       <tbody>
         {% for up in uploads %}
         <tr>
+          <td>{{ up.batch or '-' }}</td>
           <td>{{ up.filename }}</td>
+          <td>{{ up.jenis_program or '-' }}</td>
+          <td>{{ up.tanggal_nde_rilis or '-' }}</td>
           <td>
             {% if up.status == 'done' %}
               <span class="upl-status-chip found">Selesai</span>
@@ -159,6 +174,10 @@
           </td>
           <td>{{ up.processed_rows or 0 }}{% if up.status == 'done' and up.total_rows %} / {{ up.total_rows }}{% endif %}</td>
           <td>{{ up.matched_rows or 0 }}</td>
+          <td>
+            {% if up.has_source_file %}<a href="/rilis-order/file/{{ up.id }}/excel" class="upl-btn upl-btn-ghost" style="padding:4px 10px;font-size:0.72rem;">Excel</a>{% endif %}
+            {% if up.has_nde_file %}<a href="/rilis-order/file/{{ up.id }}/nde" class="upl-btn upl-btn-ghost" style="padding:4px 10px;font-size:0.72rem;">Surat NDE</a>{% endif %}
+          </td>
           <td>{{ up.uploaded_at }}</td>
         </tr>
         {% endfor %}
@@ -173,8 +192,8 @@
     <input type="text" name="q" placeholder="Cari nama proyek, iHLD LoP ID, regional, witel, atau STO..." value="{{ search_query|default('') }}">
     <button type="submit" class="upl-btn upl-btn-ghost">Cari</button>
   </form>
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-    <a class="upl-btn upl-btn-ghost" href="/rilis-order/template" download>&#8595; Download Format</a>
+  <div style="display:flex; gap:10px;">
+    <button type="button" class="upl-btn upl-btn-ghost" id="uplOpenManualBtn">+ Input Manual</button>
     <button type="button" class="upl-btn upl-btn-primary" id="uplOpenModalBtn">&#8593; Upload Data</button>
   </div>
 </div>
@@ -197,6 +216,7 @@
           <th>Total BOQ</th>
           <th>Batch</th>
           <th>CPP</th>
+          <th>Jenis Program</th>
           <th>Status IHLD</th>
         </tr>
       </thead>
@@ -219,6 +239,7 @@
           <td>{{ row.total_boq if row.total_boq is not none else '-' }}</td>
           <td>{{ row.batch|default('-') }}</td>
           <td>{{ row.cpp if row.cpp is not none else '-' }}</td>
+          <td>{{ row.jenis_program|default('-') }}</td>
           <td>
             {% if row.found_in_ihld %}
               <span class="upl-status-chip found">Ditemukan</span>
@@ -229,7 +250,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="14">
+          <td colspan="15">
             <div class="upl-empty">
               {% if search_query %}
                 Tidak ada data Rilis Order yang cocok dengan pencarian "{{ search_query }}".
@@ -280,17 +301,70 @@
     <div class="upl-modal-title">Upload Data Rilis Order</div>
     <p class="upl-modal-sub">Unggah data dalam format Excel (.xlsx) atau CSV (.csv). Kolom: TIF Area, Regional, REGION, Witel, STO, Nama Proyek, iHLD LoP ID, ODP Plan, Port Plan, Total BOQ, Batch, CPP.</p>
     <form id="uplUploadForm" method="post" action="/rilis-order/import" enctype="multipart/form-data">
+      <div class="upl-form-grid">
+        <div class="upl-form-field">
+          <label>Jenis Program</label>
+          <input type="text" name="jenis_program" placeholder="mis. FTTH, MBB, dst.">
+        </div>
+        <div class="upl-form-field">
+          <label>Tanggal NDE Rilis</label>
+          <input type="date" name="tanggal_nde_rilis">
+        </div>
+        <div class="upl-form-field">
+          <label>Batch</label>
+          <input type="text" name="batch" placeholder="mis. Batch 5">
+        </div>
+      </div>
+
       <label class="upl-dropzone" id="uplDropzone">
         <input type="file" id="uplFileInput" name="file" accept=".xlsx,.csv">
         <div class="upl-dropzone-icon">&#128193;</div>
-        <div class="upl-dropzone-text">Klik untuk pilih file</div>
+        <div class="upl-dropzone-text">Klik untuk pilih file data (.xlsx/.csv)</div>
         <div class="upl-dropzone-hint">Format didukung: .xlsx, .csv</div>
         <div class="upl-filename" id="uplFilename"></div>
       </label>
       <div class="upl-error-text" id="uplErrorText">Format file tidak didukung. Gunakan file .xlsx atau .csv.</div>
+
+      <div class="upl-form-field" style="margin-top:14px;">
+        <label>Surat NDE (opsional)</label>
+        <input type="file" name="nde_file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" style="font-size:0.82rem;">
+      </div>
+
       <div class="upl-modal-actions">
         <button type="button" class="upl-btn upl-btn-ghost" id="uplCancelBtn">Batal</button>
         <button type="submit" class="upl-btn upl-btn-primary" id="uplSubmitBtn" disabled>Upload</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Input Manual -->
+<div class="upl-modal-overlay" id="uplManualOverlay">
+  <div class="upl-modal-box upl-detail-box">
+    <div class="upl-modal-title">Input Manual (Teks)</div>
+    <p class="upl-modal-sub">Tambah 1 baris data langsung lewat teks -- hasilnya tergabung ke list yang sama dengan data hasil upload Excel.</p>
+    <form id="uplManualForm" method="post" action="/rilis-order/add-manual">
+      <div class="upl-form-grid">
+        <div class="upl-form-field"><label>Jenis Program</label><input type="text" name="jenis_program"></div>
+        <div class="upl-form-field"><label>Tanggal NDE Rilis</label><input type="date" name="tanggal_nde_rilis"></div>
+        <div class="upl-form-field"><label>Batch</label><input type="text" name="batch"></div>
+      </div>
+      <div class="upl-form-grid" style="margin-top:6px;">
+        <div class="upl-form-field"><label>TIF Area</label><input type="text" name="tif_area"></div>
+        <div class="upl-form-field"><label>Regional</label><input type="text" name="regional"></div>
+        <div class="upl-form-field"><label>REGION</label><input type="text" name="region"></div>
+        <div class="upl-form-field"><label>Witel</label><input type="text" name="witel"></div>
+        <div class="upl-form-field"><label>STO</label><input type="text" name="sto"></div>
+        <div class="upl-form-field"><label>Nama Proyek</label><input type="text" name="nama_proyek"></div>
+        <div class="upl-form-field"><label>iHLD LoP ID</label><input type="text" name="ihld_lop_id"></div>
+        <div class="upl-form-field"><label>ODP Plan</label><input type="text" name="odp_plan" inputmode="numeric"></div>
+        <div class="upl-form-field"><label>Port Plan</label><input type="text" name="port_plan" inputmode="numeric"></div>
+        <div class="upl-form-field"><label>Total BOQ</label><input type="text" name="total_boq" inputmode="numeric"></div>
+        <div class="upl-form-field"><label>CPP</label><input type="text" name="cpp" inputmode="numeric"></div>
+      </div>
+      <div class="upl-modal-actions">
+        <button type="button" class="upl-btn upl-btn-ghost" id="uplManualCancelBtn">Batal</button>
+        <button type="submit" class="upl-btn upl-btn-primary">Simpan</button>
       </div>
     </form>
   </div>
@@ -355,6 +429,16 @@
 })();
 
 (function () {
+  const openBtn = document.getElementById('uplOpenManualBtn');
+  const cancelBtn = document.getElementById('uplManualCancelBtn');
+  const overlay = document.getElementById('uplManualOverlay');
+
+  openBtn.addEventListener('click', () => overlay.classList.add('open'));
+  cancelBtn.addEventListener('click', () => overlay.classList.remove('open'));
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
+})();
+
+(function () {
   const overlay = document.getElementById('uplDetailOverlay');
   const titleEl = document.getElementById('uplDetailTitle');
   const subEl = document.getElementById('uplDetailSub');
@@ -369,7 +453,17 @@
         ['witel', 'Witel'], ['sto', 'STO'], ['nama_proyek', 'Nama Proyek'],
         ['ihld_lop_id', 'iHLD LoP ID'], ['odp_plan', 'ODP Plan'],
         ['port_plan', 'Port Plan'], ['total_boq', 'Total BOQ'],
-        ['batch', 'Batch'], ['cpp', 'CPP'], ['created_at', 'Diupload Pada'],
+        ['batch', 'Batch'], ['cpp', 'CPP'], ['jenis_program', 'Jenis Program'],
+        ['tanggal_nde_rilis', 'Tanggal NDE Rilis'], ['created_at', 'Diupload Pada'],
+      ],
+    },
+    {
+      title: 'Info Batch / Rilis',
+      fields: [
+        ['jenis_program', 'Jenis Program'],
+        ['tanggal_nde', 'Tanggal NDE Rilis'],
+        ['batch_upload', 'Batch ke-'],
+        ['upload_filename', 'Nama File Upload'],
       ],
     },
     {
@@ -407,6 +501,20 @@
       });
       html += `</dl></div>`;
     });
+
+    if (data.has_source_file || data.has_nde_file) {
+      html += `<div class="upl-detail-section">`;
+      html += `<div class="upl-detail-section-title">Dokumen Batch</div>`;
+      html += `<div style="display:flex; gap:10px; flex-wrap:wrap;">`;
+      if (data.has_source_file && data.upload_id) {
+        html += `<a class="upl-btn upl-btn-ghost" href="/rilis-order/file/${data.upload_id}/excel">Unduh Excel</a>`;
+      }
+      if (data.has_nde_file && data.upload_id) {
+        html += `<a class="upl-btn upl-btn-ghost" href="/rilis-order/file/${data.upload_id}/nde">Unduh Surat NDE</a>`;
+      }
+      html += `</div></div>`;
+    }
+
     bodyEl.innerHTML = html || '<div class="upl-detail-loading">Tidak ada data tambahan.</div>';
   }
 

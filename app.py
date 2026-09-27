@@ -181,6 +181,14 @@ def handle_unexpected_error(e):
     raise e
 
 
+@app.errorhandler(RequestEntityTooLarge)
+def handle_upload_too_large(e):
+    if request.path == "/upload-ihld/import":
+        flash("File terlalu besar. Ukuran maksimum upload IHLD adalah 200MB.", "error")
+        return redirect(url_for("upload_ihld_page"))
+    return e
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
@@ -354,6 +362,8 @@ def api_upload_ihld_detail(row_id):
 RILIS_ORDER_PER_PAGE = 10
 RILIS_ORDER_ALLOWED_EXT = {"xlsx", "csv"}
 RILIS_ORDER_MAX_BYTES = 200 * 1024 * 1024  # 200MB
+RILIS_ORDER_NDE_ALLOWED_EXT = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
+RILIS_ORDER_NDE_MAX_BYTES = 20 * 1024 * 1024  # 20MB
 RILIS_ORDER_TMP_DIR = "/tmp/rilis_order_uploads"
 
 
@@ -423,9 +433,15 @@ def rilis_order_page():
 
 @app.route("/rilis-order/import", methods=["POST"])
 def rilis_order_import():
-    """Sama pola dengan /upload-ihld/import: simpan file ke disk lalu
-    proses (insert + cocokkan ke IHLD) di background thread, supaya
-    upload data besar tidak bikin server timeout/kehabisan memori."""
+    """Sama pola dengan /upload-ihld/import: proses insert + cocokkan ke
+    IHLD jalan di background thread supaya upload data besar tidak bikin
+    server timeout/kehabisan memori.
+
+    Selain file data (xlsx/csv), form ini juga menerima 3 field metadata
+    yang diisi MANUAL (Jenis Program, Tanggal NDE Rilis, Batch) --
+    ditempel ke SEMUA baris dari file ini -- dan file Surat NDE opsional.
+    File Excel asli & Surat NDE disimpan LANGSUNG DI DATABASE (BYTEA),
+    bukan di disk server, supaya tidak hilang saat redeploy."""
     try:
         if is_viewer():
             flash("Akun Anda hanya memiliki akses lihat saja (view only).", "error")
@@ -446,20 +462,64 @@ def rilis_order_import():
             flash(f"Ukuran file melebihi {RILIS_ORDER_MAX_BYTES // (1024 * 1024)}MB.", "error")
             return redirect(url_for("rilis_order_page"))
 
-        os.makedirs(RILIS_ORDER_TMP_DIR, exist_ok=True)
-        saved_path = os.path.join(RILIS_ORDER_TMP_DIR, f"{uuid.uuid4().hex}.{ext}")
-        file.save(saved_path)
+        jenis_program = (request.form.get("jenis_program") or "").strip() or None
+        tanggal_nde_rilis = (request.form.get("tanggal_nde_rilis") or "").strip() or None
+        batch = (request.form.get("batch") or "").strip() or None
+
+        # Baca file SEKALI ke memori -- dipakai untuk 2 hal: (1) disimpan
+        # permanen ke database sebagai BYTEA, (2) ditulis ke disk
+        # sementara supaya background job bisa membacanya baris demi
+        # baris tanpa menahan semuanya di RAM sekaligus.
+        file_bytes = file.read()
+        mimetype = file.mimetype or "application/octet-stream"
+
+        nde_file = request.files.get("nde_file")
+        nde_filename = nde_mimetype = nde_bytes = None
+        if nde_file and nde_file.filename:
+            nde_secure_name = secure_filename(nde_file.filename)
+            nde_ext = nde_secure_name.rsplit(".", 1)[-1].lower() if "." in nde_secure_name else ""
+            if nde_ext not in RILIS_ORDER_NDE_ALLOWED_EXT:
+                flash("Format Surat NDE tidak didukung. Gunakan .pdf, .doc, .docx, .jpg, atau .png.", "error")
+                return redirect(url_for("rilis_order_page"))
+            nde_bytes = nde_file.read()
+            if len(nde_bytes) > RILIS_ORDER_NDE_MAX_BYTES:
+                flash(f"Ukuran Surat NDE melebihi {RILIS_ORDER_NDE_MAX_BYTES // (1024 * 1024)}MB.", "error")
+                return redirect(url_for("rilis_order_page"))
+            nde_filename = nde_secure_name
+            nde_mimetype = nde_file.mimetype or "application/octet-stream"
 
         try:
-            upload_id = rilis_order_db_service.create_upload(filename)
+            upload_id = rilis_order_db_service.create_upload(
+                filename,
+                jenis_program=jenis_program,
+                tanggal_nde_rilis=tanggal_nde_rilis,
+                batch=batch,
+                source_file_name=filename,
+                source_file_mimetype=mimetype,
+                source_file_data=file_bytes,
+                nde_file_name=nde_filename,
+                nde_file_mimetype=nde_mimetype,
+                nde_file_data=nde_bytes,
+            )
         except Exception as e:
             logger.exception("Gagal membuat catatan upload Rilis Order")
             flash(f"Gagal memulai proses upload: {e}", "error")
             return redirect(url_for("rilis_order_page"))
 
+        os.makedirs(RILIS_ORDER_TMP_DIR, exist_ok=True)
+        saved_path = os.path.join(RILIS_ORDER_TMP_DIR, f"{uuid.uuid4().hex}.{ext}")
+        with open(saved_path, "wb") as f:
+            f.write(file_bytes)
+
+        batch_meta = {
+            "jenis_program": jenis_program,
+            "tanggal_nde_rilis": tanggal_nde_rilis,
+            "batch": batch,
+        }
+
         threading.Thread(
             target=rilis_order_db_service.run_import_job,
-            args=(upload_id, saved_path, ext),
+            args=(upload_id, saved_path, ext, batch_meta),
             daemon=True,
         ).start()
 
@@ -476,6 +536,31 @@ def rilis_order_import():
         return redirect(url_for("rilis_order_page"))
 
 
+@app.route("/rilis-order/file/<int:upload_id>/<kind>")
+def rilis_order_download_file(upload_id, kind):
+    """Download file Excel asli (kind='excel') atau Surat NDE
+    (kind='nde') dari satu upload -- diambil dari database (BYTEA)."""
+    if kind not in ("excel", "nde"):
+        return "Jenis file tidak dikenal.", 400
+    service_kind = "source" if kind == "excel" else "nde"
+
+    try:
+        result = rilis_order_db_service.get_upload_file(upload_id, service_kind)
+    except Exception as e:
+        logger.exception("Gagal mengambil file upload Rilis Order id=%s", upload_id)
+        return f"Gagal mengambil file: {e}", 500
+
+    if not result:
+        return "File tidak ditemukan.", 404
+
+    filename, mimetype, data = result
+    return Response(
+        data,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @app.route("/api/rilis-order/<int:row_id>")
 def api_rilis_order_detail(row_id):
     try:
@@ -486,6 +571,37 @@ def api_rilis_order_detail(row_id):
     if not detail:
         return jsonify({"ok": False, "error": "Data tidak ditemukan."}), 404
     return jsonify({"ok": True, "data": detail})
+
+
+@app.route("/rilis-order/add-manual", methods=["POST"])
+def rilis_order_add_manual():
+    """Tambah 1 baris Rilis Order lewat input teks manual (bukan upload
+    file) -- hasilnya masuk ke tabel yang SAMA dengan data hasil upload
+    Excel, jadi langsung tergabung di list yang sama."""
+    if is_viewer():
+        flash("Akun Anda hanya memiliki akses lihat saja (view only).", "error")
+        return redirect(url_for("rilis_order_page"))
+
+    record = rilis_order_db_service.build_manual_record(request.form)
+    if not any(v is not None for v in record.values()):
+        flash("Isi minimal salah satu kolom sebelum menyimpan.", "error")
+        return redirect(url_for("rilis_order_page"))
+
+    jenis_program = (request.form.get("jenis_program") or "").strip() or None
+    tanggal_nde_rilis = (request.form.get("tanggal_nde_rilis") or "").strip() or None
+    batch = (request.form.get("batch") or "").strip() or None
+
+    try:
+        new_id = rilis_order_db_service.create_manual_entry(
+            record, jenis_program=jenis_program, tanggal_nde_rilis=tanggal_nde_rilis, batch=batch,
+        )
+    except Exception as e:
+        logger.exception("Gagal menyimpan input manual Rilis Order")
+        flash(f"Gagal menyimpan data: {e}", "error")
+        return redirect(url_for("rilis_order_page"))
+
+    flash(f"1 baris data Rilis Order berhasil ditambahkan (id #{new_id}).", "success")
+    return redirect(url_for("rilis_order_page"))
 
 
 # ── MITRA ──
