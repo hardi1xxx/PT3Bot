@@ -181,14 +181,6 @@ def handle_unexpected_error(e):
     raise e
 
 
-@app.errorhandler(RequestEntityTooLarge)
-def handle_upload_too_large(e):
-    if request.path == "/upload-ihld/import":
-        flash("File terlalu besar. Ukuran maksimum upload IHLD adalah 200MB.", "error")
-        return redirect(url_for("upload_ihld_page"))
-    return e
-
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":

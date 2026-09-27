@@ -259,12 +259,10 @@ def match_against_ihld(rilis_order_ids):
 
     lop_ids = sorted({v for v in id_to_lop.values() if v})
 
-    # 2) Cari padanannya di database IHLD (read-only).
     ihld_by_lop = {}
     if lop_ids:
         ihld_conn = ihld_db_service.get_connection()
         try:
-            ihld_table = ihld_db_service.get_table_name(ihld_conn)
             icur = ihld_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             icur.execute(
                 f"""
