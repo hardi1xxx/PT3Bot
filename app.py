@@ -408,9 +408,9 @@ def rilis_order_page():
 
     try:
         result = rilis_order_db_service.list_rilis_order(search=q, page=page, per_page=RILIS_ORDER_PER_PAGE)
-    except Exception:
+    except Exception as e:
         logger.exception("Gagal mengambil data Rilis Order")
-        flash("Gagal memuat data Rilis Order dari database. Coba lagi sebentar lagi.", "error")
+        flash(f"Gagal memuat data Rilis Order ({type(e).__name__}: {e}).", "error")
         result = {"items": [], "page": 1, "total_pages": 1, "total_count": 0}
 
     try:

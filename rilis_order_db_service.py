@@ -49,10 +49,14 @@ MAX_CONSECUTIVE_EMPTY = 30
 
 
 def get_connection():
-    database_url = os.environ.get("RILIS_ORDER_DATABASE_URL")
+    database_url = (
+        os.environ.get("RILIS_ORDER_DATABASE_URL")
+        or os.environ.get("DATABASE_URL_rilis_order")
+    )
     if not database_url:
         raise RuntimeError(
-            "Environment variable RILIS_ORDER_DATABASE_URL tidak ditemukan. "
+            "Environment variable RILIS_ORDER_DATABASE_URL atau "
+            "DATABASE_URL_rilis_order tidak ditemukan. "
             "Cek tab Variables di service 'web' pada project Railway."
         )
     return psycopg2.connect(database_url)
