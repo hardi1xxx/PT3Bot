@@ -42,7 +42,7 @@
         Deadline tahap ini:
         <strong style="color: {{ '#dc2626' if snapshot.is_overdue else 'var(--text)' }};">{{ snapshot.current_stage_deadline }}</strong>
         {% if snapshot.is_overdue %}<span class="badge" style="background:#dc2626;">Lewat deadline</span>{% endif %}
-        &nbsp;·&nbsp; Target Golive: {{ snapshot.final_deadline }}
+        &nbsp;·&nbsp; Target Golive: {{ snapshot.target_golive or '-' }}
       </div>
     </div>
   {% endif %}

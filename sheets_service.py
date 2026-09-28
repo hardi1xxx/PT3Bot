@@ -1113,6 +1113,7 @@ def get_row_snapshot(row_num: int):
         f"{config.COL_KETERANGAN_AB}{row_num}",
         f"{config.COL_WO_TERBIT}{row_num}",
         f"{config.COL_TARGET_FI}{row_num}",
+        f"{config.COL_KOMIT_GL}{row_num}",  # AL -- Target Golive
         f"{config.COL_BH}{row_num}",
         f"{config.COL_MITRA}{row_num}",
         f"{config.COL_BRANCH}{row_num}",
@@ -1154,6 +1155,10 @@ def get_row_snapshot(row_num: int):
 
     target_fi_raw = v(f"{config.COL_TARGET_FI}{row_num}")
     target_fi_date = _parse_date(target_fi_raw)
+
+    # Target Golive yang ditampilkan di panel = kolom AL (Komit Golive),
+    # BUKAN hasil hitung final_deadline (estimasi tahap terakhir).
+    target_golive_date = _parse_date(v(f"{config.COL_KOMIT_GL}{row_num}"))
 
     progress_percent, progress_stage_label, stage_idx = compute_progress(z_val, aa_val, has_order=True)
 
@@ -1204,7 +1209,9 @@ def get_row_snapshot(row_num: int):
         "progress_percent": progress_percent,
         "progress_stage_label": progress_stage_label,
         "current_stage_deadline": current_stage_deadline,
-        "final_deadline": final_deadline,
+        "final_deadline": final_deadline,  # estimasi hitung (tidak dipakai utk label Target Golive)
+        "target_golive": target_golive_date.strftime("%d/%m/%Y") if target_golive_date else None,
+        "target_golive_iso": target_golive_date.isoformat() if target_golive_date else None,
         "is_overdue": is_overdue,
         "target_fi": target_fi_date.strftime("%d/%b/%y") if target_fi_date else None,
         "target_fi_iso": target_fi_date.isoformat() if target_fi_date else None,

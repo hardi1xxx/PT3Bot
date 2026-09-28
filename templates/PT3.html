@@ -479,7 +479,7 @@ function renderAgingProgress(snapshot) {
       <div style="font-size:0.78rem; color:var(--muted);">
         Deadline tahap ini: <strong style="color:${snapshot.is_overdue ? '#dc2626' : 'var(--text)'};">${fmtDateISO(snapshot.current_stage_deadline)}</strong>
         ${snapshot.is_overdue ? ' <span class="badge" style="background:#dc2626;">Lewat deadline</span>' : ''}
-        &nbsp;·&nbsp; Target Golive: ${fmtDateISO(snapshot.final_deadline)}
+        &nbsp;·&nbsp; Target Golive: ${fmtDateISO(snapshot.target_golive_iso)}
         ${snapshot.target_fi ? `<br>Berdasarkan komit Target Finish Instalasi: <strong style="color:var(--text);">${esc(snapshot.target_fi)}</strong>` : '<br>Berdasarkan estimasi WO terbit (belum ada komit Target Finish Instalasi)'}
       </div>
     </div>
