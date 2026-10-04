@@ -197,6 +197,10 @@
   .pt2-branch-pill { display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px; border:1px solid var(--border, #e2e8f0); background:#f8fafc; font-size:0.84rem; cursor:pointer; user-select:none; }
   .pt2-branch-pill input { accent-color:#1d4ed8; cursor:pointer; }
   .pt2-branch-pill.checked { background:#eff6ff; border-color:#93c5fd; }
+  .pt2-branch-regional-group { flex:0 0 100%; padding:4px 0 8px; border-bottom:1px solid var(--border, #e2e8f0); }
+  .pt2-branch-regional-head { display:inline-flex; align-items:center; gap:7px; margin-bottom:7px; font-size:0.82rem; cursor:pointer; }
+  .pt2-branch-regional-head input { accent-color:#1d4ed8; }
+  .pt2-branch-regional-items { display:flex; flex-wrap:wrap; gap:8px 14px; padding-left:20px; }
 
   .pt2-donut-wrap { display:flex; align-items:center; gap:28px; flex-wrap:wrap; }
   .pt2-donut-canvas-box { position:relative; width:230px; height:230px; flex:0 0 auto; }
@@ -786,6 +790,7 @@ document.getElementById('pt2GroupingBtn').addEventListener('click', () => {
   pt2GroupingActive = !pt2GroupingActive;
   document.getElementById('pt2GroupingBtn').classList.toggle('active', pt2GroupingActive);
   if (!pt2Cache) return;
+  pt2RenderBranchFilterGroups();
   if (pt2ActivePivotTab === 'branch') pt2RenderPivotTable(pt2Cache);
   else if (pt2ActivePivotTab === 'progress') pt2RenderProgressPivotTable(pt2Cache);
 });
@@ -1277,32 +1282,74 @@ function pt2InitTrendDefaults() {
 }
 
 // ── Filter Branch (kolom J, sheet Detail PT2) ──────────────────────
+let pt2BranchFilterGroups = [];
+
+function pt2RenderBranchFilterGroups() {
+  const checksWrap = document.getElementById('pt2FilterBranchChecks');
+  const groupMap = new Map();
+  pt2AllRows.forEach(row => {
+    const regional = pt2RegionalKeyFor(row.regional, pt2GroupingActive);
+    if (!groupMap.has(regional)) groupMap.set(regional, new Set());
+    groupMap.get(regional).add(row.branch || '(Tanpa Branch)');
+  });
+  const regionalOrder = [];
+  (pt2Cache.regionals || []).forEach(regional => {
+    const key = pt2RegionalKeyFor(regional, pt2GroupingActive);
+    if (groupMap.has(key) && !regionalOrder.includes(key)) regionalOrder.push(key);
+  });
+  groupMap.forEach((_, regional) => { if (!regionalOrder.includes(regional)) regionalOrder.push(regional); });
+  pt2BranchFilterGroups = regionalOrder.map(regional => ({
+    regional,
+    branches: Array.from(groupMap.get(regional)).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())),
+  }));
+  checksWrap.innerHTML = pt2BranchFilterGroups.map((group, groupIndex) => `
+    <div class="pt2-branch-regional-group">
+      <label class="pt2-branch-regional-head">
+        <input type="checkbox" class="pt2-branch-group-checkbox" data-group-index="${groupIndex}" checked>
+        <strong>${pt2Esc(group.regional)}</strong>
+      </label>
+      <div class="pt2-branch-regional-items">${group.branches.map(branch => `
+        <label class="pt2-branch-pill checked" data-branch="${pt2Esc(branch)}">
+          <input type="checkbox" class="pt2-branch-checkbox" value="${pt2Esc(branch)}" checked>
+          <span>${pt2Esc(branch)}</span>
+        </label>
+      `).join('')}</div>
+    </div>
+  `).join('');
+  pt2SyncBranchGroupCheckboxes();
+}
+
+function pt2SyncBranchGroupCheckboxes() {
+  document.querySelectorAll('.pt2-branch-checkbox').forEach(checkbox => {
+    checkbox.checked = pt2ActiveBranches.has(checkbox.value);
+    checkbox.closest('.pt2-branch-pill').classList.toggle('checked', checkbox.checked);
+  });
+  document.querySelectorAll('.pt2-branch-group-checkbox').forEach(checkbox => {
+    const group = pt2BranchFilterGroups[Number(checkbox.dataset.groupIndex)];
+    if (!group) return;
+    const count = group.branches.filter(branch => pt2ActiveBranches.has(branch)).length;
+    checkbox.checked = count === group.branches.length;
+    checkbox.indeterminate = count > 0 && count < group.branches.length;
+  });
+}
+
 function pt2InitBranchFilter() {
   const branches = pt2Cache.branches || [];
   pt2ActiveBranches = new Set(branches); // default: semua dipilih
   const checksWrap = document.getElementById('pt2FilterBranchChecks');
-  checksWrap.innerHTML = branches.map(b => `
-    <label class="pt2-branch-pill checked" data-branch="${pt2Esc(b)}">
-      <input type="checkbox" checked>
-      <span>${pt2Esc(b)}</span>
-    </label>
-  `).join('');
-  checksWrap.querySelectorAll('.pt2-branch-pill').forEach(pill => {
-    pill.addEventListener('click', (e) => {
-      e.preventDefault();
-      const branch = pill.dataset.branch;
-      const cb = pill.querySelector('input');
-      if (pt2ActiveBranches.has(branch)) {
-        pt2ActiveBranches.delete(branch);
-        cb.checked = false;
-        pill.classList.remove('checked');
-      } else {
-        pt2ActiveBranches.add(branch);
-        cb.checked = true;
-        pill.classList.add('checked');
-      }
-      pt2ApplyBranchFilter();
-    });
+  pt2RenderBranchFilterGroups();
+  checksWrap.addEventListener('change', (e) => {
+    if (e.target.classList.contains('pt2-branch-group-checkbox')) {
+      const group = pt2BranchFilterGroups[Number(e.target.dataset.groupIndex)];
+      if (group) group.branches.forEach(branch => e.target.checked ? pt2ActiveBranches.add(branch) : pt2ActiveBranches.delete(branch));
+    } else if (e.target.classList.contains('pt2-branch-checkbox')) {
+      const branch = e.target.value;
+      if (e.target.checked) pt2ActiveBranches.add(branch);
+      else pt2ActiveBranches.delete(branch);
+      e.target.closest('.pt2-branch-pill').classList.toggle('checked', e.target.checked);
+    } else return;
+    pt2SyncBranchGroupCheckboxes();
+    pt2ApplyBranchFilter();
   });
   pt2UpdateBranchSummary();
 }
@@ -1333,6 +1380,7 @@ document.getElementById('pt2FilterSelectAllBtn').addEventListener('click', () =>
     pill.classList.add('checked');
     pill.querySelector('input').checked = true;
   });
+  pt2SyncBranchGroupCheckboxes();
   pt2ApplyBranchFilter();
 });
 document.getElementById('pt2FilterClearAllBtn').addEventListener('click', () => {
@@ -1341,6 +1389,7 @@ document.getElementById('pt2FilterClearAllBtn').addEventListener('click', () => 
     pill.classList.remove('checked');
     pill.querySelector('input').checked = false;
   });
+  pt2SyncBranchGroupCheckboxes();
   pt2ApplyBranchFilter();
 });
 

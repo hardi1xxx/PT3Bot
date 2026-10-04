@@ -1111,38 +1111,28 @@ function renderBranchFilter(branches, preserveState) {
     }
   }
 
-  if (tselGroupingActive) {
-    branchFilterRegionGroups = getRegionalBranchGroups(branches);
-    el.innerHTML = branchFilterRegionGroups.map((group, groupIndex) => `
-      <div class="branch-regional-group">
-        <label class="branch-regional-heading">
-          <input type="checkbox" class="branch-regional-checkbox" data-group-index="${groupIndex}" checked>
-          <strong>${esc(group.regional)}</strong>
-        </label>
-        <div class="branch-regional-items">${group.branches.map(branch => {
-          const isChecked = prevChecked ? prevChecked.has(branch) : true;
-          return `<label class="branch-check"><input type="checkbox" class="branch-checkbox" value="${esc(branch)}" ${isChecked ? 'checked' : ''}><span>${esc(branch)}</span></label>`;
-        }).join('')}</div>
-      </div>
-    `).join('');
-    syncBranchRegionalCheckboxes();
-  } else {
-    branchFilterRegionGroups = [];
-    el.innerHTML = branches.map(b => {
-      const isChecked = prevChecked ? prevChecked.has(b) : true;
-      return `
-      <label class="branch-check">
-        <input type="checkbox" class="branch-checkbox" value="${esc(b)}" ${isChecked ? 'checked' : ''}>
-        <span>${esc(b)}</span>
+  branchFilterRegionGroups = getRegionalBranchGroups(branches);
+  el.innerHTML = branchFilterRegionGroups.map((group, groupIndex) => `
+    <div class="branch-regional-group">
+      <label class="branch-regional-heading">
+        <input type="checkbox" class="branch-regional-checkbox" data-group-index="${groupIndex}" checked>
+        <strong>${esc(group.regional)}</strong>
       </label>
-    `;
-    }).join('');
-  }
+      <div class="branch-regional-items">${group.branches.map(branch => {
+        const isChecked = prevChecked ? prevChecked.has(branch) : true;
+        return `<label class="branch-check"><input type="checkbox" class="branch-checkbox" value="${esc(branch)}" ${isChecked ? 'checked' : ''}><span>${esc(branch)}</span></label>`;
+      }).join('')}</div>
+    </div>
+  `).join('');
+  syncBranchRegionalCheckboxes();
   updateBranchDropdownLabel();
 }
 
 function syncBranchRegionalCheckboxes() {
   const selected = new Set(getSelectedBranches());
+  document.querySelectorAll('.branch-checkbox').forEach(checkbox => {
+    checkbox.checked = selected.has(checkbox.value);
+  });
   document.querySelectorAll('.branch-regional-checkbox').forEach(checkbox => {
     const group = branchFilterRegionGroups[Number(checkbox.dataset.groupIndex)];
     if (!group) return;

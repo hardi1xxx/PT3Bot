@@ -28,7 +28,8 @@
     font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .02em;
     margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px dashed var(--border, #2a3550);
   }
-  .aging-branch-group-toggle { padding: 3px 10px; font-size: 0.72rem; text-transform: none; letter-spacing: normal; }
+  .aging-branch-group-head label { display:inline-flex; align-items:center; gap:7px; cursor:pointer; }
+  .aging-branch-group-head input { width:auto; margin:0; accent-color:var(--brand-blue); }
 </style>
 
 <!-- Stat cards -->
@@ -174,48 +175,66 @@ function renderAgingBranchFilter(branches, rows) {
   const el = document.getElementById('agingBranchGrid');
   if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch (kolom S).</div>'; return; }
 
-  // Dikelompokkan per Regional (kolom T) supaya gampang pilih per wilayah,
-  // bukan cuma daftar flat -- branch yang regional-nya tidak ketemu
-  // (seharusnya jarang) masuk grup "(Tanpa Regional)" di paling akhir.
-  const regionalOf = {};
-  (rows || []).forEach(r => { if (r.branch && !regionalOf[r.branch]) regionalOf[r.branch] = r.regional || '(Tanpa Regional)'; });
-  const byRegional = {};
-  branches.forEach(b => {
-    const reg = regionalOf[b] || '(Tanpa Regional)';
-    (byRegional[reg] = byRegional[reg] || []).push(b);
+  const existingBoxes = document.querySelectorAll('.aging-branch-checkbox');
+  const hasPreviousSelection = existingBoxes.length > 0;
+  const previousSelection = new Set(Array.from(existingBoxes).filter(cb => cb.checked).map(cb => cb.value));
+  const byRegional = new Map();
+  (rows || []).forEach(row => {
+    if (!branches.includes(row.branch)) return;
+    const regional = row.regional || '(Tanpa Regional)';
+    const upper = regional.toUpperCase();
+    const group = agingTselGroupingActive && AGING_TSEL_MERGE_PREFIXES.some(prefix => upper.startsWith(prefix))
+      ? AGING_TSEL_GROUP_LABEL
+      : regional;
+    if (!byRegional.has(group)) byRegional.set(group, new Set());
+    byRegional.get(group).add(row.branch);
   });
-  const regionalNames = Object.keys(byRegional).sort((a, b) => {
-    if (a === '(Tanpa Regional)') return 1;
-    if (b === '(Tanpa Regional)') return -1;
-    return a.localeCompare(b);
+  branches.forEach(branch => {
+    if (![...byRegional.values()].some(group => group.has(branch))) {
+      if (!byRegional.has('(Tanpa Regional)')) byRegional.set('(Tanpa Regional)', new Set());
+      byRegional.get('(Tanpa Regional)').add(branch);
+    }
   });
+  agingBranchGroups = sortAgingGroupNames(Array.from(byRegional.keys())).map(regional => ({
+    regional,
+    branches: Array.from(byRegional.get(regional)).sort((a, b) => a.localeCompare(b)),
+  }));
 
-  el.innerHTML = regionalNames.map(reg => `
+  el.innerHTML = agingBranchGroups.map((group, groupIndex) => `
     <div class="aging-branch-group">
       <div class="aging-branch-group-head">
-        <span>${esc2(reg)}</span>
-        <button type="button" class="btn-ghost btn-sm aging-branch-group-toggle" data-regional="${esc2(reg)}">Pilih/Kosongkan</button>
+        <label>
+          <input type="checkbox" class="aging-branch-group-checkbox" data-group-index="${groupIndex}" checked>
+          <span>${esc2(group.regional)}</span>
+        </label>
       </div>
       <div class="branch-filter-grid aging-branch-group-body">
-        ${byRegional[reg].map(b => `
+        ${group.branches.map(b => `
           <label class="branch-check">
-            <input type="checkbox" class="aging-branch-checkbox" value="${esc2(b)}" checked>
+            <input type="checkbox" class="aging-branch-checkbox" value="${esc2(b)}" ${hasPreviousSelection ? (previousSelection.has(b) ? 'checked' : '') : 'checked'}>
             <span>${esc2(b)}</span>
           </label>
         `).join('')}
       </div>
     </div>
   `).join('');
+  syncAgingBranchGroupCheckboxes();
   updateAgingFilterSummary();
 }
-document.getElementById('agingBranchGrid').addEventListener('click', (e) => {
-  const btn = e.target.closest('.aging-branch-group-toggle');
-  if (!btn) return;
-  const boxes = btn.closest('.aging-branch-group').querySelectorAll('.aging-branch-checkbox');
-  const allChecked = Array.from(boxes).every(cb => cb.checked);
-  boxes.forEach(cb => { cb.checked = !allChecked; });
-  refreshAging();
-});
+let agingBranchGroups = [];
+function syncAgingBranchGroupCheckboxes() {
+  const selected = new Set(Array.from(document.querySelectorAll('.aging-branch-checkbox:checked')).map(cb => cb.value));
+  document.querySelectorAll('.aging-branch-checkbox').forEach(checkbox => {
+    checkbox.checked = selected.has(checkbox.value);
+  });
+  document.querySelectorAll('.aging-branch-group-checkbox').forEach(checkbox => {
+    const group = agingBranchGroups[Number(checkbox.dataset.groupIndex)];
+    if (!group) return;
+    const count = group.branches.filter(branch => selected.has(branch)).length;
+    checkbox.checked = count === group.branches.length;
+    checkbox.indeterminate = count > 0 && count < group.branches.length;
+  });
+}
 function updateAgingFilterSummary() {
   const all = document.querySelectorAll('.aging-branch-checkbox');
   const checked = document.querySelectorAll('.aging-branch-checkbox:checked');
@@ -252,14 +271,26 @@ function updateAgingStatusFilterSummary() {
 }
 
 document.getElementById('agingBranchGrid').addEventListener('change', (e) => {
-  if (e.target.classList.contains('aging-branch-checkbox')) refreshAging();
+  if (e.target.classList.contains('aging-branch-group-checkbox')) {
+    const group = agingBranchGroups[Number(e.target.dataset.groupIndex)];
+    if (group) {
+      const groupBranches = new Set(group.branches);
+      document.querySelectorAll('.aging-branch-checkbox').forEach(checkbox => {
+        if (groupBranches.has(checkbox.value)) checkbox.checked = e.target.checked;
+      });
+    }
+  } else if (!e.target.classList.contains('aging-branch-checkbox')) return;
+  syncAgingBranchGroupCheckboxes();
+  refreshAging();
 });
 document.getElementById('agingBranchSelectAll').addEventListener('click', () => {
   document.querySelectorAll('.aging-branch-checkbox').forEach(cb => { cb.checked = true; });
+  syncAgingBranchGroupCheckboxes();
   refreshAging();
 });
 document.getElementById('agingBranchClearAll').addEventListener('click', () => {
   document.querySelectorAll('.aging-branch-checkbox').forEach(cb => { cb.checked = false; });
+  syncAgingBranchGroupCheckboxes();
   refreshAging();
 });
 
@@ -458,6 +489,7 @@ function sortAgingGroupNames(names) {
 document.getElementById('agingTselGroupBtn').addEventListener('click', () => {
   agingTselGroupingActive = !agingTselGroupingActive;
   document.getElementById('agingTselGroupBtn').classList.toggle('active', agingTselGroupingActive);
+  if (agingCache) renderAgingBranchFilter(agingCache.branches, agingCache.rows);
   refreshAging();
 });
 
