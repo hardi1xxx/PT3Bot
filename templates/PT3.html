@@ -24,9 +24,10 @@
   .chart-metric-toggle button { border: 0; background: var(--panel-alt); color: var(--muted); font-weight: 700; font-size: 0.72rem; padding: 5px 9px; cursor: pointer; }
   .chart-metric-toggle button + button { border-left: 1px solid var(--border, #cbd5e1); }
   .chart-metric-toggle button.active { background: var(--brand-blue, #29467a); color: #fff; }
-  .golive-trend-gran { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .golive-trend-gran { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; }
   .golive-trend-gran button { padding: 3px 10px; font-size: 0.75rem; border-radius: 6px; }
   .golive-trend-gran button.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
+  .golive-trend-gran select { flex: 0 0 154px; width: 154px; box-sizing: border-box; padding: 4px 7px; border: 1px solid #cbd5e1; border-radius: 6px; color: #1c3466; background: #fff; font-size: 0.75rem; }
   .mini-chart-wrap { position: relative; flex: 1 1 auto; min-height: 140px; }
 
   /* Legend Distribusi Status: grid rapi 2 kolom biar ringkas & tidak
@@ -1465,6 +1466,8 @@ function renderGoliveTrendChart(filteredRows) {
   const lopValues = goliveTrendBucketKeys.map(k => goliveTrendBucketIndex[k].length);
   const portValues = goliveTrendBucketKeys.map(k => goliveTrendBucketIndex[k].reduce((total, row) => total + (Number(row.port) || 0), 0));
   const values = statusChartMetric === 'port' ? portValues : lopValues;
+  const trendMax = Math.max(0, ...values);
+  const trendAxisMax = trendMax >= 1000 ? Math.ceil((trendMax + 1000) / 1000) * 1000 : undefined;
 
   document.querySelectorAll('#goliveTrendGranButtons button').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.gran === goliveTrendGranularity);
@@ -1508,6 +1511,8 @@ function renderGoliveTrendChart(filteredRows) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+      layout: { padding: { top: 24 } },
       plugins: {
         legend: { display: false },
         datalabels: {
@@ -1528,6 +1533,7 @@ function renderGoliveTrendChart(filteredRows) {
       scales: {
         y: {
           beginAtZero: true,
+          max: trendAxisMax,
           ticks: { precision: 0, color: 'rgba(255,255,255,0.85)' },
           grid: { color: 'rgba(255,255,255,0.12)' },
         },
