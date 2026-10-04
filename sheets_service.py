@@ -1112,6 +1112,7 @@ def get_row_snapshot(row_num: int):
         f"{config.COL_STATUS_AA}{row_num}",
         f"{config.COL_KETERANGAN_AB}{row_num}",
         f"{config.COL_WO_TERBIT}{row_num}",
+        f"{config.COL_ORDER_PRIORITAS}{row_num}",
         f"{config.COL_TARGET_FI}{row_num}",
         f"{config.COL_KOMIT_GL}{row_num}",  # AL -- Target Golive
         f"{config.COL_BH}{row_num}",
@@ -1205,6 +1206,7 @@ def get_row_snapshot(row_num: int):
         "last_note": last_note,
         "extra_fields": extra_fields,
         "wo_terbit": wo_terbit_date.strftime("%d/%m/%Y") if wo_terbit_date else (wo_terbit_raw or None),
+        "order_prioritas": v(f"{config.COL_ORDER_PRIORITAS}{row_num}") or None,
         "aging_days": aging_days,
         "progress_percent": progress_percent,
         "progress_stage_label": progress_stage_label,

@@ -28,17 +28,19 @@
   .mbb-value-box .l{font-size:0.82rem; font-weight:600; color:#334155; margin-bottom:4px;}
   .mbb-value-box .n{font-size:1.7rem; font-weight:800; color:#0f172a;}
   .mbb-dash-top{display:grid; grid-template-columns: 1fr 0.55fr 1fr; grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:stretch;}
-  .mbb-dash-bottom{display:grid; grid-template-columns: 1fr 1fr; grid-template-areas: "notes curve"; gap:14px; margin-bottom:14px; align-items:stretch;}
+  .mbb-dash-bottom{display:grid; grid-template-columns: 1fr 1fr; grid-template-areas: "curve timeplan"; gap:14px; margin-bottom:14px; align-items:stretch;}
+  .mbb-dash-siteids{margin-bottom:14px;}
   @media (max-width: 980px){
     .mbb-dash-top{grid-template-columns: 1fr; grid-template-areas: "tree" "resume" "target";}
-    .mbb-dash-bottom{grid-template-columns: 1fr; grid-template-areas: "notes" "curve";}
+    .mbb-dash-bottom{grid-template-columns: 1fr; grid-template-areas: "curve" "timeplan";}
   }
   .mbb-dash-top .tree-card{grid-area:tree;}
   .mbb-dash-top .resume-card{grid-area:resume;}
   .mbb-dash-top .target-card{grid-area:target;}
-  .mbb-dash-bottom .notes-card{grid-area:notes;}
   .mbb-dash-bottom .curve-card{grid-area:curve;}
-  .mbb-tree-subtitle{color:#be185d; font-weight:800; font-size:0.8rem; line-height:1.35; margin:0 0 8px;}
+  .mbb-dash-bottom .timeplan-card{grid-area:timeplan;}
+  .mbb-dash-top .section-title{font-size:1.05rem;}
+  .mbb-tree-subtitle{color:#be185d; font-weight:800; font-size:0.9rem; line-height:1.35; margin:0 0 8px;}
   .mbb-tree-svg-wrap{overflow-x:auto;}
   .mbb-tree-svg-wrap svg text{user-select:none;}
   .mbb-tree-svg-wrap svg .tree-node:hover rect{opacity:0.88;}
@@ -103,7 +105,14 @@
   /* Baris tabel & titik kurva yang bisa diklik utk lihat detail (popup) */
   #table-wrap table tbody tr{cursor:pointer;}
   #table-wrap table tbody tr:hover{background:#f8fafc;}
+  #table-wrap table th.note-progress-col{min-width:280px;}
+  #table-wrap table td.note-progress-col{white-space:normal; min-width:280px; max-width:520px; line-height:1.45; overflow-wrap:anywhere;}
   #olo-curve-chart, #mbb-curve-chart{cursor:pointer;}
+  .mbb-detail-rows{display:grid; gap:6px; max-height:60vh; overflow:auto;}
+  .mbb-detail-row{display:grid; grid-template-columns:minmax(100px,0.7fr) minmax(140px,1.4fr) minmax(100px,0.8fr); gap:10px; align-items:center; width:100%; padding:9px 10px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; color:var(--text); text-align:left; cursor:pointer;}
+  .mbb-detail-row:hover{background:#eff6ff; border-color:#93c5fd;}
+  .mbb-detail-row span{overflow-wrap:anywhere;}
+  @media(max-width:600px){.mbb-detail-row{grid-template-columns:1fr; gap:3px;}}
 
   /* Kalender Komit FI (Plan Golive) -- card di bawah Kurva S */
   .olo-cal-dow{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:4px; font-size:0.72rem; font-weight:700; color:#64748b; text-align:center;}
@@ -325,6 +334,12 @@ const MBB_TREE_VIEW_LABEL = {
 
 let mbbSelectedBucket = null; // key bucket dashboard yang lagi diklik (null = semua)
 let mbbCurveChart = null;
+let mbbTimePlanChart = null;
+let mbbCurvePlanRowsByIndex = [];
+let mbbCurveRealRowsByIndex = [];
+let mbbTimePlanRowsByIndex = [];
+let mbbCurvePeriodLabels = [];
+let mbbTimePlanDateLabels = [];
 // Halaman aktif buat daftar "SITEID" (Notes) di bawah Tree Diagram --
 // 15 baris per halaman, direset ke 0 tiap kali kategori/filter aktif
 // berubah (lihat mbbSelectBucket & setMbbActiveFilter).
@@ -756,18 +771,24 @@ function renderMbbDashboard(rowsForView, view){
     </div>
 
     <div class="mbb-dash-bottom">
-      <div class="card notes-card">
-        <div class="section-title" style="margin:0 0 10px;">
-          SITEID <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
-        </div>
-        <div class="mbb-notes-list">${notesHtml}</div>
-        ${notesPagerHtml}
-      </div>
-
       <div class="card curve-card">
         <div class="section-title" style="margin:0 0 10px;">Kurva PLAN vs REALISASI L0 Ready</div>
         <div style="position:relative; height:230px;"><canvas id="mbb-curve-chart"></canvas></div>
       </div>
+
+      <div class="card timeplan-card">
+        <div class="section-title" style="margin:0 0 10px;">Time Plan — Target FI/L0</div>
+        <div class="hint" style="margin-bottom:8px;">Tanggal dari kolom AA · tidak termasuk status 7. L1 Ready dan 7. L3. OA Confirmation</div>
+        <div style="position:relative; height:230px;"><canvas id="mbb-timeplan-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card mbb-dash-siteids">
+      <div class="section-title" style="margin:0 0 10px;">
+        SITE ID <span class="hint">${mbbSelectedBucket ? '(kategori terpilih)' : '(semua)'}</span>
+      </div>
+      <div class="mbb-notes-list">${notesHtml}</div>
+      ${notesPagerHtml}
     </div>
   `;
 }
@@ -1026,20 +1047,23 @@ function renderMbbCurve(rowsForView){
   if (!canvas) return;
 
   const year = new Date().getFullYear();
-  const planByMonth = new Array(12).fill(0);
-  const realByMonth = new Array(12).fill(0);
+  const planRowsByMonth = Array.from({length:12}, () => []);
+  const realRowsByMonth = Array.from({length:12}, () => []);
 
   rowsForView.forEach(r=>{
     const pd = parseLooseDate(getCol(r, "Target FI/L0"));
-    if (pd && pd.getFullYear() === year) planByMonth[pd.getMonth()]++;
+    if (pd && pd.getFullYear() === year) planRowsByMonth[pd.getMonth()].push(r);
     const rd = parseLooseDate(getCol(r, "Tanggal L0 Ready"));
-    if (rd && rd.getFullYear() === year) realByMonth[rd.getMonth()]++;
+    if (rd && rd.getFullYear() === year) realRowsByMonth[rd.getMonth()].push(r);
   });
 
   // kumulatif
   let cp = 0, cr = 0;
-  const planCum = planByMonth.map(v => (cp += v));
-  const realCum = realByMonth.map((v,i) => i <= new Date().getMonth() ? (cr += v) : null);
+  const planCum = planRowsByMonth.map(rows => (cp += rows.length));
+  const realCum = realRowsByMonth.map((rows,i) => i <= new Date().getMonth() ? (cr += rows.length) : null);
+  mbbCurvePlanRowsByIndex = planRowsByMonth;
+  mbbCurveRealRowsByIndex = realRowsByMonth;
+  mbbCurvePeriodLabels = INDO_MONTHS.map(m => `${m} ${year}`);
 
   if (mbbCurveChart) mbbCurveChart.destroy();
   mbbCurveChart = new Chart(canvas.getContext("2d"), {
@@ -1055,8 +1079,82 @@ function renderMbbCurve(rowsForView){
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ position:"bottom" } },
       scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } },
+      onClick:(evt, elements)=>{
+        if (!elements.length) return;
+        mbbShowCurvePointDetail(elements[0].datasetIndex, elements[0].index);
+      },
+      onHover:(evt, elements)=>{ evt.native.target.style.cursor = elements.length ? "pointer" : "default"; },
     },
   });
+}
+
+function mbbShowCurvePointDetail(datasetIndex, index){
+  const rows = (datasetIndex === 0 ? mbbCurvePlanRowsByIndex : mbbCurveRealRowsByIndex)[index] || [];
+  const label = datasetIndex === 0 ? "PLAN (Target FI/L0)" : "REALISASI (Tanggal L0 Ready)";
+  const period = mbbCurvePeriodLabels[index] || "";
+  const list = rows.length ? rows.map((row, rowIndex) => `
+    <button type="button" class="mbb-detail-row" onclick="mbbShowChartRowDetail('curve', ${index}, ${datasetIndex}, ${rowIndex})">
+      <strong>${escapeHtml(getCol(row, "SITE ID") || "(Tanpa SITE ID)")}</strong>
+      <span>${escapeHtml(getCol(row, "SITE NAME") || "–")}</span>
+      <span class="hint">${escapeHtml(getCol(row, "Sub Sistem") || "–")}</span>
+    </button>`).join("") : `<div class="empty-state">Tidak ada baris pada periode ini.</div>`;
+  openModal(`${escapeHtml(label)} — ${escapeHtml(period)}`, `<div class="hint" style="margin-bottom:8px;">${rows.length} baris · klik lokasi untuk detail</div><div class="mbb-detail-rows">${list}</div>`);
+}
+
+function renderMbbTimePlan(rowsForView){
+  const canvas = document.getElementById("mbb-timeplan-chart");
+  if (!canvas) return;
+  const rowsByDate = new Map();
+  const excludedStatuses = ["7. l1 ready", "7. l3. oa confirmation"];
+  rowsForView.forEach(row=>{
+    const status = getCol(row, "Status Pekerjaan").trim().toLowerCase();
+    if (excludedStatuses.includes(status)) return;
+    const date = parseLooseDate(getCol(row, "Target FI/L0"));
+    if (!date) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+    if (!rowsByDate.has(key)) rowsByDate.set(key, []);
+    rowsByDate.get(key).push(row);
+  });
+  const dates = Array.from(rowsByDate.keys()).sort();
+  const labels = dates.map(key=>{
+    const [year, month, day] = key.split("-");
+    return `${day}/${month}/${year}`;
+  });
+  mbbTimePlanRowsByIndex = dates.map(date => rowsByDate.get(date));
+  mbbTimePlanDateLabels = labels;
+  if (mbbTimePlanChart) mbbTimePlanChart.destroy();
+  mbbTimePlanChart = new Chart(canvas.getContext("2d"), {
+    type:"bar",
+    data:{ labels, datasets:[{ label:"Jumlah baris", data:mbbTimePlanRowsByIndex.map(rows=>rows.length), backgroundColor:"#2f6690", borderRadius:4 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ x:{ ticks:{ autoSkip:true, maxRotation:45, minRotation:0 } }, y:{ beginAtZero:true, ticks:{ precision:0 } } },
+      onClick:(evt, elements)=>{ if (elements.length) mbbShowTimePlanDetail(elements[0].index); },
+      onHover:(evt, elements)=>{ evt.native.target.style.cursor = elements.length ? "pointer" : "default"; },
+    },
+  });
+}
+
+function mbbShowTimePlanDetail(index){
+  const rows = mbbTimePlanRowsByIndex[index] || [];
+  const list = rows.length ? rows.map((row, rowIndex) => `
+    <button type="button" class="mbb-detail-row" onclick="mbbShowChartRowDetail('timeplan', ${index}, 0, ${rowIndex})">
+      <strong>${escapeHtml(getCol(row, "SITE ID") || "(Tanpa SITE ID)")}</strong>
+      <span>${escapeHtml(getCol(row, "SITE NAME") || "–")}</span>
+      <span class="hint">${escapeHtml(getCol(row, "Status Pekerjaan") || "–")}</span>
+    </button>`).join("") : `<div class="empty-state">Tidak ada baris.</div>`;
+  openModal(`Time Plan — ${escapeHtml(mbbTimePlanDateLabels[index] || "")}`, `<div class="hint" style="margin-bottom:8px;">${rows.length} baris · klik lokasi untuk detail</div><div class="mbb-detail-rows">${list}</div>`);
+}
+
+function mbbShowChartRowDetail(source, index, datasetIndex, rowIndex){
+  const rows = source === "curve"
+    ? (datasetIndex === 0 ? mbbCurvePlanRowsByIndex : mbbCurveRealRowsByIndex)[index]
+    : mbbTimePlanRowsByIndex[index];
+  const row = rows && rows[rowIndex];
+  if (!row) return;
+  const cols = MBB_LABELS.map(label=>`<tr><th>${escapeHtml(label)}</th><td>${getCol(row,label) ? escapeHtml(getCol(row,label)) : '<span class="cell-empty">–</span>'}</td></tr>`).join("");
+  openModal(`Detail ${escapeHtml(getCol(row,"SITE ID") || "Lokasi")}`, `<table class="detail-kv"><tbody>${cols}</tbody></table>`);
 }
 
 /* ===================== OLO: KLASIFIKASI STATUS PEKERJAAN (Tree Diagram) ===
@@ -2004,6 +2102,7 @@ function render(){
     renderMbbActiveToggle();
     renderMbbDashboard(rows, view);
     renderMbbCurve(rows);
+    renderMbbTimePlan(rows);
     renderMbbPivotTable(rows);
     rows = rows.filter(mbbDashboardFilter);
   } else {
@@ -2031,7 +2130,7 @@ function render(){
   const truncated = !showAllRows && totalRows > ROWS_PER_PAGE_DEFAULT;
   const visibleRows = truncated ? rows.slice(0, ROWS_PER_PAGE_DEFAULT) : rows;
 
-  const thead = `<thead><tr>${cols.map(label=>`<th>${escapeHtml(label)}</th>`).join("")}</tr></thead>`;
+  const thead = `<thead><tr>${cols.map(label=>`<th${label === "Note Progress" ? ' class="note-progress-col"' : ""}>${escapeHtml(label)}</th>`).join("")}</tr></thead>`;
 
   // Disimpan global supaya bisa dibaca showRowDetailModal() saat baris
   // diklik (menampilkan semua kolom baris itu di popup).
@@ -2041,13 +2140,15 @@ function render(){
   const bodyRows = visibleRows.map((r,idx)=>{
     const tds = cols.map(label=>{
       const raw = (r[label] || "").toString().trim();
+      const noteClass = label === "Note Progress" ? ' class="note-progress-col"' : "";
       if(label === statusLabel){
-        return `<td>${statusPill(raw)}</td>`;
+        return `<td${noteClass}>${statusPill(raw)}</td>`;
       }
-      if(!raw) return `<td><span class="cell-empty">–</span></td>`;
+      if(!raw) return `<td${noteClass}><span class="cell-empty">–</span></td>`;
       const isNum = /^-?[\d.,]+%?$/.test(raw) && raw.length < 20;
       const title = raw.length > 60 ? ` title="${escapeHtml(raw)}"` : "";
-      return `<td class="${isNum?'num':''}"${title}>${escapeHtml(raw)}</td>`;
+      const classes = [label === "Note Progress" ? "note-progress-col" : "", isNum ? "num" : ""].filter(Boolean).join(" ");
+      return `<td${classes ? ` class="${classes}"` : ""}${title}>${escapeHtml(raw)}</td>`;
     }).join("");
     return `<tr onclick="showRowDetailModal(${idx})">${tds}</tr>`;
   }).join("");

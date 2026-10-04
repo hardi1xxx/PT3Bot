@@ -453,10 +453,10 @@ function renderRowHeader(rowNum, label, snapshot) {
 
 function renderAgingProgress(snapshot) {
   if (snapshot.progress_stage_label === 'Drop') {
-    return `<div class="badge" style="background:#7f1d1d; margin-bottom:10px; display:inline-block;">Status: Drop — di luar progress tahapan</div>`;
+    return `<div class="badge" style="background:#7f1d1d; margin-bottom:10px; display:inline-block;">Status: Drop — di luar progress tahapan</div>${snapshot.order_prioritas ? `<div style="font-size:0.8rem; color:var(--muted); margin:-4px 0 10px;">Order Prioritas: <strong style="color:var(--text);">${esc(snapshot.order_prioritas)}</strong></div>` : ''}`;
   }
   if (!snapshot.wo_terbit) {
-    return `<div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:10px;">WO terbit belum terisi — aging &amp; deadline belum bisa dihitung.</div>`;
+    return `<div class="sub" style="color:var(--muted); font-size:0.8rem; margin-bottom:10px;">WO terbit belum terisi — aging &amp; deadline belum bisa dihitung.${snapshot.order_prioritas ? ` Order Prioritas: <strong style="color:var(--text);">${esc(snapshot.order_prioritas)}</strong>.` : ''}</div>`;
   }
 
   const pct = snapshot.progress_percent == null ? 0 : Math.round(snapshot.progress_percent);
@@ -467,6 +467,7 @@ function renderAgingProgress(snapshot) {
     <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:10px;">
       <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; font-size:0.8rem; color:var(--muted); margin-bottom:6px;">
         <span>WO terbit: <strong style="color:var(--text);">${esc(snapshot.wo_terbit)}</strong></span>
+        <span>Order Prioritas: <strong style="color:var(--text);">${esc(snapshot.order_prioritas) || '-'}</strong></span>
         <span>Aging: <strong style="color:var(--text);">${agingLabel}</strong></span>
       </div>
       <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
