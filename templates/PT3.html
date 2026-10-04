@@ -24,7 +24,7 @@
   .chart-metric-toggle button { border: 0; background: var(--panel-alt); color: var(--muted); font-weight: 700; font-size: 0.72rem; padding: 5px 9px; cursor: pointer; }
   .chart-metric-toggle button + button { border-left: 1px solid var(--border, #cbd5e1); }
   .chart-metric-toggle button.active { background: var(--brand-blue, #29467a); color: #fff; }
-  .golive-trend-gran { display: flex; gap: 4px; }
+  .golive-trend-gran { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
   .golive-trend-gran button { padding: 3px 10px; font-size: 0.75rem; border-radius: 6px; }
   .golive-trend-gran button.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
   .mini-chart-wrap { position: relative; flex: 1 1 auto; min-height: 140px; }
@@ -233,7 +233,7 @@
     <div class="card chart-card">
       <div class="mini-chart-title" style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
         <span>Distribusi Status Pekerjaan</span>
-        <div class="chart-metric-toggle" role="group" aria-label="Metrik distribusi status">
+        <div class="chart-metric-toggle" role="group" aria-label="Metrik untuk Distribusi Status dan Trend Golive" title="Metrik bersama untuk kedua grafik">
           <button type="button" class="active" data-status-metric="lop" aria-pressed="true" onclick="setStatusChartMetric('lop')">Jumlah LOP</button>
           <button type="button" data-status-metric="port" aria-pressed="false" onclick="setStatusChartMetric('port')">Jumlah Port</button>
         </div>
@@ -250,6 +250,7 @@
           <button type="button" data-gran="month" class="btn-ghost btn-sm">Bulan</button>
           <button type="button" data-gran="week" class="btn-ghost btn-sm">Minggu</button>
           <button type="button" data-gran="day" class="btn-ghost btn-sm">Hari</button>
+          <select id="goliveTrendMonthSelect" aria-label="Pilih bulan untuk tren mingguan atau harian" style="display:none;"></select>
         </div>
       </div>
       <div class="mini-chart-wrap"><canvas id="goliveTrendChart"></canvas></div>
@@ -1367,6 +1368,7 @@ let goliveTrendChart = null;
 let goliveTrendBucketIndex = {};   // key granularitas -> rows[]
 let goliveTrendBucketKeys = [];    // urutan bucket sesuai chart, sinkron dgn index klik
 let goliveTrendGranularity = 'month'; // 'year' | 'month' | 'week' | 'day'
+let goliveTrendSelectedMonth = `${today0.getFullYear()}-${String(today0.getMonth()+1).padStart(2, '0')}`;
 
 const GOLIVE_TREND_MONTH_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 
@@ -1428,9 +1430,31 @@ function goliveTrendBucketFullLabel(key, gran) {
   return key;
 }
 
+function goliveTrendMonthOptions(rows) {
+  const years = new Set([String(today0.getFullYear()), goliveTrendSelectedMonth.slice(0, 4)]);
+  rows.forEach(r => {
+    if (r.golive_date_iso) years.add(r.golive_date_iso.slice(0, 4));
+  });
+  return Array.from(years).sort().reverse().flatMap(year => FI_CAL_MONTH_NAMES.map((name, index) => {
+    const month = String(index + 1).padStart(2, '0');
+    return { key: `${year}-${month}`, label: `${name} ${year}` };
+  }));
+}
+
 function renderGoliveTrendChart(filteredRows) {
   goliveTrendBucketIndex = {};
-  filteredRows.forEach(r => {
+  const datedRows = filteredRows.filter(r => r.golive_date_iso);
+  const monthSelect = document.getElementById('goliveTrendMonthSelect');
+  const monthOptions = goliveTrendMonthOptions(datedRows);
+  if (monthSelect) {
+    monthSelect.innerHTML = monthOptions.map(option => `<option value="${option.key}">${esc(option.label)}</option>`).join('');
+    monthSelect.value = goliveTrendSelectedMonth;
+    monthSelect.style.display = goliveTrendGranularity === 'week' || goliveTrendGranularity === 'day' ? '' : 'none';
+  }
+  const rowsForPeriod = goliveTrendGranularity === 'week' || goliveTrendGranularity === 'day'
+    ? datedRows.filter(r => r.golive_date_iso.startsWith(`${goliveTrendSelectedMonth}-`))
+    : datedRows;
+  rowsForPeriod.forEach(r => {
     if (!r.golive_date_iso) return;
     const key = goliveTrendBucketKey(r.golive_date_iso, goliveTrendGranularity);
     (goliveTrendBucketIndex[key] = goliveTrendBucketIndex[key] || []).push(r);
@@ -1438,7 +1462,9 @@ function renderGoliveTrendChart(filteredRows) {
 
   goliveTrendBucketKeys = Object.keys(goliveTrendBucketIndex).sort(); // kronologis (string sort aman krn zero-padded)
   const labels = goliveTrendBucketKeys.map(k => goliveTrendBucketLabel(k, goliveTrendGranularity));
-  const values = goliveTrendBucketKeys.map(k => goliveTrendBucketIndex[k].length);
+  const lopValues = goliveTrendBucketKeys.map(k => goliveTrendBucketIndex[k].length);
+  const portValues = goliveTrendBucketKeys.map(k => goliveTrendBucketIndex[k].reduce((total, row) => total + (Number(row.port) || 0), 0));
+  const values = statusChartMetric === 'port' ? portValues : lopValues;
 
   document.querySelectorAll('#goliveTrendGranButtons button').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.gran === goliveTrendGranularity);
@@ -1465,7 +1491,7 @@ function renderGoliveTrendChart(filteredRows) {
     data: {
       labels,
       datasets: [{
-        label: 'Jumlah Golive',
+        label: statusChartMetric === 'port' ? 'Jumlah Port Golive' : 'Jumlah LOP Golive',
         data: values,
         borderColor: '#f5b400',
         backgroundColor: gradient,
@@ -1495,7 +1521,7 @@ function renderGoliveTrendChart(filteredRows) {
         },
         tooltip: {
           callbacks: {
-            label: (ctx2) => ` ${fmtNum(ctx2.raw)} lokasi Golive`,
+            label: (ctx2) => ` ${fmtNum(lopValues[ctx2.dataIndex])} LOP | ${fmtNum(portValues[ctx2.dataIndex])} Port`,
           },
         },
       },
@@ -1527,6 +1553,10 @@ document.getElementById('goliveTrendGranButtons').addEventListener('click', (e) 
   goliveTrendGranularity = btn.dataset.gran;
   renderGoliveTrendChart(getFilteredRows());
 });
+document.getElementById('goliveTrendMonthSelect').addEventListener('change', (e) => {
+  goliveTrendSelectedMonth = e.target.value;
+  renderGoliveTrendChart(getFilteredRows());
+});
 
 function goliveTrendCsvEscape(value) {
   const s = value === null || value === undefined ? '' : String(value);
@@ -1537,10 +1567,10 @@ function goliveTrendCsvEscape(value) {
 function downloadGoliveTrendCsv(bucketKey) {
   const items = (goliveTrendBucketIndex[bucketKey] || []).slice()
     .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
-  const header = ['Branch', 'LOP (IHLD)', 'Lokasi', 'Nama ODP', 'Jumlah ODP', 'Tanggal Golive'];
+  const header = ['Branch', 'LOP (IHLD)', 'Lokasi', 'Port', 'Nama ODP', 'Jumlah ODP', 'Tanggal Golive'];
   const lines = [header.map(goliveTrendCsvEscape).join(',')];
   items.forEach(r => {
-    lines.push([r.branch || '', r.ihld || '', r.lokasi || '', r.odp_bo || '', r.odp_real || '', r.golive_date_display || '']
+    lines.push([r.branch || '', r.ihld || '', r.lokasi || '', r.port || 0, r.odp_bo || '', r.odp_real || '', r.golive_date_display || '']
       .map(goliveTrendCsvEscape).join(','));
   });
   const csvContent = '\uFEFF' + lines.join('\r\n');
@@ -1558,10 +1588,11 @@ function downloadGoliveTrendCsv(bucketKey) {
 function openGoliveTrendBucket(bucketKey) {
   const items = (goliveTrendBucketIndex[bucketKey] || []).slice()
     .sort((a, b) => (a.branch || '').localeCompare(b.branch || ''));
+  const totalPort = items.reduce((total, row) => total + (Number(row.port) || 0), 0);
   const modalBox = document.getElementById('bhModalBox');
   modalBox.innerHTML = `
     <div class="modal-header">
-      <div class="modal-title">Golive — ${esc(goliveTrendBucketFullLabel(bucketKey, goliveTrendGranularity))} <span class="badge">${fmtNum(items.length)}</span></div>
+      <div class="modal-title">Golive — ${esc(goliveTrendBucketFullLabel(bucketKey, goliveTrendGranularity))} <span class="badge">${fmtNum(items.length)} LOP</span> <span class="badge">${fmtNum(totalPort)} Port</span></div>
       <button class="btn-ghost modal-close" id="bhModalCloseBtn">Tutup &#10005;</button>
     </div>
     <div style="margin:8px 0 10px;">
@@ -1569,18 +1600,19 @@ function openGoliveTrendBucket(bucketKey) {
     </div>
     <div class="pivot-table-wrap" style="max-height:420px; overflow:auto;">
       <table class="pivot">
-        <thead><tr><th>Branch</th><th>LOP (IHLD)</th><th>Lokasi</th><th>Nama ODP</th><th>Jumlah ODP</th><th>Tanggal Golive</th></tr></thead>
+        <thead><tr><th>Branch</th><th>LOP (IHLD)</th><th>Lokasi</th><th>Port</th><th>Nama ODP</th><th>Jumlah ODP</th><th>Tanggal Golive</th></tr></thead>
         <tbody id="goliveTrendModalBody">
           ${items.length ? items.map(r => `
             <tr class="result-item" data-row="${r.row}" style="cursor:pointer;">
               <td>${esc(r.branch) || '(Tanpa Branch)'}</td>
               <td>${esc(r.ihld) || '-'}</td>
               <td>${esc(r.lokasi) || '-'}</td>
+              <td>${fmtNum(Number(r.port) || 0)}</td>
               <td style="white-space:normal; word-break:break-word; max-width:220px;">${esc(r.odp_bo) || '-'}</td>
               <td>${r.odp_real ? fmtNum(r.odp_real) : '-'}</td>
               <td>${esc(r.golive_date_display) || '-'}</td>
             </tr>
-          `).join('') : `<tr><td colspan="6"><div class="empty-state">Tidak ada lokasi Golive di periode ini.</div></td></tr>`}
+          `).join('') : `<tr><td colspan="7"><div class="empty-state">Tidak ada lokasi Golive di periode ini.</div></td></tr>`}
         </tbody>
       </table>
     </div>
