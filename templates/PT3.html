@@ -20,6 +20,10 @@
   .fi-left-col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
   .fi-left-col > .card { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
   .mini-chart-title { font-weight: 800; font-size: 0.95rem; color: var(--text); margin-bottom: 10px; }
+  .chart-metric-toggle { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--border, #cbd5e1); border-radius: 7px; overflow: hidden; }
+  .chart-metric-toggle button { border: 0; background: var(--panel-alt); color: var(--muted); font-weight: 700; font-size: 0.72rem; padding: 5px 9px; cursor: pointer; }
+  .chart-metric-toggle button + button { border-left: 1px solid var(--border, #cbd5e1); }
+  .chart-metric-toggle button.active { background: var(--brand-blue, #29467a); color: #fff; }
   .golive-trend-gran { display: flex; gap: 4px; }
   .golive-trend-gran button { padding: 3px 10px; font-size: 0.75rem; border-radius: 6px; }
   .golive-trend-gran button.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
@@ -227,7 +231,13 @@
 <div class="split-half-fi">
   <div class="fi-left-col">
     <div class="card chart-card">
-      <div class="mini-chart-title">Distribusi Status Pekerjaan</div>
+      <div class="mini-chart-title" style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+        <span>Distribusi Status Pekerjaan</span>
+        <div class="chart-metric-toggle" role="group" aria-label="Metrik distribusi status">
+          <button type="button" class="active" data-status-metric="lop" aria-pressed="true" onclick="setStatusChartMetric('lop')">Jumlah LOP</button>
+          <button type="button" data-status-metric="port" aria-pressed="false" onclick="setStatusChartMetric('port')">Jumlah Port</button>
+        </div>
+      </div>
       <div class="mini-chart-wrap"><canvas id="statusChart"></canvas></div>
       <div class="chart-legend" id="chartLegend"></div>
     </div>
@@ -393,6 +403,7 @@ let dashboardCache = null;   // { statuses, batches, branches, rows }
 
 let selectedRow = null;
 let statusChart = null;
+let statusChartMetric = 'lop';
 let bhCurrentLabel = null;
 
 // ── Kalender Target FI (kolom AK) ─────────────────────────────────
@@ -1281,13 +1292,26 @@ document.getElementById('tselGroupBtn').addEventListener('click', () => {
 });
 
 // ── Bar chart: distribusi status pekerjaan (jumlah order/LOP + Port per status) ──
+function setStatusChartMetric(metric) {
+  if (metric !== 'lop' && metric !== 'port') return;
+  statusChartMetric = metric;
+  if (dashboardCache) refreshAll();
+}
+
 function renderChart(lopTable, portTable, statuses) {
   const totalLopRow = lopTable.find(r => r.batch === 'TOTAL');
   const totalPortRow = portTable.find(r => r.batch === 'TOTAL');
   const labels = statuses.map(s => s.replace(/^\d+\.\s*/, ''));
-  const values = statuses.map(s => (totalLopRow ? totalLopRow.values[s] : 0) || 0);
+  const lopValues = statuses.map(s => (totalLopRow ? totalLopRow.values[s] : 0) || 0);
   const portValues = statuses.map(s => (totalPortRow ? totalPortRow.values[s] : 0) || 0);
+  const values = statusChartMetric === 'port' ? portValues : lopValues;
   const colors = statuses.map(s => STATUS_COLORS[s] || '#94a3b8');
+
+  document.querySelectorAll('[data-status-metric]').forEach(button => {
+    const active = button.dataset.statusMetric === statusChartMetric;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
 
   const ctx = document.getElementById('statusChart').getContext('2d');
   if (statusChart) statusChart.destroy();
@@ -1295,7 +1319,7 @@ function renderChart(lopTable, portTable, statuses) {
     type: 'bar',
     data: {
       labels,
-      datasets: [{ label: 'Jumlah LOP', data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 46 }],
+      datasets: [{ label: statusChartMetric === 'port' ? 'Jumlah Port' : 'Jumlah LOP', data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 46 }],
     },
     options: {
       responsive: true,
@@ -1313,7 +1337,7 @@ function renderChart(lopTable, portTable, statuses) {
         },
         tooltip: {
           callbacks: {
-            label: (ctx2) => ` ${fmtNum(ctx2.raw)} LOP | ${fmtNum(portValues[ctx2.dataIndex])} Port`,
+            label: (ctx2) => ` ${fmtNum(lopValues[ctx2.dataIndex])} LOP | ${fmtNum(portValues[ctx2.dataIndex])} Port`,
           },
         },
       },
