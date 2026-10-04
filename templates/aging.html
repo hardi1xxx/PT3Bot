@@ -21,15 +21,20 @@
   #agingStatusTable td.aging-cell-clickable, #agingOnprogressTable td.aging-cell-clickable { cursor: pointer; }
   #agingStatusTable td.aging-cell-clickable:hover, #agingOnprogressTable td.aging-cell-clickable:hover { background: var(--panel-alt); }
   .aging-tl-avg { font-size: 0.72rem; font-weight: 700; margin-top: 2px; }
-  .aging-branch-group { margin-bottom: 14px; }
-  .aging-branch-group:last-child { margin-bottom: 0; }
+  #agingBranchGrid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); align-items:start; gap:8px; max-height:none; overflow:visible; }
+  .aging-branch-group { min-width:0; margin:0; padding:8px; border:1px solid var(--border, #e2e8f0); border-radius:8px; background:var(--panel-alt); }
   .aging-branch-group-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .02em;
-    margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px dashed var(--border, #2a3550);
+    display: flex; align-items: center; justify-content: flex-start; gap: 10px;
+    font-size: 0.76rem; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0;
+    margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px solid var(--border, #2a3550);
   }
   .aging-branch-group-head label { display:inline-flex; align-items:center; gap:7px; cursor:pointer; }
   .aging-branch-group-head input { width:auto; margin:0; accent-color:var(--brand-blue); }
+  .aging-branch-group-body.branch-filter-grid { display:flex; flex-wrap:wrap; gap:5px; max-height:none; overflow:visible; }
+  #agingBranchGrid .branch-check { padding:4px 7px; gap:4px; font-size:0.7rem; }
+  @media(max-width:1100px){ #agingBranchGrid { grid-template-columns:repeat(3, minmax(0, 1fr)); } }
+  @media(max-width:760px){ #agingBranchGrid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+  @media(max-width:380px){ #agingBranchGrid { grid-template-columns:1fr; } }
 </style>
 
 <!-- Stat cards -->
