@@ -887,7 +887,19 @@ document.getElementById('fbbRefDateApply').addEventListener('click', () => {
 // Filter Program & Regional yang sedang aktif tetap dipertahankan (lihat renderCheckGrid/loadFbb).
 document.getElementById('fbbUpdateDataBtn').addEventListener('click', () => {
   const val = document.getElementById('fbbRefDate').value;
-  Promise.allSettled([loadFbb(), loadFbbSummary(val || null)]).then(() => renderSCurve());
+  const button = document.getElementById('fbbUpdateDataBtn');
+  button.disabled = true;
+  fetch('/api/fbb-refresh', { method: 'POST' })
+    .then(res => res.json())
+    .then(json => {
+      if (!json.ok) throw new Error(json.error || 'Gagal memperbarui cache data.');
+      return Promise.allSettled([loadFbb(), loadFbbSummary(val || null)]);
+    })
+    .then(() => renderSCurve())
+    .catch(error => {
+      document.getElementById('fbbSummaryTableWrap').innerHTML = `<div class="flash error">Gagal memperbarui data: ${escF(error.message || error)}</div>`;
+    })
+    .finally(() => { button.disabled = false; });
 });
 
 // ── Buat Laporan: buka halaman laporan baru di tab baru, bawa filter aktif ──

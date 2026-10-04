@@ -159,6 +159,8 @@ def api_search():
 @app.route("/api/dashboard")
 def api_dashboard():
     try:
+        if request.args.get("force") == "1":
+            sheets_service.invalidate_sheet_cache(sheets_service.get_worksheet().title)
         data = sheets_service.get_dashboard_data()
         return jsonify({"ok": True, "data": data})
     except Exception as e:
@@ -638,6 +640,16 @@ def api_fbb_data():
     try:
         data = sheets_service.get_fbb_data()
         return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/fbb-refresh", methods=["POST"])
+def api_fbb_refresh():
+    try:
+        sheets_service.invalidate_sheet_cache(sheets_service.get_semesta_worksheet().title)
+        sheets_service.invalidate_sheet_cache(sheets_service.get_target_worksheet().title)
+        return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 

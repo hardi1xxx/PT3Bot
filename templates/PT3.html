@@ -212,7 +212,7 @@
 <div class="section-title">
   Rekap Port &amp; LOP
   <span class="hint" id="rekapTableHint">baris = Regional &amp; Branch &middot; kolom = jumlah LOP per status &middot; klik angka untuk lihat &amp; download daftar lokasinya</span>
-  <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard()">&#8635; Refresh</button>
+  <button class="refresh-btn" style="margin-left:auto;" onclick="loadDashboard(true)">&#8635; Refresh</button>
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div class="rekap-tabs" id="rekapTabs">
@@ -1408,8 +1408,8 @@ function goliveTrendBucketLabel(key, gran) {
     return `M${w}/${y.slice(2)}`;
   }
   if (gran === 'day') {
-    const [y, m, d] = key.split('-');
-    return `${d}/${m}/${y.slice(2)}`;
+    const [, , d] = key.split('-');
+    return d;
   }
   return key;
 }
@@ -2077,13 +2077,13 @@ function renderLocList(locations, filterText) {
   `).join('');
 }
 
-async function loadDashboard() {
+async function loadDashboard(force = false) {
   // Jika dashboardCache sudah pernah terisi sebelumnya, artinya ini pemanggilan ulang
   // (klik tombol Refresh / update data) bukan load awal saat halaman dibuka -> pertahankan filter.
   const isUpdate = dashboardCache !== null;
   document.getElementById('pivotTableWrap').innerHTML = '<div class="skeleton">Memuat data...</div>';
   try {
-    const res = await fetch('/api/dashboard');
+    const res = await fetch(`/api/dashboard${force ? '?force=1' : ''}`);
     const json = await res.json();
     if (!json.ok) {
       document.getElementById('pivotTableWrap').innerHTML = `<div class="flash error">${esc(json.error)}</div>`;

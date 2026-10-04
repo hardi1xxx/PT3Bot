@@ -262,6 +262,8 @@ _values_cache = {}
 _values_cache_lock = threading.Lock()
 _values_fetch_locks = {}
 _VALUES_CACHE_TTL_SECONDS = 20
+_PT3_DASHBOARD_CACHE_TTL_SECONDS = 300
+_FBB_DASHBOARD_CACHE_TTL_SECONDS = 300
 
 
 def _get_sheet_fetch_lock(key):
@@ -636,7 +638,7 @@ def get_dashboard_data():
     only affect the pivot table like before.
     """
     ws = get_worksheet()
-    all_values = _cached_get_all_values(ws)
+    all_values = _cached_get_all_values(ws, ttl_seconds=_PT3_DASHBOARD_CACHE_TTL_SECONDS)
 
     idx = {
         "order": _col_to_index(config.COL_ORDER) - 1,
@@ -1834,7 +1836,7 @@ def get_fbb_data():
     menyusul setelah rumusnya dikonfirmasi.
     """
     ws = get_semesta_worksheet()
-    all_values = _cached_get_all_values(ws)
+    all_values = _cached_get_all_values(ws, ttl_seconds=_FBB_DASHBOARD_CACHE_TTL_SECONDS)
 
     idx = {
         "tanggal_nde": _col_to_index(config.COL_SEMESTA_TANGGAL_NDE) - 1,
@@ -1958,7 +1960,7 @@ def get_target_data():
     dari sheet TARGET. 1 baris sheet = 1 Regional + 1 Program + 1 Bulan,
     kolomnya REGIONAL, PROGRAM, BULAN, TARGET PORT (lihat config.py)."""
     ws = get_target_worksheet()
-    all_values = _cached_get_all_values(ws)
+    all_values = _cached_get_all_values(ws, ttl_seconds=_FBB_DASHBOARD_CACHE_TTL_SECONDS)
     idx = {
         "regional": _col_to_index(config.COL_TARGET_REGIONAL) - 1,
         "program": _col_to_index(config.COL_TARGET_PROGRAM) - 1,
@@ -2027,7 +2029,7 @@ def _month_end_date(year: int, month: int) -> datetime.date:
 def _load_semesta_rows_for_summary():
     """Baca sheet Semesta dengan tanggal Golive (kolom L) sudah di-parse ke date object."""
     ws = get_semesta_worksheet()
-    all_values = _cached_get_all_values(ws)
+    all_values = _cached_get_all_values(ws, ttl_seconds=_FBB_DASHBOARD_CACHE_TTL_SECONDS)
     idx = {
         "program": _col_to_index(config.COL_SEMESTA_PROGRAM) - 1,
         "ihld": _col_to_index(config.COL_SEMESTA_ID_IHLD) - 1,
