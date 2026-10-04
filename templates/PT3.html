@@ -126,6 +126,10 @@
   .priority-filter-toggle input:checked + .priority-filter-switch { background: #dc2626; }
   .priority-filter-toggle input:checked + .priority-filter-switch::before { transform: translateX(14px); }
   .priority-filter-toggle #priorityFilterCount { font-size: 0.65rem; padding: 1px 6px; }
+  .branch-regional-group { flex: 0 0 100%; padding: 4px 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); }
+  .branch-regional-heading { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 7px; color: var(--text); font-size: 0.8rem; cursor: pointer; }
+  .branch-regional-heading input { width: auto; margin: 0; accent-color: var(--brand-blue); }
+  .branch-regional-items { display: flex; flex-wrap: wrap; gap: 8px 14px; padding-left: 20px; }
 
   .rb-table { width: 100%; border-collapse: collapse; }
   .rb-table th, .rb-table td { padding: 7px 10px; text-align: right; font-size: 0.82rem; border-bottom: 1px solid var(--border, #2a3550); white-space: nowrap; }
@@ -590,6 +594,7 @@ let tselGroupingActive = false;
 
 function regionalSortRank(name) {
   const upper = (name || '').toUpperCase();
+  if (upper === TSEL_GROUP_LABEL) return 0;
   const idx = REGIONAL_ORDER_PREFIXES.findIndex(p => upper.startsWith(p));
   return idx === -1 ? REGIONAL_ORDER_PREFIXES.length : idx;
 }
@@ -1071,6 +1076,27 @@ function editFromDetail(rowNum) {
 }
 
 // ── Filter branch (kolom S) — dropdown + checkbox ─────────────────
+let branchFilterRegionGroups = [];
+
+function getRegionalBranchGroups(branches) {
+  const branchSet = new Set(branches);
+  const groups = new Map();
+  (dashboardCache ? dashboardCache.rows : []).forEach(row => {
+    if (!branchSet.has(row.branch)) return;
+    const regional = row.regional || '(TANPA REGIONAL)';
+    const upper = regional.toUpperCase();
+    const groupName = tselGroupingActive && TSEL_MERGE_PREFIXES.some(prefix => upper.startsWith(prefix))
+      ? TSEL_GROUP_LABEL
+      : regional;
+    if (!groups.has(groupName)) groups.set(groupName, new Set());
+    groups.get(groupName).add(row.branch);
+  });
+  return sortRegionals(Array.from(groups.keys())).map(regional => ({
+    regional,
+    branches: Array.from(groups.get(regional)).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())),
+  }));
+}
+
 function renderBranchFilter(branches, preserveState) {
   const el = document.getElementById('branchFilterGrid');
   if (!branches.length) { el.innerHTML = '<div class="empty-state">Tidak ada data branch.</div>'; return; }
@@ -1085,16 +1111,45 @@ function renderBranchFilter(branches, preserveState) {
     }
   }
 
-  el.innerHTML = branches.map(b => {
-    const isChecked = prevChecked ? prevChecked.has(b) : true;
-    return `
-    <label class="branch-check">
-      <input type="checkbox" class="branch-checkbox" value="${esc(b)}" ${isChecked ? 'checked' : ''}>
-      <span>${esc(b)}</span>
-    </label>
-  `;
-  }).join('');
+  if (tselGroupingActive) {
+    branchFilterRegionGroups = getRegionalBranchGroups(branches);
+    el.innerHTML = branchFilterRegionGroups.map((group, groupIndex) => `
+      <div class="branch-regional-group">
+        <label class="branch-regional-heading">
+          <input type="checkbox" class="branch-regional-checkbox" data-group-index="${groupIndex}" checked>
+          <strong>${esc(group.regional)}</strong>
+        </label>
+        <div class="branch-regional-items">${group.branches.map(branch => {
+          const isChecked = prevChecked ? prevChecked.has(branch) : true;
+          return `<label class="branch-check"><input type="checkbox" class="branch-checkbox" value="${esc(branch)}" ${isChecked ? 'checked' : ''}><span>${esc(branch)}</span></label>`;
+        }).join('')}</div>
+      </div>
+    `).join('');
+    syncBranchRegionalCheckboxes();
+  } else {
+    branchFilterRegionGroups = [];
+    el.innerHTML = branches.map(b => {
+      const isChecked = prevChecked ? prevChecked.has(b) : true;
+      return `
+      <label class="branch-check">
+        <input type="checkbox" class="branch-checkbox" value="${esc(b)}" ${isChecked ? 'checked' : ''}>
+        <span>${esc(b)}</span>
+      </label>
+    `;
+    }).join('');
+  }
   updateBranchDropdownLabel();
+}
+
+function syncBranchRegionalCheckboxes() {
+  const selected = new Set(getSelectedBranches());
+  document.querySelectorAll('.branch-regional-checkbox').forEach(checkbox => {
+    const group = branchFilterRegionGroups[Number(checkbox.dataset.groupIndex)];
+    if (!group) return;
+    const selectedCount = group.branches.filter(branch => selected.has(branch)).length;
+    checkbox.checked = selectedCount === group.branches.length;
+    checkbox.indeterminate = selectedCount > 0 && selectedCount < group.branches.length;
+  });
 }
 
 function getSelectedBranches() {
@@ -1190,14 +1245,29 @@ function refreshAll() {
 }
 
 document.getElementById('branchFilterGrid').addEventListener('change', (e) => {
-  if (e.target.classList.contains('branch-checkbox')) refreshAll();
+  if (e.target.classList.contains('branch-regional-checkbox')) {
+    const group = branchFilterRegionGroups[Number(e.target.dataset.groupIndex)];
+    if (group) {
+      const branches = new Set(group.branches);
+      document.querySelectorAll('.branch-checkbox').forEach(checkbox => {
+        if (branches.has(checkbox.value)) checkbox.checked = e.target.checked;
+      });
+    }
+    syncBranchRegionalCheckboxes();
+    refreshAll();
+  } else if (e.target.classList.contains('branch-checkbox')) {
+    syncBranchRegionalCheckboxes();
+    refreshAll();
+  }
 });
 document.getElementById('branchSelectAll').addEventListener('click', () => {
   document.querySelectorAll('.branch-checkbox').forEach(cb => { cb.checked = true; });
+  syncBranchRegionalCheckboxes();
   refreshAll();
 });
 document.getElementById('branchClearAll').addEventListener('click', () => {
   document.querySelectorAll('.branch-checkbox').forEach(cb => { cb.checked = false; });
+  syncBranchRegionalCheckboxes();
   refreshAll();
 });
 
@@ -1290,6 +1360,7 @@ setRekapView('branch');
 document.getElementById('tselGroupBtn').addEventListener('click', () => {
   tselGroupingActive = !tselGroupingActive;
   document.getElementById('tselGroupBtn').classList.toggle('active', tselGroupingActive);
+  if (dashboardCache) renderBranchFilter(dashboardCache.branches, true);
   refreshAll();
 });
 
