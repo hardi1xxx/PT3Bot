@@ -83,15 +83,11 @@
       <label for="pt2TrendMonth">Bulan</label>
       <select id="pt2TrendMonth"></select>
     </div>
-    <div class="pt2-trend-field" id="pt2TrendWeekField" style="display:none;">
-      <label for="pt2TrendWeek">Minggu</label>
-      <select id="pt2TrendWeek"></select>
-    </div>
   </div>
   <div class="pt2-trend-chart-box">
     <div class="pt2-trend-title" id="pt2TrendTitle">Golive per Minggu</div>
     <canvas id="pt2TrendChart" height="110"></canvas>
-    <div class="pt2-trend-hint" id="pt2TrendHint">Klik salah satu titik untuk lihat rincian harian minggu itu</div>
+    <div class="pt2-trend-hint" id="pt2TrendHint">Klik titik untuk melihat daftar lokasi pada periode tersebut</div>
   </div>
 </div>
 
@@ -106,6 +102,7 @@
       <button type="button" class="pt2-pivot-tab-btn active" data-pivot-tab="branch">Per Branch</button>
       <button type="button" class="pt2-pivot-tab-btn" data-pivot-tab="batch">Per Batch</button>
       <button type="button" class="pt2-pivot-tab-btn" data-pivot-tab="progress">Progress</button>
+      <button type="button" class="pt2-pivot-tab-btn" data-pivot-tab="priority">Prioritas</button>
     </div>
     <div class="pt2-pivot-actions">
       <button type="button" class="pt2-grouping-btn" id="pt2GroupingBtn" title="Gabungkan regional BANTEN &amp; JAKARTA menjadi JABAT">Grouping (TSEL)</button>
@@ -115,6 +112,7 @@
   <div class="pivot-table-wrap" id="pt2PivotWrap"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="pt2BatchPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="pt2ProgressPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
+  <div class="pivot-table-wrap" id="pt2PriorityPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Monitoring Order Prioritas (kolom AS, semua nilai yang terisi) -->
@@ -397,6 +395,8 @@ function pt2FilterRows(filter) {
     if (filter.branch !== undefined && r.branch !== filter.branch) return false;
     if (filter.batch !== undefined && r.batch !== filter.batch) return false;
     if (filter.status !== undefined && r.status !== filter.status) return false;
+    if (filter.priority && !(r.prioritas || '').trim()) return false;
+    if (filter.physical_status !== undefined && (r.status || r.status_raw || '(Tanpa Status)') !== filter.physical_status) return false;
     if (filter.golive_hi && !r.is_golive_today) return false;
     if (filter.golive_month && !r.is_golive_month) return false;
     if (filter.h1_golive_hi) {
@@ -417,6 +417,8 @@ function pt2FilterTitle(filter) {
   if (filter.branch) parts.push(filter.branch);
   if (filter.batch) parts.push('Batch ' + filter.batch);
   if (filter.status) parts.push(pt2ShortLabel(filter.status));
+  if (filter.priority) parts.push('Order Prioritas');
+  if (filter.physical_status) parts.push(pt2ShortLabel(filter.physical_status));
   if (filter.golive_hi) parts.push('Golive Hari Ini');
   if (filter.golive_month) parts.push('Golive ' + (pt2Cache.current_month_label || ''));
   if (filter.h1_golive_hi) parts.push('Golive Kemarin (H-1)');
@@ -761,6 +763,84 @@ document.getElementById('pt2ProgressPivotWrap').addEventListener('click', (e) =>
   pt2OpenFilteredList(pt2FilterTitle(filter), pt2FilterRows(filter), filter);
 });
 
+function pt2RenderPriorityPivotTable(data) {
+  const el = document.getElementById('pt2PriorityPivotWrap');
+  const rows = data.rows.filter(row => (row.prioritas || '').trim());
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state">Tidak ada LOP dengan Order Prioritas pada filter Branch saat ini.</div>';
+    return;
+  }
+
+  const statusOrder = data.statuses || [];
+  const statusSet = new Set(rows.map(row => row.status || row.status_raw || '(Tanpa Status)'));
+  const statuses = Array.from(statusSet).sort((a, b) => {
+    const ai = statusOrder.indexOf(a), bi = statusOrder.indexOf(b);
+    if (ai !== -1 || bi !== -1) return (ai === -1 ? statusOrder.length : ai) - (bi === -1 ? statusOrder.length : bi);
+    return a.localeCompare(b, 'id');
+  });
+  const emptyCounts = () => Object.fromEntries(statuses.map(status => [status, { lop: 0, port: 0 }]));
+  const regionalMap = new Map();
+  const grand = emptyCounts();
+  rows.forEach(row => {
+    const regional = pt2RegionalKeyFor(row.regional, pt2GroupingActive);
+    const branch = row.branch || '(Tanpa Branch)';
+    if (!regionalMap.has(regional)) regionalMap.set(regional, { totals: emptyCounts(), branches: new Map() });
+    const regionEntry = regionalMap.get(regional);
+    if (!regionEntry.branches.has(branch)) regionEntry.branches.set(branch, emptyCounts());
+    const status = row.status || row.status_raw || '(Tanpa Status)';
+    [regionEntry.totals[status], regionEntry.branches.get(branch)[status], grand[status]].forEach(count => {
+      count.lop += 1;
+      count.port += Number(row.port) || 0;
+    });
+  });
+
+  const totalOf = counts => statuses.reduce((total, status) => ({
+    lop: total.lop + counts[status].lop,
+    port: total.port + counts[status].port,
+  }), { lop: 0, port: 0 });
+  const renderValues = (counts, regionalFilter, branchFilter) => {
+    let cells = '';
+    statuses.forEach(status => {
+      const filter = { priority: true, physical_status: status };
+      if (regionalFilter !== null) filter.regional = regionalFilter;
+      if (branchFilter !== null) filter.branch = branchFilter;
+      const attr = `class="pt2-clickable" data-filter='${pt2FilterAttr(filter)}' title="Klik untuk lihat daftar LOP prioritas"`;
+      cells += `<td ${attr}>${pt2FmtNum(counts[status].lop)}</td><td ${attr}>${pt2FmtNum(counts[status].port)}</td>`;
+    });
+    const total = totalOf(counts);
+    const totalFilter = { priority: true };
+    if (regionalFilter !== null) totalFilter.regional = regionalFilter;
+    if (branchFilter !== null) totalFilter.branch = branchFilter;
+    const totalAttr = `class="pt2-clickable" data-filter='${pt2FilterAttr(totalFilter)}' title="Klik untuk lihat semua LOP prioritas"`;
+    return `${cells}<td ${totalAttr}>${pt2FmtNum(total.lop)}</td><td ${totalAttr}>${pt2FmtNum(total.port)}</td>`;
+  };
+
+  let html = '<table class="pt2-pivot"><thead><tr><th rowspan="2" class="row-label">REGIONAL / BRANCH</th>';
+  statuses.forEach(status => { html += `<th colspan="2">${pt2Esc(pt2ShortLabel(status))}</th>`; });
+  html += '<th colspan="2">TOTAL PRIORITAS</th></tr><tr>';
+  statuses.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th>LOP</th><th>Port</th></tr></thead><tbody>';
+
+  const regionalKeys = Array.from(regionalMap.keys()).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  regionalKeys.forEach(regional => {
+    const entry = regionalMap.get(regional);
+    const regionalFilter = regional === PT2_JABAT_LABEL ? PT2_JABAT_MEMBERS.slice() : regional;
+    html += `<tr class="regional-row"><th class="row-label">${pt2Esc(regional)}</th>${renderValues(entry.totals, regionalFilter, null)}</tr>`;
+    Array.from(entry.branches.keys()).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).forEach(branch => {
+      html += `<tr class="branch-row"><th class="row-label">${pt2Esc(branch)}</th>${renderValues(entry.branches.get(branch), regionalFilter, branch)}</tr>`;
+    });
+  });
+  html += `<tr class="grand-total-row"><th class="row-label">GRAND TOTAL</th>${renderValues(grand, null, null)}</tr></tbody></table>`;
+  el.innerHTML = html;
+}
+
+document.getElementById('pt2PriorityPivotWrap').addEventListener('click', (e) => {
+  const cell = e.target.closest('.pt2-clickable');
+  if (!cell || !pt2Cache) return;
+  const filter = JSON.parse(cell.dataset.filter);
+  pt2OpenFilteredList(pt2FilterTitle(filter), pt2FilterRows(filter), filter);
+});
+
 // ── Tab & aksi toolbar Rekap LOP & Port (Per Branch / Per Batch / Progress) ─
 let pt2ActivePivotTab = 'branch';
 function pt2SetPivotTab(tab) {
@@ -771,6 +851,7 @@ function pt2SetPivotTab(tab) {
   document.getElementById('pt2PivotWrap').style.display = tab === 'branch' ? '' : 'none';
   document.getElementById('pt2BatchPivotWrap').style.display = tab === 'batch' ? '' : 'none';
   document.getElementById('pt2ProgressPivotWrap').style.display = tab === 'progress' ? '' : 'none';
+  document.getElementById('pt2PriorityPivotWrap').style.display = tab === 'priority' ? '' : 'none';
   const groupingBtn = document.getElementById('pt2GroupingBtn');
   groupingBtn.style.display = tab === 'batch' ? 'none' : '';
 }
@@ -787,6 +868,7 @@ document.getElementById('pt2GroupingBtn').addEventListener('click', () => {
   pt2RenderBranchFilterGroups();
   if (pt2ActivePivotTab === 'branch') pt2RenderPivotTable(pt2Cache);
   else if (pt2ActivePivotTab === 'progress') pt2RenderProgressPivotTable(pt2Cache);
+  else if (pt2ActivePivotTab === 'priority') pt2RenderPriorityPivotTable(pt2Cache);
 });
 
 document.getElementById('pt2ExportBtn').addEventListener('click', () => {
@@ -795,6 +877,9 @@ document.getElementById('pt2ExportBtn').addEventListener('click', () => {
   if (pt2ActivePivotTab === 'progress') {
     rows = pt2Cache.rows.filter(r => r.status === PT2_PROGRESS_STATUS);
     title = 'progress-ogp-deploy';
+  } else if (pt2ActivePivotTab === 'priority') {
+    rows = pt2Cache.rows.filter(r => (r.prioritas || '').trim());
+    title = 'order-prioritas';
   } else {
     rows = pt2Cache.rows;
     title = pt2ActivePivotTab === 'batch' ? 'per-batch' : 'per-branch';
@@ -1072,7 +1157,6 @@ document.getElementById('pt2ListModalOverlay').addEventListener('click', (e) => 
 let pt2TrendMode = 'month';
 let pt2TrendChart = null;
 let pt2TrendSelectedMonth = '';
-let pt2TrendSelectedWeek = 0;
 
 function pt2ParseDate(str) {
   if (!str) return null;
@@ -1138,15 +1222,6 @@ function pt2PopulateTrendMonthOptions() {
   monthSelect.innerHTML = options.map(key => `<option value="${key}">${pt2TrendMonthLabel(key)}</option>`).join('');
   if (!options.includes(pt2TrendSelectedMonth)) pt2TrendSelectedMonth = options[options.length - 1];
   monthSelect.value = pt2TrendSelectedMonth;
-  pt2UpdateTrendWeekOptions();
-}
-function pt2UpdateTrendWeekOptions() {
-  const weekSelect = document.getElementById('pt2TrendWeek');
-  const weeks = pt2BuildTrendWeeks(pt2TrendSelectedMonth);
-  if (!weeks.length) { weekSelect.innerHTML = ''; return; }
-  pt2TrendSelectedWeek = Math.max(0, Math.min(pt2TrendSelectedWeek, weeks.length - 1));
-  weekSelect.innerHTML = weeks.map((week, index) => `<option value="${index}">Minggu ${index + 1} (${week.label})</option>`).join('');
-  weekSelect.value = String(pt2TrendSelectedWeek);
 }
 function pt2GoliveCountInRange(from, to) {
   if (!pt2Cache) return 0;
@@ -1204,14 +1279,13 @@ function pt2RenderTrendChart() {
     titleEl.textContent = `Golive per Minggu (${pt2TrendMonthLabel(pt2TrendSelectedMonth)})`;
     hintEl.style.display = 'block';
   } else {
-    const week = pt2BuildTrendWeeks(pt2TrendSelectedMonth)[pt2TrendSelectedWeek];
-    if (week) for (let d = new Date(week.start); d <= week.end; d = pt2AddDays(d, 1)) {
-      const day = new Date(d);
-      values.push(pt2GoliveCountInRange(d, d));
-      labels.push(String(day.getDate()).padStart(2, '0'));
-      buckets.push({ start: day, end: day, title: `Golive — ${pt2FmtShortDate(day)}` });
+    for (let day = new Date(selectedMonthStart); day <= selectedMonthEnd; day = pt2AddDays(day, 1)) {
+      const date = new Date(day);
+      values.push(pt2GoliveCountInRange(date, date));
+      labels.push(String(date.getDate()).padStart(2, '0'));
+      buckets.push({ start: date, end: date, title: `Golive — ${pt2FmtShortDate(date)}` });
     }
-    titleEl.textContent = week ? `Golive Harian — Minggu ${pt2TrendSelectedWeek + 1} (${week.label})` : 'Golive Harian';
+    titleEl.textContent = `Golive Harian — ${pt2TrendMonthLabel(pt2TrendSelectedMonth)}`;
     hintEl.style.display = 'block';
   }
 
@@ -1276,7 +1350,6 @@ function pt2SetTrendMode(mode) {
   document.getElementById('pt2TrendModeWeek').classList.toggle('active', mode === 'week');
   document.getElementById('pt2TrendModeDay').classList.toggle('active', mode === 'day');
   document.getElementById('pt2TrendModeMonth').classList.toggle('active', mode === 'month');
-  document.getElementById('pt2TrendWeekField').style.display = mode === 'day' ? 'flex' : 'none';
   pt2RenderTrendChart();
 }
 
@@ -1285,12 +1358,6 @@ document.getElementById('pt2TrendModeDay').addEventListener('click', () => pt2Se
 document.getElementById('pt2TrendModeMonth').addEventListener('click', () => pt2SetTrendMode('month'));
 document.getElementById('pt2TrendMonth').addEventListener('change', (e) => {
   pt2TrendSelectedMonth = e.target.value;
-  pt2TrendSelectedWeek = 0;
-  pt2UpdateTrendWeekOptions();
-  pt2RenderTrendChart();
-});
-document.getElementById('pt2TrendWeek').addEventListener('change', (e) => {
-  pt2TrendSelectedWeek = Number(e.target.value) || 0;
   pt2RenderTrendChart();
 });
 
@@ -1298,10 +1365,6 @@ function pt2InitTrendDefaults() {
   const today = new Date();
   pt2TrendSelectedMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   pt2PopulateTrendMonthOptions();
-  const weeks = pt2BuildTrendWeeks(pt2TrendSelectedMonth);
-  const todayWeekIndex = weeks.findIndex(week => today >= week.start && today <= week.end);
-  pt2TrendSelectedWeek = Math.max(0, todayWeekIndex);
-  pt2UpdateTrendWeekOptions();
 }
 
 // ── Filter Branch (kolom J, sheet Detail PT2) ──────────────────────
@@ -1448,6 +1511,7 @@ function pt2RenderDashboardBody() {
   pt2RenderPivotTable(pt2Cache);
   pt2RenderBatchPivotTable(pt2Cache);
   pt2RenderProgressPivotTable(pt2Cache);
+  pt2RenderPriorityPivotTable(pt2Cache);
   pt2RenderPriorityTable(pt2Cache);
   pt2RenderKendala(pt2Cache);
   pt2RenderNotif(pt2Cache);
