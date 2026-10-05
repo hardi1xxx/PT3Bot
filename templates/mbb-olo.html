@@ -1118,18 +1118,32 @@ function renderMbbTimePlan(rowsForView){
   const dates = Array.from(rowsByDate.keys()).sort();
   const labels = dates.map(key=>{
     const [year, month, day] = key.split("-");
-    return `${day}/${month}/${year}`;
+    const monthNames = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+    return `${day} ${monthNames[Number(month)-1]}`;
   });
   mbbTimePlanRowsByIndex = dates.map(date => rowsByDate.get(date));
   mbbTimePlanDateLabels = labels;
   if (mbbTimePlanChart) mbbTimePlanChart.destroy();
   mbbTimePlanChart = new Chart(canvas.getContext("2d"), {
-    type:"bar",
-    data:{ labels, datasets:[{ label:"Jumlah baris", data:mbbTimePlanRowsByIndex.map(rows=>rows.length), backgroundColor:"#2f6690", borderRadius:4 }] },
+    type:"line",
+    data:{ labels, datasets:[{
+      label:"Jumlah baris",
+      data:mbbTimePlanRowsByIndex.map(rows=>rows.length),
+      borderColor:"#2f6690",
+      backgroundColor:"transparent",
+      pointBackgroundColor:"#2f6690",
+      pointBorderColor:"#fff",
+      pointBorderWidth:2,
+      pointRadius:4,
+      pointHoverRadius:7,
+      borderWidth:2.5,
+      tension:0.25,
+      fill:false,
+    }] },
     options:{
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ display:false } },
-      scales:{ x:{ ticks:{ autoSkip:true, maxRotation:45, minRotation:0 } }, y:{ beginAtZero:true, ticks:{ precision:0 } } },
+      scales:{ x:{ ticks:{ autoSkip:true, maxRotation:0, minRotation:0 } }, y:{ beginAtZero:true, ticks:{ precision:0 } } },
       onClick:(evt, elements)=>{ if (elements.length) mbbShowTimePlanDetail(elements[0].index); },
       onHover:(evt, elements)=>{ evt.native.target.style.cursor = elements.length ? "pointer" : "default"; },
     },

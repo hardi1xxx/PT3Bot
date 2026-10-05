@@ -75,22 +75,17 @@
 <div class="card" style="margin-bottom:22px;">
   <div class="pt2-trend-controls">
     <div class="pt2-trend-mode-toggle">
-      <button type="button" class="pt2-trend-mode-btn active" id="pt2TrendModeWeek">Per Minggu</button>
+      <button type="button" class="pt2-trend-mode-btn active" id="pt2TrendModeMonth">Per Bulan</button>
+      <button type="button" class="pt2-trend-mode-btn" id="pt2TrendModeWeek">Per Minggu</button>
       <button type="button" class="pt2-trend-mode-btn" id="pt2TrendModeDay">Harian</button>
-      <button type="button" class="pt2-trend-mode-btn" id="pt2TrendModeMonth">Per Bulan</button>
     </div>
     <div class="pt2-trend-field">
-      <label>Dari tanggal (TGL CLOSE WO)</label>
-      <input type="date" id="pt2TrendFrom">
+      <label for="pt2TrendMonth">Bulan</label>
+      <select id="pt2TrendMonth"></select>
     </div>
-    <div class="pt2-trend-field">
-      <label>Sampai tanggal</label>
-      <input type="date" id="pt2TrendTo">
-    </div>
-    <div class="pt2-trend-nav" id="pt2TrendDayNav" style="display:none;">
-      <button type="button" class="btn-ghost btn-sm" id="pt2TrendPrevWeek">&larr; Minggu Lalu</button>
-      <button type="button" class="btn-ghost btn-sm" id="pt2TrendThisWeek">Minggu Ini</button>
-      <button type="button" class="btn-ghost btn-sm" id="pt2TrendNextWeek">Minggu Depan &rarr;</button>
+    <div class="pt2-trend-field" id="pt2TrendWeekField" style="display:none;">
+      <label for="pt2TrendWeek">Minggu</label>
+      <select id="pt2TrendWeek"></select>
     </div>
   </div>
   <div class="pt2-trend-chart-box">
@@ -122,10 +117,10 @@
   <div class="pivot-table-wrap" id="pt2ProgressPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
 </div>
 
-<!-- Monitoring Order Prioritas (kolom AS, awalan "P1") -->
+<!-- Monitoring Order Prioritas (kolom AS, semua nilai yang terisi) -->
 <div class="section-title">
   Monitoring Order Prioritas
-  <span class="hint">kolom AS, khusus yang berawalan "P1"</span>
+  <span class="hint">semua LOP yang memiliki nilai Order Prioritas</span>
 </div>
 <div class="card" style="margin-bottom:22px;">
   <div class="pivot-table-wrap" id="pt2PriorityTableWrap" style="max-height:420px; overflow-y:auto;">
@@ -249,9 +244,7 @@
   .pt2-download-btn { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:0.85rem; font-weight:600; cursor:pointer; }
   .pt2-download-btn:hover { background:#15803d; }
 
-  .pt2-trend-controls {
-    display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:16px;
-  }
+  .pt2-trend-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
   .pt2-trend-mode-toggle { display:flex; gap:6px; background:#f1f5f9; border-radius:8px; padding:3px; }
   .pt2-trend-mode-btn {
     border:none; background:transparent; padding:7px 14px; border-radius:6px; font-size:0.82rem;
@@ -260,10 +253,7 @@
   .pt2-trend-mode-btn.active { background:#fff; color:var(--brand-blue, #29467a); box-shadow:0 1px 2px rgba(0,0,0,.08); }
   .pt2-trend-field { display:flex; flex-direction:column; gap:4px; }
   .pt2-trend-field label { font-size:0.76rem; color:var(--muted, #64748b); font-weight:600; }
-  .pt2-trend-field input[type=date] {
-    border:1px solid var(--border, #e2e8f0); border-radius:8px; padding:7px 10px; font-size:0.85rem;
-  }
-  .pt2-trend-nav { display:flex; gap:8px; margin-left:auto; }
+  .pt2-trend-field select { min-width:150px; border:1px solid var(--border, #e2e8f0); border-radius:8px; padding:7px 10px; font-size:0.82rem; background:#fff; color:var(--text, #1e293b); }
   .pt2-trend-chart-box {
     background: linear-gradient(180deg, #3b5bdb 0%, #1e3a8a 100%);
     border-radius: 12px;
@@ -1078,10 +1068,11 @@ document.getElementById('pt2ListModalOverlay').addEventListener('click', (e) => 
   if (e.target.id === 'pt2ListModalOverlay') pt2CloseListModal();
 });
 
-// ── Grafik Golive Berjalan (per minggu / harian) ───────────────────
-let pt2TrendMode = 'week'; // 'week' | 'day'
+// ── Grafik Golive Berjalan (per bulan / minggu / harian) ───────────
+let pt2TrendMode = 'month';
 let pt2TrendChart = null;
-let pt2TrendDayWeekStart = null; // Date (Senin) dari minggu yang sedang ditampilkan di mode harian
+let pt2TrendSelectedMonth = '';
+let pt2TrendSelectedWeek = 0;
 
 function pt2ParseDate(str) {
   if (!str) return null;
@@ -1115,6 +1106,48 @@ function pt2FmtShortDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
   return `${dd} ${months[d.getMonth()]}`;
 }
+function pt2TrendMonthLabel(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  return `${names[month - 1]} ${year}`;
+}
+function pt2BuildTrendWeeks(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0);
+  const weeks = [];
+  let cursor = pt2StartOfWeek(monthStart);
+  while (cursor <= monthEnd) {
+    const naturalEnd = pt2AddDays(cursor, 6);
+    const start = cursor < monthStart ? new Date(monthStart) : new Date(cursor);
+    const end = naturalEnd > monthEnd ? new Date(monthEnd) : naturalEnd;
+    weeks.push({ start, end, label: `${pt2FmtShortDate(start)} - ${pt2FmtShortDate(end)}` });
+    cursor = pt2AddDays(cursor, 7);
+  }
+  return weeks;
+}
+function pt2PopulateTrendMonthOptions() {
+  const monthSelect = document.getElementById('pt2TrendMonth');
+  const current = new Date();
+  const years = new Set([String(current.getFullYear())]);
+  (pt2Cache ? pt2Cache.rows : []).forEach(row => {
+    const date = pt2ParseDate(row.tgl_close_wo_formatted);
+    if (date) years.add(String(date.getFullYear()));
+  });
+  const options = Array.from(years).sort().flatMap(year => Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`));
+  monthSelect.innerHTML = options.map(key => `<option value="${key}">${pt2TrendMonthLabel(key)}</option>`).join('');
+  if (!options.includes(pt2TrendSelectedMonth)) pt2TrendSelectedMonth = options[options.length - 1];
+  monthSelect.value = pt2TrendSelectedMonth;
+  pt2UpdateTrendWeekOptions();
+}
+function pt2UpdateTrendWeekOptions() {
+  const weekSelect = document.getElementById('pt2TrendWeek');
+  const weeks = pt2BuildTrendWeeks(pt2TrendSelectedMonth);
+  if (!weeks.length) { weekSelect.innerHTML = ''; return; }
+  pt2TrendSelectedWeek = Math.max(0, Math.min(pt2TrendSelectedWeek, weeks.length - 1));
+  weekSelect.innerHTML = weeks.map((week, index) => `<option value="${index}">Minggu ${index + 1} (${week.label})</option>`).join('');
+  weekSelect.value = String(pt2TrendSelectedWeek);
+}
 function pt2GoliveCountInRange(from, to) {
   if (!pt2Cache) return 0;
   let count = 0;
@@ -1136,10 +1169,9 @@ function pt2GoliveRowsInRange(from, to) {
 
 function pt2RenderTrendChart() {
   if (!pt2Cache) return;
-  const fromInput = document.getElementById('pt2TrendFrom').value;
-  const toInput = document.getElementById('pt2TrendTo').value;
-  const from = fromInput ? pt2ISOToDate(fromInput) : pt2AddDays(new Date(), -28);
-  const to = toInput ? pt2ISOToDate(toInput) : new Date();
+  const [selectedYear, selectedMonthNumber] = pt2TrendSelectedMonth.split('-').map(Number);
+  const selectedMonthStart = new Date(selectedYear, selectedMonthNumber - 1, 1);
+  const selectedMonthEnd = new Date(selectedYear, selectedMonthNumber, 0);
   const titleEl = document.getElementById('pt2TrendTitle');
   const hintEl = document.getElementById('pt2TrendHint');
 
@@ -1147,50 +1179,40 @@ function pt2RenderTrendChart() {
   let values = [];
   let buckets = []; // { start, end } per titik — dipakai untuk klik-buka daftar LOP golive
 
-  if (pt2TrendMode === 'week') {
-    let cursor = new Date(from);
-    let weekNum = 1;
-    while (cursor <= to && weekNum <= 26) { // batas wajar biar tidak infinite kalau tanggal salah input
-      const bucketStart = new Date(cursor);
-      const naturalEnd = pt2AddDays(bucketStart, 6);
-      const bucketEnd = naturalEnd > to ? new Date(to) : naturalEnd;
-      values.push(pt2GoliveCountInRange(bucketStart, bucketEnd));
-      labels.push([`Minggu ${weekNum}`, `${pt2FmtShortDate(bucketStart)}-${pt2FmtShortDate(bucketEnd)}`]);
-      buckets.push({ start: bucketStart, end: bucketEnd, title: `Golive — Minggu ${weekNum} (${pt2FmtShortDate(bucketStart)} - ${pt2FmtShortDate(bucketEnd)})` });
-      cursor = pt2AddDays(bucketStart, 7);
-      weekNum++;
-    }
-    titleEl.textContent = `Golive per Minggu (${pt2FmtShortDate(from)} - ${pt2FmtShortDate(to)})`;
-    hintEl.style.display = 'block';
-  } else if (pt2TrendMode === 'month') {
+  if (pt2TrendMode === 'month') {
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-    let cursor = new Date(from.getFullYear(), from.getMonth(), 1);
-    const endCursor = new Date(to.getFullYear(), to.getMonth(), 1);
-    let guard = 0;
-    while (cursor <= endCursor && guard < 36) { // batas wajar biar tidak infinite kalau tanggal salah input
+    let cursor = new Date(selectedYear, 0, 1);
+    while (cursor <= selectedMonthStart) {
       const natEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
-      const bucketEnd = natEnd > to ? new Date(to) : natEnd;
-      const bucketStart = cursor < from ? new Date(from) : cursor;
+      const bucketEnd = natEnd > selectedMonthEnd ? new Date(selectedMonthEnd) : natEnd;
+      const bucketStart = new Date(cursor);
       values.push(pt2GoliveCountInRange(bucketStart, bucketEnd));
       const monthLabel = `${monthNames[cursor.getMonth()]} ${cursor.getFullYear()}`;
       labels.push(monthLabel);
       buckets.push({ start: bucketStart, end: bucketEnd, title: `Golive — ${monthLabel}` });
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-      guard++;
     }
-    titleEl.textContent = `Golive per Bulan (${pt2FmtShortDate(from)} - ${pt2FmtShortDate(to)})`;
+    titleEl.textContent = `Golive per Bulan (Jan - ${pt2TrendMonthLabel(pt2TrendSelectedMonth)})`;
     hintEl.style.display = 'none';
+  } else if (pt2TrendMode === 'week') {
+    const weeks = pt2BuildTrendWeeks(pt2TrendSelectedMonth);
+    weeks.forEach((week, index) => {
+      values.push(pt2GoliveCountInRange(week.start, week.end));
+      labels.push([`Minggu ${index + 1}`, week.label]);
+      buckets.push({ start: week.start, end: week.end, title: `Golive — Minggu ${index + 1} (${week.label})` });
+    });
+    titleEl.textContent = `Golive per Minggu (${pt2TrendMonthLabel(pt2TrendSelectedMonth)})`;
+    hintEl.style.display = 'block';
   } else {
-    const weekStart = pt2TrendDayWeekStart || pt2StartOfWeek(new Date());
-    for (let i = 0; i < 7; i++) {
-      const d = pt2AddDays(weekStart, i);
+    const week = pt2BuildTrendWeeks(pt2TrendSelectedMonth)[pt2TrendSelectedWeek];
+    if (week) for (let d = new Date(week.start); d <= week.end; d = pt2AddDays(d, 1)) {
+      const day = new Date(d);
       values.push(pt2GoliveCountInRange(d, d));
-      labels.push(pt2FmtShortDate(d));
-      buckets.push({ start: d, end: d, title: `Golive — ${pt2FmtShortDate(d)}` });
+      labels.push(String(day.getDate()).padStart(2, '0'));
+      buckets.push({ start: day, end: day, title: `Golive — ${pt2FmtShortDate(day)}` });
     }
-    const weekEnd = pt2AddDays(weekStart, 6);
-    titleEl.textContent = `Golive Harian (${pt2FmtShortDate(weekStart)} - ${pt2FmtShortDate(weekEnd)})`;
-    hintEl.style.display = 'none';
+    titleEl.textContent = week ? `Golive Harian — Minggu ${pt2TrendSelectedWeek + 1} (${week.label})` : 'Golive Harian';
+    hintEl.style.display = 'block';
   }
 
   const ctx = document.getElementById('pt2TrendChart').getContext('2d');
@@ -1254,35 +1276,32 @@ function pt2SetTrendMode(mode) {
   document.getElementById('pt2TrendModeWeek').classList.toggle('active', mode === 'week');
   document.getElementById('pt2TrendModeDay').classList.toggle('active', mode === 'day');
   document.getElementById('pt2TrendModeMonth').classList.toggle('active', mode === 'month');
-  document.getElementById('pt2TrendDayNav').style.display = mode === 'day' ? 'flex' : 'none';
-  if (mode === 'day' && !pt2TrendDayWeekStart) pt2TrendDayWeekStart = pt2StartOfWeek(new Date());
+  document.getElementById('pt2TrendWeekField').style.display = mode === 'day' ? 'flex' : 'none';
   pt2RenderTrendChart();
 }
 
 document.getElementById('pt2TrendModeWeek').addEventListener('click', () => pt2SetTrendMode('week'));
 document.getElementById('pt2TrendModeDay').addEventListener('click', () => pt2SetTrendMode('day'));
 document.getElementById('pt2TrendModeMonth').addEventListener('click', () => pt2SetTrendMode('month'));
-document.getElementById('pt2TrendFrom').addEventListener('change', () => { if (pt2TrendMode !== 'day') pt2RenderTrendChart(); });
-document.getElementById('pt2TrendTo').addEventListener('change', () => { if (pt2TrendMode !== 'day') pt2RenderTrendChart(); });
-document.getElementById('pt2TrendPrevWeek').addEventListener('click', () => {
-  pt2TrendDayWeekStart = pt2AddDays(pt2TrendDayWeekStart || pt2StartOfWeek(new Date()), -7);
+document.getElementById('pt2TrendMonth').addEventListener('change', (e) => {
+  pt2TrendSelectedMonth = e.target.value;
+  pt2TrendSelectedWeek = 0;
+  pt2UpdateTrendWeekOptions();
   pt2RenderTrendChart();
 });
-document.getElementById('pt2TrendThisWeek').addEventListener('click', () => {
-  pt2TrendDayWeekStart = pt2StartOfWeek(new Date());
-  pt2RenderTrendChart();
-});
-document.getElementById('pt2TrendNextWeek').addEventListener('click', () => {
-  pt2TrendDayWeekStart = pt2AddDays(pt2TrendDayWeekStart || pt2StartOfWeek(new Date()), 7);
+document.getElementById('pt2TrendWeek').addEventListener('change', (e) => {
+  pt2TrendSelectedWeek = Number(e.target.value) || 0;
   pt2RenderTrendChart();
 });
 
 function pt2InitTrendDefaults() {
   const today = new Date();
-  const jan1 = new Date(today.getFullYear(), 0, 1);
-  document.getElementById('pt2TrendFrom').value = pt2DateToISO(jan1);
-  document.getElementById('pt2TrendTo').value = pt2DateToISO(today);
-  pt2TrendDayWeekStart = pt2StartOfWeek(today);
+  pt2TrendSelectedMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  pt2PopulateTrendMonthOptions();
+  const weeks = pt2BuildTrendWeeks(pt2TrendSelectedMonth);
+  const todayWeekIndex = weeks.findIndex(week => today >= week.start && today <= week.end);
+  pt2TrendSelectedWeek = Math.max(0, todayWeekIndex);
+  pt2UpdateTrendWeekOptions();
 }
 
 // ── Filter Branch (kolom J, sheet Detail PT2) ──────────────────────
@@ -1398,12 +1417,12 @@ document.getElementById('pt2FilterClearAllBtn').addEventListener('click', () => 
 });
 
 // ── Load ─────────────────────────────────────────────────────────────
-// ── Monitoring Order Prioritas (kolom AS, field `prioritas`, khusus yang
-// berawalan "P1") ──────────────────────────────────────────────────────
+// ── Monitoring Order Prioritas (kolom AS, semua nilai terisi) ──────
 function pt2RenderPriorityTable(data) {
   const el = document.getElementById('pt2PriorityTableWrap');
-  const rows = data.rows.filter(r => (r.prioritas || '').trim().toUpperCase().startsWith('P1'));
-  if (!rows.length) { el.innerHTML = '<div class="empty-state">Tidak ada order prioritas P1 saat ini.</div>'; return; }
+  const rows = data.rows.filter(r => (r.prioritas || '').trim());
+  rows.sort((a, b) => (a.prioritas || '').localeCompare(b.prioritas || '', 'id') || (a.branch || '').localeCompare(b.branch || '', 'id'));
+  if (!rows.length) { el.innerHTML = '<div class="empty-state">Tidak ada LOP dengan Order Prioritas saat ini.</div>'; return; }
 
   let html = '<table class="pt2-pivot"><thead><tr>';
   ['IHLD', 'Lokasi', 'Batch', 'Branch', 'Status', 'Prioritas'].forEach((h, i) => {
@@ -1449,7 +1468,7 @@ async function loadPt2Dashboard() {
     pt2Cache = json.data;
     pt2AllRows = pt2Cache.rows.slice();
     pt2InitBranchFilter();
-    if (!document.getElementById('pt2TrendFrom').value) pt2InitTrendDefaults();
+    if (!pt2TrendSelectedMonth) pt2InitTrendDefaults();
     pt2RenderDashboardBody();
   } catch (e) {
     document.getElementById('pt2PivotWrap').innerHTML = `<div class="flash error">Gagal memuat: ${e}</div>`;

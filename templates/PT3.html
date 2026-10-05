@@ -306,6 +306,17 @@
   <div id="pt3ImportResultWrap" style="margin-top:10px;"></div>
 </div>
 
+<!-- Monitoring seluruh LOP yang memiliki Order Prioritas (kolom BX) -->
+<div class="section-title">
+  Monitoring Order Prioritas
+  <span class="hint" id="pt3PriorityCount">mengikuti filter Branch dan Batch</span>
+</div>
+<div class="card" style="margin-bottom:22px;">
+  <div class="pivot-table-wrap" id="pt3PriorityTableWrap" style="max-height:420px; overflow-y:auto;">
+    <div class="skeleton">Memuat data...</div>
+  </div>
+</div>
+
 <!-- Kategori Drop (kolom BH) -->
 <div class="section-title">Kategori Drop</div>
 <div class="card" style="margin-bottom:22px;">
@@ -1072,6 +1083,38 @@ function renderDetailTable(filteredRows) {
   el.innerHTML = html;
 }
 
+function renderPriorityMonitoringTable(rows) {
+  const el = document.getElementById('pt3PriorityTableWrap');
+  const countEl = document.getElementById('pt3PriorityCount');
+  const priorityRows = rows.filter(r => String(r.priority_bx || '').trim());
+  priorityRows.sort((a, b) => String(a.priority_bx).localeCompare(String(b.priority_bx), 'id', { numeric: true }) || String(a.branch || '').localeCompare(String(b.branch || ''), 'id'));
+  countEl.textContent = `${fmtNum(priorityRows.length)} LOP · mengikuti filter Branch dan Batch`;
+  if (!priorityRows.length) {
+    el.innerHTML = '<div class="empty-state">Tidak ada LOP dengan Order Prioritas pada filter saat ini.</div>';
+    return;
+  }
+
+  let html = '<table class="pivot"><thead><tr>';
+  ['IHLD', 'Lokasi', 'Regional', 'Branch', 'Batch', 'Status', 'Order Prioritas', ''].forEach((label, index) => {
+    html += `<th${index < 5 ? ' style="text-align:left;"' : ''}>${label}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+  priorityRows.forEach(row => {
+    html += `<tr>
+      <td style="text-align:left;">${esc(row.ihld) || '-'}</td>
+      <td style="text-align:left;">${esc(row.lokasi) || '-'}</td>
+      <td style="text-align:left;">${esc(row.regional) || '-'}</td>
+      <td style="text-align:left;">${esc(row.branch) || '-'}</td>
+      <td style="text-align:left;">${esc(row.batch) || '-'}</td>
+      <td><span class="badge status">${esc(row.status) || '-'}</span></td>
+      <td><span class="badge priority-order" style="background:#fef2f2; color:#b91c1c; border:1px solid #fca5a5; font-weight:800;">&#9888; ${esc(row.priority_bx)}</span></td>
+      <td><button type="button" class="btn-sm" onclick="openRow(${row.row})">Lihat</button></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
 // Klik "Edit" di tabel Detail Lokasi -> isi panel update (kanan) dengan
 // data baris tsb (dicari ulang lewat IHLD/Lokasi via /api/row/<row>), lalu
 // scroll ke panel supaya langsung terlihat.
@@ -1233,6 +1276,7 @@ function refreshAll() {
   }
 
   renderDetailTable(filtered);
+  renderPriorityMonitoringTable(getBranchFilteredRows());
   renderBH(filtered);
   renderFiCalendar(filtered);
   renderCellFilterChip();
