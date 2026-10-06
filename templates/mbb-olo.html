@@ -778,7 +778,7 @@ function renderMbbDashboard(rowsForView, view){
 
       <div class="card timeplan-card">
         <div class="section-title" style="margin:0 0 10px;">Time Plan — Target FI/L0</div>
-        <div class="hint" style="margin-bottom:8px;">Tanggal dari kolom AA · tidak termasuk status 7. L1 Ready dan 7. L3. OA Confirmation</div>
+        <div class="hint" style="margin-bottom:8px;">Tanggal dari kolom AA · tidak termasuk status 7. L1 Ready, 7. L3. OA Confirmation, dan 0.3 Drop MoM</div>
         <div style="position:relative; height:230px;"><canvas id="mbb-timeplan-chart"></canvas></div>
       </div>
     </div>
@@ -1105,7 +1105,7 @@ function renderMbbTimePlan(rowsForView){
   const canvas = document.getElementById("mbb-timeplan-chart");
   if (!canvas) return;
   const rowsByDate = new Map();
-  const excludedStatuses = ["7. l1 ready", "7. l3. oa confirmation"];
+  const excludedStatuses = ["7. l1 ready", "7. l3. oa confirmation", "0.3 drop mom"];
   rowsForView.forEach(row=>{
     const status = getCol(row, "Status Pekerjaan").trim().toLowerCase();
     if (excludedStatuses.includes(status)) return;
