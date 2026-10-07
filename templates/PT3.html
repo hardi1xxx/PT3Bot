@@ -228,12 +228,14 @@
     <button type="button" class="rekap-tab-btn active" data-rekap-view="branch">Per Branch</button>
     <button type="button" class="rekap-tab-btn" data-rekap-view="batch">Per Batch</button>
     <button type="button" class="rekap-tab-btn" data-rekap-view="progress">Progress</button>
+    <button type="button" class="rekap-tab-btn" data-rekap-view="priority">Prioritas BX</button>
     <button type="button" class="rekap-tsel-btn" id="tselGroupBtn" title="Gabungkan baris Regional BANTEN &amp; JAKARTA jadi satu baris (TSEL)">Grouping (TSEL)</button>
     <button type="button" class="btn-ghost btn-sm" id="pt3ExportDataBtn" style="margin-left:8px;" title="Download seluruh data (sesuai filter Branch/Batch/Priority yang sedang aktif) sebagai file Excel">&#11015; Export Data</button>
   </div>
   <div class="pivot-table-wrap" id="regionalBranchTableWrap"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="pivotTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="progressTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
+  <div class="pivot-table-wrap" id="priorityPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Chart + Trend Golive (kiri) & Kalender Target FI (kolom AK, kanan) -->
@@ -797,6 +799,85 @@ function renderRegionalBranchTable(filteredRows, pivotColumns, groupTsel, wrapEl
   el.innerHTML = html;
 }
 
+function setPriorityCellFilter(regional, branch, priorityCategory) {
+  activeCellFilter = {
+    priorityOnly: true,
+    priorityCategory,
+    branch,
+    ...(Array.isArray(regional) ? { regionalList: regional } : { regional }),
+  };
+  refreshAll();
+  const locCard = document.getElementById('locList');
+  if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderPriorityCategoryTable(filteredRows) {
+  const el = document.getElementById('priorityPivotWrap');
+  if (!el) return;
+  const rows = filteredRows.filter(row => String(row.priority_bx || '').trim());
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state">Tidak ada LOP dengan Order Prioritas pada filter saat ini.</div>';
+    return;
+  }
+
+  const categories = Array.from(new Set(rows.map(row => String(row.priority_bx).trim())))
+    .sort((a, b) => a.localeCompare(b, 'id', { numeric:true, sensitivity:'base' }));
+  const emptyCounts = () => Object.fromEntries(categories.map(category => [category, { lop:0, port:0 }]));
+  const regionalMap = new Map();
+  const grand = emptyCounts();
+  rows.forEach(row => {
+    const regionalName = row.regional || '(TANPA REGIONAL)';
+    const upper = regionalName.toUpperCase();
+    const regional = tselGroupingActive && TSEL_MERGE_PREFIXES.some(prefix => upper.startsWith(prefix))
+      ? TSEL_GROUP_LABEL
+      : regionalName;
+    const branch = row.branch || '(TANPA BRANCH)';
+    if (!regionalMap.has(regional)) regionalMap.set(regional, { categories:emptyCounts(), branches:new Map(), sourceRegionals:new Set() });
+    const entry = regionalMap.get(regional);
+    entry.sourceRegionals.add(regionalName);
+    if (!entry.branches.has(branch)) entry.branches.set(branch, emptyCounts());
+    const category = String(row.priority_bx).trim();
+    [entry.categories[category], entry.branches.get(branch)[category], grand[category]].forEach(count => {
+      count.lop++;
+      count.port += Number(row.port) || 0;
+    });
+  });
+
+  const totals = counts => categories.reduce((total, category) => ({
+    lop:total.lop + counts[category].lop,
+    port:total.port + counts[category].port,
+  }), { lop:0, port:0 });
+  const cells = (counts, regional, branch) => {
+    let html = '';
+    categories.forEach(category => {
+      const args = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk lihat daftar LOP" onclick="setPriorityCellFilter(${regional}, ${branch}, '${escJs(category)}')"`;
+      html += `<td ${args}>${fmtNum(counts[category].lop)}</td><td ${args}>${fmtNum(counts[category].port)}</td>`;
+    });
+    const total = totals(counts);
+    const totalArgs = `class="pivot-clickable rb-total-col" style="cursor:pointer;" title="Klik untuk lihat semua LOP prioritas" onclick="setPriorityCellFilter(${regional}, ${branch}, null)"`;
+    return `${html}<td ${totalArgs}>${fmtNum(total.lop)}</td><td ${totalArgs}>${fmtNum(total.port)}</td>`;
+  };
+
+  let html = '<table class="rb-table pivot-combined"><thead><tr><th rowspan="2">Regional / Branch</th>';
+  categories.forEach(category => { html += `<th colspan="2">${esc(category)}</th>`; });
+  html += '<th colspan="2" class="rb-total-col">Total Prioritas</th></tr><tr>';
+  categories.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th class="rb-total-col">LOP</th><th class="rb-total-col">Port</th></tr></thead><tbody>';
+  sortRegionals(Array.from(regionalMap.keys())).forEach(regional => {
+    const entry = regionalMap.get(regional);
+    const sourceRegionals = Array.from(entry.sourceRegionals);
+    const regionalArg = sourceRegionals.length > 1 || regional === TSEL_GROUP_LABEL
+      ? `[${sourceRegionals.map(name => `'${escJs(name)}'`).join(',')}]`
+      : `'${escJs(sourceRegionals[0] || regional)}'`;
+    html += `<tr class="rb-regional-row"><td>${esc(regional)}</td>${cells(entry.categories, regionalArg, 'null')}</tr>`;
+    Array.from(entry.branches.keys()).sort((a, b) => a.localeCompare(b, 'id')).forEach(branch => {
+      html += `<tr class="rb-branch-row"><td>${esc(branch)}</td>${cells(entry.branches.get(branch), regionalArg, `'${escJs(branch)}'`)}</tr>`;
+    });
+  });
+  html += `<tr class="rb-total-row"><td>TOTAL</td>${cells(grand, 'null', 'null')}</tr></tbody></table>`;
+  el.innerHTML = html;
+}
+
 // Klik angka di tabel "Rekap Port & LOP per Batch" -> filter daftar
 // "Lokasi Sedang Berjalan & Update Status" di bawah SAJA (chart, KPI,
 // tabel Detail Lokasi TIDAK ikut berubah -- murni buat mempermudah cari
@@ -827,6 +908,7 @@ function renderCellFilterChip() {
   else if (activeCellFilter.regional) parts.push(`Regional: ${esc(activeCellFilter.regional)}`);
   if (activeCellFilter.branch) parts.push(`Branch: ${esc(activeCellFilter.branch)}`);
   if (activeCellFilter.column) parts.push(`Status: ${esc(activeCellFilter.column.replace(/^\d+\.\s*/, ''))}`);
+  if (activeCellFilter.priorityOnly) parts.push(activeCellFilter.priorityCategory ? `Prioritas: ${esc(activeCellFilter.priorityCategory)}` : 'Order Prioritas');
   el.innerHTML = `<span class="badge status">${parts.join(' · ')}
     <a href="#" onclick="downloadLocListCsv(); return false;" style="margin-left:8px; color:inherit; text-decoration:underline;">Download CSV</a>
     <a href="#" onclick="clearCellFilter(); return false;" style="margin-left:8px; color:inherit; text-decoration:underline;">Hapus filter</a></span>`;
@@ -843,12 +925,12 @@ function csvEscape(value) {
 
 function downloadLocListCsv() {
   const rows = getLocListRows(getFilteredRows());
-  const header = ['IHLD', 'Lokasi', 'Batch', 'Regional', 'Branch', 'Status', 'Port'];
+  const header = ['IHLD', 'Lokasi', 'Batch', 'Regional', 'Branch', 'Status', 'Port', 'Order Prioritas'];
   const lines = [header.map(csvEscape).join(',')];
   rows.forEach(r => {
     lines.push([
       r.ihld || '', r.lokasi || '', r.batch || '', r.regional || '', r.branch || '',
-      r.status_raw || '', r.port || 0,
+      r.status_raw || '', r.port || 0, r.priority_bx || '',
     ].map(csvEscape).join(','));
   });
   const csvContent = '\uFEFF' + lines.join('\r\n'); // BOM biar Excel baca UTF-8 dengan benar
@@ -862,6 +944,7 @@ function downloadLocListCsv() {
     else if (activeCellFilter.regional) filterParts.push(activeCellFilter.regional);
     if (activeCellFilter.branch) filterParts.push(activeCellFilter.branch);
     if (activeCellFilter.column) filterParts.push(activeCellFilter.column.replace(/^\d+\.\s*/, ''));
+    if (activeCellFilter.priorityCategory) filterParts.push(activeCellFilter.priorityCategory);
   }
   const suffix = filterParts.length ? '-' + filterParts.join('-').replace(/[^a-z0-9]+/gi, '_') : '';
   a.href = url;
@@ -880,6 +963,8 @@ function downloadLocListCsv() {
 function getLocListRows(filteredRows) {
   if (activeCellFilter) {
     return filteredRows.filter(r => {
+      if (activeCellFilter.priorityOnly && !String(r.priority_bx || '').trim()) return false;
+      if (activeCellFilter.priorityCategory && String(r.priority_bx || '').trim() !== activeCellFilter.priorityCategory) return false;
       if (activeCellFilter.column) {
         // Golive Parsial ikut dihitung di kolom GOLIVE (lihat
         // computePivotTables), jadi daftar hasil klik sel GOLIVE harus ikut
@@ -1265,6 +1350,7 @@ function refreshAll() {
   // Tab "Progress": sama tabel Regional/Branch tapi cuma 5 status utama
   // (kolom Z: PERIJINAN..FINISH INSTALASI) -- tanpa DROP MOM, DROP, GOLIVE.
   renderRegionalBranchTable(filtered, dashboardCache.statuses, tselGroupingActive, 'progressTableWrap');
+  renderPriorityCategoryTable(filtered);
 
   try {
     if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
@@ -1375,6 +1461,8 @@ const REKAP_HINTS = {
   branch: 'baris = Regional &amp; Branch &middot; kolom = jumlah LOP per status &middot; klik angka untuk lihat &amp; download daftar lokasinya',
   batch: 'baris = batch &middot; setiap status menampilkan LOP (jml. order) &amp; Port berdampingan &middot; klik angka untuk lihat &amp; download daftar lokasinya',
   progress: 'baris = Regional &amp; Branch &middot; hanya 5 tahapan progress (PERIJINAN&ndash;FINISH INSTALASI), tanpa DROP MOM/DROP/GOLIVE &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+  priority: 'baris = Regional &amp; Branch &middot; kolom = kategori Order Prioritas dari BX &middot; klik angka untuk daftar LOP dan unduh CSV',
+  priority: 'baris = Regional &amp; Branch &middot; kolom = kategori Order Prioritas dari BX &middot; klik angka untuk daftar LOP dan unduh CSV',
 };
 let rekapView = 'branch';
 function setRekapView(view) {
@@ -1385,6 +1473,8 @@ function setRekapView(view) {
   document.getElementById('regionalBranchTableWrap').style.display = view === 'branch' ? 'block' : 'none';
   document.getElementById('pivotTableWrap').style.display = view === 'batch' ? 'block' : 'none';
   document.getElementById('progressTableWrap').style.display = view === 'progress' ? 'block' : 'none';
+  document.getElementById('priorityPivotWrap').style.display = view === 'priority' ? 'block' : 'none';
+  document.getElementById('priorityPivotWrap').style.display = view === 'priority' ? 'block' : 'none';
   const hint = document.getElementById('rekapTableHint');
   if (hint) hint.innerHTML = REKAP_HINTS[view];
 }

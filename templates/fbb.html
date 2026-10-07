@@ -30,6 +30,13 @@
   .fbb-scurve-block { margin-top:0; display:flex; flex-direction:column; flex:1; }
   .fbb-scurve-block .card { flex:1; display:flex; flex-direction:column; }
   .fbb-scurve-block .card canvas { flex:1 1 auto; min-height:260px; }
+  .fbb-data-view-tabs { display:flex; gap:6px; margin-bottom:10px; }
+  .fbb-data-view-btn { border:1px solid var(--border, #e2e8f0); border-radius:7px; background:#f8fafc; color:var(--muted, #64748b); padding:6px 11px; font-size:0.78rem; font-weight:700; cursor:pointer; }
+  .fbb-data-view-btn.active { background:var(--brand-blue, #29467a); border-color:var(--brand-blue, #29467a); color:#fff; }
+  .fbb-priority-branch-row th { background:#e8eef8; text-align:left; font-weight:800; }
+  .fbb-priority-table { border-collapse:collapse; width:100%; font-size:0.78rem; }
+  .fbb-priority-table th,.fbb-priority-table td { border:1px solid var(--border, #e2e8f0); padding:5px 8px; text-align:left; white-space:nowrap; }
+  .fbb-priority-table thead th { background:var(--brand-blue, #29467a); color:#fff; position:sticky; top:0; }
 </style>
 
 <div class="stat-grid">
@@ -139,9 +146,19 @@
 <div class="dashboard-grid">
   <div class="tables-col">
     <div>
-      <div class="section-title">Order &amp; Port per Regional &times; Program</div>
       <div class="card">
-        <div class="pivot-table-wrap"><table class="pivot pivot-combined" id="fbbRegionalTable"></table></div>
+        <div class="fbb-data-view-tabs" role="tablist" aria-label="Tampilan data FBB">
+          <button type="button" class="fbb-data-view-btn active" data-fbb-data-view="regional" role="tab" aria-selected="true">Regional &times; Program</button>
+          <button type="button" class="fbb-data-view-btn" data-fbb-data-view="priority" role="tab" aria-selected="false">Prioritas per Branch</button>
+        </div>
+        <div id="fbbRegionalView">
+          <div class="section-title">Order &amp; Port per Regional &times; Program</div>
+          <div class="pivot-table-wrap"><table class="pivot pivot-combined" id="fbbRegionalTable"></table></div>
+        </div>
+        <div id="fbbPriorityView" style="display:none;">
+          <div class="section-title">Monitoring Prioritas per Branch <span class="hint" id="fbbPriorityCount"></span></div>
+          <div class="pivot-table-wrap" id="fbbPriorityTableWrap" style="max-height:420px; overflow:auto;"></div>
+        </div>
       </div>
     </div>
     <div class="fbb-scurve-block">
@@ -167,6 +184,20 @@
 let fbbCache = null;   // { programs, regionals, branches, rows }
 let fbbChart = null;
 let fbbSummaryCache = null;
+let fbbCurrentPriorityRows = [];
+
+document.querySelectorAll('[data-fbb-data-view]').forEach(button => {
+  button.addEventListener('click', () => {
+    const view = button.dataset.fbbDataView;
+    document.getElementById('fbbRegionalView').style.display = view === 'regional' ? '' : 'none';
+    document.getElementById('fbbPriorityView').style.display = view === 'priority' ? '' : 'none';
+    document.querySelectorAll('[data-fbb-data-view]').forEach(tab => {
+      const active = tab === button;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+    });
+  });
+});
 
 function escF(s) {
   return (s === null || s === undefined ? '' : String(s))
@@ -275,9 +306,58 @@ function refreshFbb() {
   document.getElementById('fbbCountPT3').textContent = fmtNumF(filtered.filter(r => r.program.toUpperCase() === 'PT3').length);
 
   renderRegionalTable(filtered);
+  renderFbbPriorityTable(filtered);
   renderStatusChart(filtered);
   renderSCurve();
 }
+
+function renderFbbPriorityTable(filteredRows) {
+  const wrap = document.getElementById('fbbPriorityTableWrap');
+  const countEl = document.getElementById('fbbPriorityCount');
+  const rows = filteredRows.filter(row => String(row.prioritas || '').trim());
+  rows.sort((a, b) => (a.branch || '').localeCompare(b.branch || '', 'id') || String(a.prioritas).localeCompare(String(b.prioritas), 'id', { numeric:true }));
+  fbbCurrentPriorityRows = rows;
+  countEl.textContent = `${fmtNumF(rows.length)} LOP`;
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="empty-state">Tidak ada LOP prioritas pada filter Program/Regional saat ini.</div>';
+    return;
+  }
+
+  let html = `<div style="display:flex; justify-content:flex-end; margin-bottom:8px;"><button type="button" class="btn-ghost btn-sm" id="fbbPriorityDownloadBtn">&#11015; Download CSV (${fmtNumF(rows.length)} baris)</button></div>`;
+  html += '<table class="fbb-priority-table"><thead><tr><th>Branch</th><th>Program</th><th>IHLD</th><th>Lokasi</th><th>Status LOP</th><th>Final Port</th><th>Order Prioritas</th></tr></thead><tbody>';
+  const branchTotals = new Map();
+  rows.forEach(row => {
+    const key = row.branch || '(Tanpa Branch)';
+    const totals = branchTotals.get(key) || { lop:0, port:0 };
+    totals.lop++;
+    totals.port += Number(row.final_port) || 0;
+    branchTotals.set(key, totals);
+  });
+  let currentBranch = null;
+  rows.forEach((row, index) => {
+    const branch = row.branch || '(Tanpa Branch)';
+    if (branch !== currentBranch) {
+      currentBranch = branch;
+      const totals = branchTotals.get(branch);
+      html += `<tr class="fbb-priority-branch-row"><th colspan="7">${escF(branch)} · ${fmtNumF(totals.lop)} LOP · ${fmtNumF(totals.port)} Port</th></tr>`;
+    }
+    html += `<tr class="fbb-list-row" data-priority-row="${index}">
+      <td>${escF(row.branch) || '-'}</td><td>${escF(row.program) || '-'}</td><td>${escF(row.ihld) || '-'}</td>
+      <td>${escF(row.lokasi) || '-'}</td><td>${escF(row.status_lop) || '-'}</td><td>${fmtNumF(row.final_port)}</td>
+      <td><strong>${escF(row.prioritas)}</strong></td></tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+document.getElementById('fbbPriorityTableWrap').addEventListener('click', e => {
+  if (e.target.closest('#fbbPriorityDownloadBtn')) {
+    fbbDownloadCSV(fbbCurrentPriorityRows, 'prioritas-per-branch', FBB_PRIORITY_LIST_COLS);
+    return;
+  }
+  const row = e.target.closest('tr[data-priority-row]');
+  if (row) fbbOpenDetailModal(fbbCurrentPriorityRows[Number(row.dataset.priorityRow)], FBB_PRIORITY_LIST_COLS);
+});
 
 function renderRegionalTable(filteredRows) {
   const table = document.getElementById('fbbRegionalTable');
@@ -615,6 +695,7 @@ const FBB_LIST_COLS = [
   { key: 'tgl_golive', label: 'Tgl Golive' },          // L
   { key: 'umur', label: 'Umur' },                      // M
 ];
+const FBB_PRIORITY_LIST_COLS = FBB_LIST_COLS.concat([{ key:'prioritas', label:'Order Prioritas (X)' }]);
 const FBB_LIST_DISPLAY_CAP = 300;
 
 function fbbRowsToCSV(rows, cols) {
@@ -696,7 +777,8 @@ document.getElementById('fbbListModalBox').addEventListener('click', (e) => {
   if (row) fbbOpenDetailModal(row);
 });
 
-function fbbOpenDetailModal(row) {
+function fbbOpenDetailModal(row, columns = FBB_LIST_COLS) {
+  if (!row) return;
   const box = document.getElementById('fbbDetailModalBox');
   box.innerHTML = `
     <div class="modal-header">
@@ -706,7 +788,7 @@ function fbbOpenDetailModal(row) {
     <div style="overflow:auto; max-height:64vh; margin-top:10px; border:1px solid var(--border, #e2e8f0); border-radius:8px;">
       <table class="fbb-detail-table">
         <tbody>
-          ${FBB_LIST_COLS.map(c => `<tr><th>${escF(c.label)}</th><td>${escF(row[c.key]) || '-'}</td></tr>`).join('')}
+          ${columns.map(c => `<tr><th>${escF(c.label)}</th><td>${escF(row[c.key]) || '-'}</td></tr>`).join('')}
         </tbody>
       </table>
     </div>
