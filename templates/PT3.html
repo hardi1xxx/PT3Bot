@@ -143,6 +143,7 @@
   .rb-table tbody tr.rb-regional-row { font-weight: 800; background: var(--panel-alt); }
   .rb-table tbody tr.rb-regional-row td { border-top: 2px solid var(--brand-blue, #29467a); border-bottom: 2px solid var(--brand-blue, #29467a); }
   .rb-table tbody tr.rb-branch-row td:first-child { padding-left: 26px; color: var(--muted); font-weight: 400; }
+  .rb-table tbody tr.priority-status-row td:first-child { padding-left: 44px; color: var(--muted); font-size:0.76rem; }
   .rb-table tbody tr.rb-total-row { font-weight: 800; background: var(--panel-alt); }
   .rb-table tbody tr.rb-total-row td { border-top: 2px solid var(--brand-blue, #29467a); }
   .rb-table td.rb-total-col, .rb-table th.rb-total-col { font-weight: 800; }
@@ -801,11 +802,12 @@ function renderRegionalBranchTable(filteredRows, pivotColumns, groupTsel, wrapEl
   el.innerHTML = html;
 }
 
-function setPriorityCellFilter(regional, branch, priorityCategory, priorityField = 'priority_bx') {
+function setPriorityCellFilter(regional, branch, priorityCategory, priorityField = 'priority_bx', physicalStatus = null) {
   activeCellFilter = {
     priorityOnly: true,
     priorityCategory,
     priorityField,
+    physicalStatus,
     branch,
     ...(Array.isArray(regional) ? { regionalList: regional } : { regional }),
   };
@@ -825,6 +827,7 @@ function renderPriorityCategoryTable(filteredRows, priorityField, wrapId) {
 
   const categories = Array.from(new Set(rows.map(row => String(row[priorityField]).trim())))
     .sort((a, b) => a.localeCompare(b, 'id', { numeric:true, sensitivity:'base' }));
+  const showPhysicalStatus = priorityField === 'priority_20_branch';
   const emptyCounts = () => Object.fromEntries(categories.map(category => [category, { lop:0, port:0 }]));
   const regionalMap = new Map();
   const grand = emptyCounts();
@@ -838,9 +841,12 @@ function renderPriorityCategoryTable(filteredRows, priorityField, wrapId) {
     if (!regionalMap.has(regional)) regionalMap.set(regional, { categories:emptyCounts(), branches:new Map(), sourceRegionals:new Set() });
     const entry = regionalMap.get(regional);
     entry.sourceRegionals.add(regionalName);
-    if (!entry.branches.has(branch)) entry.branches.set(branch, emptyCounts());
+    if (!entry.branches.has(branch)) entry.branches.set(branch, { categories:emptyCounts(), statuses:new Map() });
+    const branchEntry = entry.branches.get(branch);
     const category = String(row[priorityField]).trim();
-    [entry.categories[category], entry.branches.get(branch)[category], grand[category]].forEach(count => {
+    const physicalStatus = String(row.status_raw || '(Tanpa Status)');
+    if (!branchEntry.statuses.has(physicalStatus)) branchEntry.statuses.set(physicalStatus, emptyCounts());
+    [entry.categories[category], branchEntry.categories[category], branchEntry.statuses.get(physicalStatus)[category], grand[category]].forEach(count => {
       count.lop++;
       count.port += Number(row.port) || 0;
     });
@@ -850,18 +856,20 @@ function renderPriorityCategoryTable(filteredRows, priorityField, wrapId) {
     lop:total.lop + counts[category].lop,
     port:total.port + counts[category].port,
   }), { lop:0, port:0 });
-  const cells = (counts, regional, branch) => {
+  const cells = (counts, regional, branch, physicalStatus = null) => {
     let html = '';
     categories.forEach(category => {
-      const args = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk lihat daftar LOP" onclick="setPriorityCellFilter(${regional}, ${branch}, '${escJs(category)}', '${priorityField}')"`;
+      const statusArg = physicalStatus === null ? 'null' : `'${escJs(physicalStatus)}'`;
+      const args = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk lihat daftar LOP" onclick="setPriorityCellFilter(${regional}, ${branch}, '${escJs(category)}', '${priorityField}', ${statusArg})"`;
       html += `<td ${args}>${fmtNum(counts[category].lop)}</td><td ${args}>${fmtNum(counts[category].port)}</td>`;
     });
     const total = totals(counts);
-    const totalArgs = `class="pivot-clickable rb-total-col" style="cursor:pointer;" title="Klik untuk lihat semua LOP prioritas" onclick="setPriorityCellFilter(${regional}, ${branch}, null, '${priorityField}')"`;
+    const totalArgs = `class="pivot-clickable rb-total-col" style="cursor:pointer;" title="Klik untuk lihat semua LOP prioritas" onclick="setPriorityCellFilter(${regional}, ${branch}, null, '${priorityField}', ${physicalStatus === null ? 'null' : `'${escJs(physicalStatus)}'`})"`;
     return `${html}<td ${totalArgs}>${fmtNum(total.lop)}</td><td ${totalArgs}>${fmtNum(total.port)}</td>`;
   };
 
-  let html = '<table class="rb-table pivot-combined"><thead><tr><th rowspan="2">Regional / Branch</th>';
+  const rowLabel = showPhysicalStatus ? 'Regional / Branch / Status Fisik' : 'Regional / Branch';
+  let html = `<table class="rb-table pivot-combined"><thead><tr><th rowspan="2">${rowLabel}</th>`;
   categories.forEach(category => { html += `<th colspan="2">${esc(category)}</th>`; });
   html += `<th colspan="2" class="rb-total-col">${priorityField === 'priority_bx' ? 'Total Prioritas Tsel' : 'Total Prioritas 20 Branch'}</th></tr><tr>`;
   categories.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
@@ -874,7 +882,13 @@ function renderPriorityCategoryTable(filteredRows, priorityField, wrapId) {
       : `'${escJs(sourceRegionals[0] || regional)}'`;
     html += `<tr class="rb-regional-row"><td>${esc(regional)}</td>${cells(entry.categories, regionalArg, 'null')}</tr>`;
     Array.from(entry.branches.keys()).sort((a, b) => a.localeCompare(b, 'id')).forEach(branch => {
-      html += `<tr class="rb-branch-row"><td>${esc(branch)}</td>${cells(entry.branches.get(branch), regionalArg, `'${escJs(branch)}'`)}</tr>`;
+      const branchEntry = entry.branches.get(branch);
+      html += `<tr class="rb-branch-row"><td>${esc(branch)}</td>${cells(branchEntry.categories, regionalArg, `'${escJs(branch)}'`)}</tr>`;
+      if (showPhysicalStatus) {
+        Array.from(branchEntry.statuses.keys()).sort((a, b) => a.localeCompare(b, 'id')).forEach(status => {
+          html += `<tr class="priority-status-row"><td>${esc(status)}</td>${cells(branchEntry.statuses.get(status), regionalArg, `'${escJs(branch)}'`, status)}</tr>`;
+        });
+      }
     });
   });
   html += `<tr class="rb-total-row"><td>TOTAL</td>${cells(grand, 'null', 'null')}</tr></tbody></table>`;
@@ -915,6 +929,7 @@ function renderCellFilterChip() {
     const priorityLabel = activeCellFilter.priorityField === 'priority_20_branch' ? 'Prioritas 20 Branch' : 'Prioritas Tsel';
     parts.push(activeCellFilter.priorityCategory ? `${priorityLabel}: ${esc(activeCellFilter.priorityCategory)}` : priorityLabel);
   }
+  if (activeCellFilter.physicalStatus) parts.push(`Status Fisik: ${esc(activeCellFilter.physicalStatus)}`);
   if (activeCellFilter.priorityOnly) parts.push(activeCellFilter.priorityCategory ? `Prioritas: ${esc(activeCellFilter.priorityCategory)}` : 'Order Prioritas');
   el.innerHTML = `<span class="badge status">${parts.join(' · ')}
     <a href="#" onclick="downloadLocListCsv(); return false;" style="margin-left:8px; color:inherit; text-decoration:underline;">Download CSV</a>
@@ -952,6 +967,7 @@ function downloadLocListCsv() {
     if (activeCellFilter.branch) filterParts.push(activeCellFilter.branch);
     if (activeCellFilter.column) filterParts.push(activeCellFilter.column.replace(/^\d+\.\s*/, ''));
     if (activeCellFilter.priorityCategory) filterParts.push(activeCellFilter.priorityCategory);
+    if (activeCellFilter.physicalStatus) filterParts.push(activeCellFilter.physicalStatus);
   }
   const suffix = filterParts.length ? '-' + filterParts.join('-').replace(/[^a-z0-9]+/gi, '_') : '';
   a.href = url;
@@ -973,6 +989,7 @@ function getLocListRows(filteredRows) {
       const priorityField = activeCellFilter.priorityField || 'priority_bx';
       if (activeCellFilter.priorityOnly && !String(r[priorityField] || '').trim()) return false;
       if (activeCellFilter.priorityCategory && String(r[priorityField] || '').trim() !== activeCellFilter.priorityCategory) return false;
+      if (activeCellFilter.physicalStatus && String(r.status_raw || '(Tanpa Status)') !== activeCellFilter.physicalStatus) return false;
       if (activeCellFilter.column) {
         // Golive Parsial ikut dihitung di kolom GOLIVE (lihat
         // computePivotTables), jadi daftar hasil klik sel GOLIVE harus ikut
@@ -1471,7 +1488,7 @@ const REKAP_HINTS = {
   batch: 'baris = batch &middot; setiap status menampilkan LOP (jml. order) &amp; Port berdampingan &middot; klik angka untuk lihat &amp; download daftar lokasinya',
   progress: 'baris = Regional &amp; Branch &middot; hanya 5 tahapan progress (PERIJINAN&ndash;FINISH INSTALASI), tanpa DROP MOM/DROP/GOLIVE &middot; klik angka untuk lihat &amp; download daftar lokasinya',
   priority: 'baris = Regional &amp; Branch &middot; kolom = kategori Order Prioritas Tsel dari BX &middot; klik angka untuk daftar LOP dan unduh CSV',
-  priority20: 'baris = Regional &amp; Branch &middot; kolom = kategori Prioritas 20 Branch dari CD &middot; klik angka untuk daftar LOP dan unduh CSV',
+  priority20: 'baris = Regional / Branch / Status Fisik (Z) &middot; kolom = kategori Prioritas 20 Branch (BY) &middot; klik angka untuk daftar LOP dan unduh CSV',
   priority: 'baris = Regional &amp; Branch &middot; kolom = kategori Order Prioritas dari BX &middot; klik angka untuk daftar LOP dan unduh CSV',
   priority: 'baris = Regional &amp; Branch &middot; kolom = kategori Order Prioritas dari BX &middot; klik angka untuk daftar LOP dan unduh CSV',
 };

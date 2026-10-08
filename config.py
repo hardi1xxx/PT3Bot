@@ -92,7 +92,7 @@ COL_CPP_O = "O"    # CPP
 # di sebelah IHLD/Lokasi pada list "Lokasi Sedang Berjalan & Update Status".
 # Kosong -> badge tidak ditampilkan sama sekali.
 COL_ORDER_PRIORITAS = "BX"
-COL_ORDER_PRIORITAS_20_BRANCH = "CD"  # kategori Prioritas 20 Branch untuk tab PT3
+COL_ORDER_PRIORITAS_20_BRANCH = "BY"  # kategori Prioritas 20 Branch untuk tab PT3
 
 # Status yang dianggap "sedang berjalan" -> dipakai untuk KPI "Lokasi
 # Sedang Berjalan", chart distribusi status, dan notifikasi harian.
