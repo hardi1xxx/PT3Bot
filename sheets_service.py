@@ -660,6 +660,7 @@ def get_dashboard_data():
         "regional": _col_to_index(getattr(config, "COL_REGIONAL", "T")) - 1,
         "golive_date": _col_to_index(getattr(config, "COL_GOLIVE_DATE", "BD")) - 1,
         "order_prioritas": _col_to_index(config.COL_ORDER_PRIORITAS) - 1,
+        "priority_20_branch": _col_to_index(config.COL_ORDER_PRIORITAS_20_BRANCH) - 1,
         # Nama ODP untuk tabel "Trend Golive" (modal saat sebuah bar
         # diklik) -- dulu field ini dimaksudkan baca kolom "BO" di sheet
         # lama, tapi kolom itu sudah dipindah/di-rename jadi AD
@@ -756,6 +757,7 @@ def get_dashboard_data():
             "regional": cell("regional") or "(TANPA REGIONAL)",
             "order_prioritas": cell("order_prioritas"),  # kolom BX, opsional -- badge di list "Lokasi Sedang Berjalan"
             "priority_bx": cell("order_prioritas"),  # alias kolom BX -- dipakai filter "Hanya Order Priority" di PT3.html
+            "priority_20_branch": cell("priority_20_branch"),
             "odp_bo": cell("odp_golive"),          # Nama ODP (kolom AD) -- dipakai tabel "Trend Golive"
             "odp_real": _to_number(cell("odp_real")),  # Jumlah/angka ODP (kolom AE) -- juga dipakai tabel "Trend Golive"
         })
@@ -1856,6 +1858,7 @@ def get_fbb_data():
         "keterangan": _col_to_index(config.COL_SEMESTA_KETERANGAN) - 1,
         "potensi": _col_to_index(config.COL_SEMESTA_POTENSI) - 1,
         "prioritas": _col_to_index(config.COL_SEMESTA_PRIORITAS) - 1,
+        "prioritas_20_branch": _col_to_index(config.COL_SEMESTA_PRIORITAS_20_BRANCH) - 1,
     }
 
     data_rows = all_values[config.DATA_START_ROW_SEMESTA - 1:]
@@ -1918,6 +1921,7 @@ def get_fbb_data():
             "keterangan": cell("keterangan"),
             "potensi": cell("potensi"),
             "prioritas": cell("prioritas"),
+            "prioritas_20_branch": cell("prioritas_20_branch"),
         })
 
     return {

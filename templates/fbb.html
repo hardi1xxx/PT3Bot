@@ -96,6 +96,26 @@
   </div>
 </div>
 
+<div class="card" style="margin-bottom:18px;">
+  <div class="fbb-data-view-tabs" role="tablist" aria-label="Tampilan data prioritas FBB">
+    <button type="button" class="fbb-data-view-btn active" data-fbb-data-view="regional" role="tab" aria-selected="true">Regional &times; Program</button>
+    <button type="button" class="fbb-data-view-btn" data-fbb-data-view="priority" role="tab" aria-selected="false">Prioritas Oktober</button>
+    <button type="button" class="fbb-data-view-btn" data-fbb-data-view="priority20" role="tab" aria-selected="false">Prioritas 20 Branch</button>
+  </div>
+  <div id="fbbRegionalView">
+    <div class="section-title">Order &amp; Port per Regional &times; Program</div>
+    <div class="pivot-table-wrap"><table class="pivot pivot-combined" id="fbbRegionalTable"></table></div>
+  </div>
+  <div id="fbbPriorityOctoberView" style="display:none;">
+    <div class="section-title">Prioritas Oktober (kolom X) <span class="hint" id="fbbPriorityCount"></span></div>
+    <div class="pivot-table-wrap" id="fbbPriorityOctoberTableWrap" style="overflow:auto;"></div>
+  </div>
+  <div id="fbbPriority20View" style="display:none;">
+    <div class="section-title">Prioritas 20 Branch (kolom Z) <span class="hint" id="fbbPriority20Count"></span></div>
+    <div class="pivot-table-wrap" id="fbbPriority20TableWrap" style="overflow:auto;"></div>
+  </div>
+</div>
+
 <!-- Ringkasan Pencapaian: DOD/MTD/Potensi/ACH/YTD/Outlook/GAP -->
 <div class="section-title">
   Ringkasan Pencapaian per Regional &amp; Program
@@ -145,22 +165,6 @@
 
 <div class="dashboard-grid">
   <div class="tables-col">
-    <div>
-      <div class="card">
-        <div class="fbb-data-view-tabs" role="tablist" aria-label="Tampilan data FBB">
-          <button type="button" class="fbb-data-view-btn active" data-fbb-data-view="regional" role="tab" aria-selected="true">Regional &times; Program</button>
-          <button type="button" class="fbb-data-view-btn" data-fbb-data-view="priority" role="tab" aria-selected="false">Prioritas per Branch</button>
-        </div>
-        <div id="fbbRegionalView">
-          <div class="section-title">Order &amp; Port per Regional &times; Program</div>
-          <div class="pivot-table-wrap"><table class="pivot pivot-combined" id="fbbRegionalTable"></table></div>
-        </div>
-        <div id="fbbPriorityView" style="display:none;">
-          <div class="section-title">Monitoring Prioritas per Branch <span class="hint" id="fbbPriorityCount"></span></div>
-          <div class="pivot-table-wrap" id="fbbPriorityTableWrap" style="max-height:420px; overflow:auto;"></div>
-        </div>
-      </div>
-    </div>
     <div class="fbb-scurve-block">
       <div class="section-title">
         Kurva S &mdash; Target vs Realisasi Port (Kumulatif)
@@ -184,13 +188,13 @@
 let fbbCache = null;   // { programs, regionals, branches, rows }
 let fbbChart = null;
 let fbbSummaryCache = null;
-let fbbCurrentPriorityRows = [];
+let fbbCurrentPriorityRows = { prioritas:[], prioritas_20_branch:[] };
+let fbbCurrentListCols = null;
 
 document.querySelectorAll('[data-fbb-data-view]').forEach(button => {
   button.addEventListener('click', () => {
     const view = button.dataset.fbbDataView;
-    document.getElementById('fbbRegionalView').style.display = view === 'regional' ? '' : 'none';
-    document.getElementById('fbbPriorityView').style.display = view === 'priority' ? '' : 'none';
+    setFbbDataView(view);
     document.querySelectorAll('[data-fbb-data-view]').forEach(tab => {
       const active = tab === button;
       tab.classList.toggle('active', active);
@@ -294,6 +298,22 @@ function wireFilterGroup(gridId, cls, selectAllId, clearAllId, summaryId, header
 wireFilterGroup('fbbProgramGrid', 'fbb-program-checkbox', 'fbbProgramSelectAll', 'fbbProgramClearAll', 'fbbProgramFilterSummary', 'fbbProgramFilterHeader', 'fbbProgramFilterBody', 'fbbProgramToggleBtn');
 wireFilterGroup('fbbRegionalGrid', 'fbb-regional-checkbox', 'fbbRegionalSelectAll', 'fbbRegionalClearAll', 'fbbRegionalFilterSummary', 'fbbRegionalFilterHeader', 'fbbRegionalFilterBody', 'fbbRegionalToggleBtn');
 
+function setFbbDataView(view) {
+  const views = {
+    regional: 'fbbRegionalView',
+    priority: 'fbbPriorityOctoberView',
+    priority20: 'fbbPriority20View',
+  };
+  Object.entries(views).forEach(([key, id]) => {
+    document.getElementById(id).style.display = key === view ? '' : 'none';
+  });
+  document.querySelectorAll('[data-fbb-data-view]').forEach(tab => {
+    const active = tab.dataset.fbbDataView === view;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+}
+
 function refreshFbb() {
   if (!fbbCache) return;
   const filtered = getFbbFilteredRows();
@@ -306,57 +326,88 @@ function refreshFbb() {
   document.getElementById('fbbCountPT3').textContent = fmtNumF(filtered.filter(r => r.program.toUpperCase() === 'PT3').length);
 
   renderRegionalTable(filtered);
-  renderFbbPriorityTable(filtered);
+  renderFbbPriorityPivot(filtered, 'prioritas', 'fbbPriorityOctoberTableWrap', 'fbbPriorityCount', 'prioritas');
+  renderFbbPriorityPivot(filtered, 'prioritas_20_branch', 'fbbPriority20TableWrap', 'fbbPriority20Count', 'prioritas_20_branch');
   renderStatusChart(filtered);
   renderSCurve();
 }
 
-function renderFbbPriorityTable(filteredRows) {
-  const wrap = document.getElementById('fbbPriorityTableWrap');
-  const countEl = document.getElementById('fbbPriorityCount');
-  const rows = filteredRows.filter(row => String(row.prioritas || '').trim());
-  rows.sort((a, b) => (a.branch || '').localeCompare(b.branch || '', 'id') || String(a.prioritas).localeCompare(String(b.prioritas), 'id', { numeric:true }));
-  fbbCurrentPriorityRows = rows;
-  countEl.textContent = `${fmtNumF(rows.length)} LOP`;
+function renderFbbPriorityPivot(filteredRows, categoryKey, wrapId, countId, viewKey) {
+  const wrap = document.getElementById(wrapId);
+  const rows = filteredRows.filter(row => String(row[categoryKey] || '').trim());
+  rows.sort((a, b) => (a.branch || '').localeCompare(b.branch || '', 'id') || String(a[categoryKey]).localeCompare(String(b[categoryKey]), 'id', { numeric:true }));
+  fbbCurrentPriorityRows[viewKey] = rows;
+  document.getElementById(countId).textContent = `${fmtNumF(rows.length)} LOP`;
   if (!rows.length) {
-    wrap.innerHTML = '<div class="empty-state">Tidak ada LOP prioritas pada filter Program/Regional saat ini.</div>';
+    wrap.innerHTML = '<div class="empty-state">Tidak ada LOP pada kategori prioritas di filter Program/Regional saat ini.</div>';
     return;
   }
 
-  let html = `<div style="display:flex; justify-content:flex-end; margin-bottom:8px;"><button type="button" class="btn-ghost btn-sm" id="fbbPriorityDownloadBtn">&#11015; Download CSV (${fmtNumF(rows.length)} baris)</button></div>`;
-  html += '<table class="fbb-priority-table"><thead><tr><th>Branch</th><th>Program</th><th>IHLD</th><th>Lokasi</th><th>Status LOP</th><th>Final Port</th><th>Order Prioritas</th></tr></thead><tbody>';
-  const branchTotals = new Map();
+  const categories = Array.from(new Set(rows.map(row => String(row[categoryKey]).trim())))
+    .sort((a, b) => a.localeCompare(b, 'id', { numeric:true }));
+  const branches = new Map();
+  const grand = Object.fromEntries(categories.map(category => [category, { lop:0, port:0, rows:[] }]));
   rows.forEach(row => {
-    const key = row.branch || '(Tanpa Branch)';
-    const totals = branchTotals.get(key) || { lop:0, port:0 };
-    totals.lop++;
-    totals.port += Number(row.final_port) || 0;
-    branchTotals.set(key, totals);
-  });
-  let currentBranch = null;
-  rows.forEach((row, index) => {
     const branch = row.branch || '(Tanpa Branch)';
-    if (branch !== currentBranch) {
-      currentBranch = branch;
-      const totals = branchTotals.get(branch);
-      html += `<tr class="fbb-priority-branch-row"><th colspan="7">${escF(branch)} · ${fmtNumF(totals.lop)} LOP · ${fmtNumF(totals.port)} Port</th></tr>`;
-    }
-    html += `<tr class="fbb-list-row" data-priority-row="${index}">
-      <td>${escF(row.branch) || '-'}</td><td>${escF(row.program) || '-'}</td><td>${escF(row.ihld) || '-'}</td>
-      <td>${escF(row.lokasi) || '-'}</td><td>${escF(row.status_lop) || '-'}</td><td>${fmtNumF(row.final_port)}</td>
-      <td><strong>${escF(row.prioritas)}</strong></td></tr>`;
+    if (!branches.has(branch)) branches.set(branch, Object.fromEntries(categories.map(category => [category, { lop:0, port:0, rows:[] }])));
+    const category = String(row[categoryKey]).trim();
+    [branches.get(branch)[category], grand[category]].forEach(cell => {
+      cell.lop++;
+      cell.port += Number(row.final_port) || 0;
+      cell.rows.push(row);
+    });
   });
-  html += '</tbody></table>';
+  const totals = categories.reduce((total, category) => ({
+    lop:total.lop + grand[category].lop,
+    port:total.port + grand[category].port,
+    rows:total.rows.concat(grand[category].rows),
+  }), { lop:0, port:0, rows:[] });
+
+  let html = '<table class="fbb-priority-table"><thead><tr><th rowspan="2">Branch</th>';
+  categories.forEach(category => { html += `<th colspan="2">${escF(category)}</th>`; });
+  html += '<th colspan="2">Total</th></tr><tr>';
+  categories.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
+  html += '<th>LOP</th><th>Port</th></tr></thead><tbody>';
+
+  const renderCells = (cellsByCategory, branch) => {
+    let out = '';
+    categories.forEach(category => {
+      const cell = cellsByCategory[category];
+      const attr = `class="fbb-priority-drill" data-view="${viewKey}" data-branch="${escF(branch || '')}" data-category="${escF(category)}"`;
+      out += `<td ${attr}>${fmtNumF(cell.lop)}</td><td ${attr}>${fmtNumF(cell.port)}</td>`;
+    });
+    const rowTotal = categories.reduce((sum, category) => ({
+      lop:sum.lop + cellsByCategory[category].lop,
+      port:sum.port + cellsByCategory[category].port,
+    }), { lop:0, port:0 });
+    const totalAttr = `class="fbb-priority-drill total-col" data-view="${viewKey}" data-branch="${escF(branch || '')}" data-category=""`;
+    return `${out}<td ${totalAttr}>${fmtNumF(rowTotal.lop)}</td><td ${totalAttr}>${fmtNumF(rowTotal.port)}</td>`;
+  };
+
+  Array.from(branches.keys()).sort((a, b) => a.localeCompare(b, 'id')).forEach(branch => {
+    html += `<tr><th style="text-align:left;">${escF(branch)}</th>${renderCells(branches.get(branch), branch)}</tr>`;
+  });
+  const grandCells = Object.fromEntries(categories.map(category => [category, grand[category]]));
+  html += `<tr class="grand-total-row"><th style="text-align:left;">TOTAL</th>${renderCells(grandCells, '')}</tr></tbody></table>`;
   wrap.innerHTML = html;
 }
 
-document.getElementById('fbbPriorityTableWrap').addEventListener('click', e => {
-  if (e.target.closest('#fbbPriorityDownloadBtn')) {
-    fbbDownloadCSV(fbbCurrentPriorityRows, 'prioritas-per-branch', FBB_PRIORITY_LIST_COLS);
-    return;
-  }
-  const row = e.target.closest('tr[data-priority-row]');
-  if (row) fbbOpenDetailModal(fbbCurrentPriorityRows[Number(row.dataset.priorityRow)], FBB_PRIORITY_LIST_COLS);
+['fbbPriorityOctoberTableWrap','fbbPriority20TableWrap'].forEach(wrapId => {
+  document.getElementById(wrapId).addEventListener('click', event => {
+    const cell = event.target.closest('.fbb-priority-drill');
+    if (!cell) return;
+    const viewKey = cell.dataset.view;
+    const categoryKey = viewKey === 'prioritas' ? 'prioritas' : 'prioritas_20_branch';
+    const branch = cell.dataset.branch;
+    const category = cell.dataset.category;
+    const rows = fbbCurrentPriorityRows[viewKey].filter(row =>
+      (!branch || (row.branch || '(Tanpa Branch)') === branch)
+      && (!category || String(row[categoryKey] || '').trim() === category)
+    );
+    const title = [category || (viewKey === 'prioritas' ? 'Prioritas Oktober' : 'Prioritas 20 Branch'), branch].filter(Boolean).join(' — ');
+    const cols = viewKey === 'prioritas' ? FBB_PRIORITY_LIST_COLS : FBB_PRIORITY_20_LIST_COLS;
+    fbbOpenFilteredList(title, rows, cols);
+  });
 });
 
 function renderRegionalTable(filteredRows) {
@@ -696,6 +747,7 @@ const FBB_LIST_COLS = [
   { key: 'umur', label: 'Umur' },                      // M
 ];
 const FBB_PRIORITY_LIST_COLS = FBB_LIST_COLS.concat([{ key:'prioritas', label:'Order Prioritas (X)' }]);
+const FBB_PRIORITY_20_LIST_COLS = FBB_LIST_COLS.concat([{ key:'prioritas_20_branch', label:'Prioritas 20 Branch (Z)' }]);
 const FBB_LIST_DISPLAY_CAP = 300;
 
 function fbbRowsToCSV(rows, cols) {
@@ -728,9 +780,10 @@ function fbbDownloadCSV(rows, title, cols) {
 // membuka modal detail saat salah satu baris/lokasi diklik.
 let fbbCurrentListRows = [];
 
-function fbbOpenFilteredList(title, rows) {
+function fbbOpenFilteredList(title, rows, columns = FBB_LIST_COLS) {
   rows = rows || [];
   fbbCurrentListRows = rows;
+  fbbCurrentListCols = columns;
   const capped = rows.slice(0, FBB_LIST_DISPLAY_CAP);
   const modalBox = document.getElementById('fbbListModalBox');
   modalBox.innerHTML = `
@@ -745,9 +798,9 @@ function fbbOpenFilteredList(title, rows) {
       <p class="sub" style="margin:0 2px 8px;">Klik salah satu baris untuk lihat detail lengkap lokasi tersebut.</p>
       <div style="overflow:auto; max-height:58vh; border:1px solid var(--border, #e2e8f0); border-radius:8px;">
         <table class="fbb-list-table">
-          <thead><tr><th>No</th>${FBB_LIST_COLS.map(c => `<th>${escF(c.label)}</th>`).join('')}</tr></thead>
+          <thead><tr><th>No</th>${columns.map(c => `<th>${escF(c.label)}</th>`).join('')}</tr></thead>
           <tbody>
-            ${capped.map((r, i) => `<tr class="fbb-list-row" data-row-idx="${i}"><td>${i + 1}</td>${FBB_LIST_COLS.map(c => `<td>${escF(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
+            ${capped.map((r, i) => `<tr class="fbb-list-row" data-row-idx="${i}"><td>${i + 1}</td>${columns.map(c => `<td>${escF(r[c.key]) || '-'}</td>`).join('')}</tr>`).join('')}
           </tbody>
         </table>
       </div>
@@ -756,7 +809,7 @@ function fbbOpenFilteredList(title, rows) {
   `;
   document.getElementById('fbbListModalCloseBtn').addEventListener('click', fbbCloseListModal);
   const dlBtn = document.getElementById('fbbListDownloadBtn');
-  if (dlBtn && rows.length) dlBtn.addEventListener('click', () => fbbDownloadCSV(rows, title, FBB_LIST_COLS));
+  if (dlBtn && rows.length) dlBtn.addEventListener('click', () => fbbDownloadCSV(rows, title, columns));
   document.getElementById('fbbListModalOverlay').classList.add('open');
 }
 
@@ -774,7 +827,7 @@ document.getElementById('fbbListModalBox').addEventListener('click', (e) => {
   if (!tr) return;
   const idx = Number(tr.dataset.rowIdx);
   const row = fbbCurrentListRows[idx];
-  if (row) fbbOpenDetailModal(row);
+  if (row) fbbOpenDetailModal(row, fbbCurrentListCols || FBB_LIST_COLS);
 });
 
 function fbbOpenDetailModal(row, columns = FBB_LIST_COLS) {

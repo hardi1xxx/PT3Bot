@@ -228,7 +228,8 @@
     <button type="button" class="rekap-tab-btn active" data-rekap-view="branch">Per Branch</button>
     <button type="button" class="rekap-tab-btn" data-rekap-view="batch">Per Batch</button>
     <button type="button" class="rekap-tab-btn" data-rekap-view="progress">Progress</button>
-    <button type="button" class="rekap-tab-btn" data-rekap-view="priority">Prioritas BX</button>
+    <button type="button" class="rekap-tab-btn" data-rekap-view="priority">Prioritas Tsel</button>
+    <button type="button" class="rekap-tab-btn" data-rekap-view="priority20">Prioritas 20 Branch</button>
     <button type="button" class="rekap-tsel-btn" id="tselGroupBtn" title="Gabungkan baris Regional BANTEN &amp; JAKARTA jadi satu baris (TSEL)">Grouping (TSEL)</button>
     <button type="button" class="btn-ghost btn-sm" id="pt3ExportDataBtn" style="margin-left:8px;" title="Download seluruh data (sesuai filter Branch/Batch/Priority yang sedang aktif) sebagai file Excel">&#11015; Export Data</button>
   </div>
@@ -236,6 +237,7 @@
   <div class="pivot-table-wrap" id="pivotTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="progressTableWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
   <div class="pivot-table-wrap" id="priorityPivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
+  <div class="pivot-table-wrap" id="priority20PivotWrap" style="display:none;"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Chart + Trend Golive (kiri) & Kalender Target FI (kolom AK, kanan) -->
@@ -799,10 +801,11 @@ function renderRegionalBranchTable(filteredRows, pivotColumns, groupTsel, wrapEl
   el.innerHTML = html;
 }
 
-function setPriorityCellFilter(regional, branch, priorityCategory) {
+function setPriorityCellFilter(regional, branch, priorityCategory, priorityField = 'priority_bx') {
   activeCellFilter = {
     priorityOnly: true,
     priorityCategory,
+    priorityField,
     branch,
     ...(Array.isArray(regional) ? { regionalList: regional } : { regional }),
   };
@@ -811,16 +814,16 @@ function setPriorityCellFilter(regional, branch, priorityCategory) {
   if (locCard) locCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function renderPriorityCategoryTable(filteredRows) {
-  const el = document.getElementById('priorityPivotWrap');
+function renderPriorityCategoryTable(filteredRows, priorityField, wrapId) {
+  const el = document.getElementById(wrapId);
   if (!el) return;
-  const rows = filteredRows.filter(row => String(row.priority_bx || '').trim());
+  const rows = filteredRows.filter(row => String(row[priorityField] || '').trim());
   if (!rows.length) {
-    el.innerHTML = '<div class="empty-state">Tidak ada LOP dengan Order Prioritas pada filter saat ini.</div>';
+    el.innerHTML = '<div class="empty-state">Tidak ada LOP dengan kategori prioritas pada filter saat ini.</div>';
     return;
   }
 
-  const categories = Array.from(new Set(rows.map(row => String(row.priority_bx).trim())))
+  const categories = Array.from(new Set(rows.map(row => String(row[priorityField]).trim())))
     .sort((a, b) => a.localeCompare(b, 'id', { numeric:true, sensitivity:'base' }));
   const emptyCounts = () => Object.fromEntries(categories.map(category => [category, { lop:0, port:0 }]));
   const regionalMap = new Map();
@@ -836,7 +839,7 @@ function renderPriorityCategoryTable(filteredRows) {
     const entry = regionalMap.get(regional);
     entry.sourceRegionals.add(regionalName);
     if (!entry.branches.has(branch)) entry.branches.set(branch, emptyCounts());
-    const category = String(row.priority_bx).trim();
+    const category = String(row[priorityField]).trim();
     [entry.categories[category], entry.branches.get(branch)[category], grand[category]].forEach(count => {
       count.lop++;
       count.port += Number(row.port) || 0;
@@ -850,17 +853,17 @@ function renderPriorityCategoryTable(filteredRows) {
   const cells = (counts, regional, branch) => {
     let html = '';
     categories.forEach(category => {
-      const args = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk lihat daftar LOP" onclick="setPriorityCellFilter(${regional}, ${branch}, '${escJs(category)}')"`;
+      const args = `class="pivot-clickable" style="cursor:pointer;" title="Klik untuk lihat daftar LOP" onclick="setPriorityCellFilter(${regional}, ${branch}, '${escJs(category)}', '${priorityField}')"`;
       html += `<td ${args}>${fmtNum(counts[category].lop)}</td><td ${args}>${fmtNum(counts[category].port)}</td>`;
     });
     const total = totals(counts);
-    const totalArgs = `class="pivot-clickable rb-total-col" style="cursor:pointer;" title="Klik untuk lihat semua LOP prioritas" onclick="setPriorityCellFilter(${regional}, ${branch}, null)"`;
+    const totalArgs = `class="pivot-clickable rb-total-col" style="cursor:pointer;" title="Klik untuk lihat semua LOP prioritas" onclick="setPriorityCellFilter(${regional}, ${branch}, null, '${priorityField}')"`;
     return `${html}<td ${totalArgs}>${fmtNum(total.lop)}</td><td ${totalArgs}>${fmtNum(total.port)}</td>`;
   };
 
   let html = '<table class="rb-table pivot-combined"><thead><tr><th rowspan="2">Regional / Branch</th>';
   categories.forEach(category => { html += `<th colspan="2">${esc(category)}</th>`; });
-  html += '<th colspan="2" class="rb-total-col">Total Prioritas</th></tr><tr>';
+  html += `<th colspan="2" class="rb-total-col">${priorityField === 'priority_bx' ? 'Total Prioritas Tsel' : 'Total Prioritas 20 Branch'}</th></tr><tr>`;
   categories.forEach(() => { html += '<th>LOP</th><th>Port</th>'; });
   html += '<th class="rb-total-col">LOP</th><th class="rb-total-col">Port</th></tr></thead><tbody>';
   sortRegionals(Array.from(regionalMap.keys())).forEach(regional => {
@@ -908,6 +911,10 @@ function renderCellFilterChip() {
   else if (activeCellFilter.regional) parts.push(`Regional: ${esc(activeCellFilter.regional)}`);
   if (activeCellFilter.branch) parts.push(`Branch: ${esc(activeCellFilter.branch)}`);
   if (activeCellFilter.column) parts.push(`Status: ${esc(activeCellFilter.column.replace(/^\d+\.\s*/, ''))}`);
+  if (activeCellFilter.priorityOnly) {
+    const priorityLabel = activeCellFilter.priorityField === 'priority_20_branch' ? 'Prioritas 20 Branch' : 'Prioritas Tsel';
+    parts.push(activeCellFilter.priorityCategory ? `${priorityLabel}: ${esc(activeCellFilter.priorityCategory)}` : priorityLabel);
+  }
   if (activeCellFilter.priorityOnly) parts.push(activeCellFilter.priorityCategory ? `Prioritas: ${esc(activeCellFilter.priorityCategory)}` : 'Order Prioritas');
   el.innerHTML = `<span class="badge status">${parts.join(' · ')}
     <a href="#" onclick="downloadLocListCsv(); return false;" style="margin-left:8px; color:inherit; text-decoration:underline;">Download CSV</a>
@@ -963,8 +970,9 @@ function downloadLocListCsv() {
 function getLocListRows(filteredRows) {
   if (activeCellFilter) {
     return filteredRows.filter(r => {
-      if (activeCellFilter.priorityOnly && !String(r.priority_bx || '').trim()) return false;
-      if (activeCellFilter.priorityCategory && String(r.priority_bx || '').trim() !== activeCellFilter.priorityCategory) return false;
+      const priorityField = activeCellFilter.priorityField || 'priority_bx';
+      if (activeCellFilter.priorityOnly && !String(r[priorityField] || '').trim()) return false;
+      if (activeCellFilter.priorityCategory && String(r[priorityField] || '').trim() !== activeCellFilter.priorityCategory) return false;
       if (activeCellFilter.column) {
         // Golive Parsial ikut dihitung di kolom GOLIVE (lihat
         // computePivotTables), jadi daftar hasil klik sel GOLIVE harus ikut
@@ -1350,7 +1358,8 @@ function refreshAll() {
   // Tab "Progress": sama tabel Regional/Branch tapi cuma 5 status utama
   // (kolom Z: PERIJINAN..FINISH INSTALASI) -- tanpa DROP MOM, DROP, GOLIVE.
   renderRegionalBranchTable(filtered, dashboardCache.statuses, tselGroupingActive, 'progressTableWrap');
-  renderPriorityCategoryTable(filtered);
+  renderPriorityCategoryTable(getBranchFilteredRows(), 'priority_bx', 'priorityPivotWrap');
+  renderPriorityCategoryTable(getBranchFilteredRows(), 'priority_20_branch', 'priority20PivotWrap');
 
   try {
     if (typeof Chart === 'undefined') throw new Error('Chart.js gagal dimuat (cek koneksi CDN)');
@@ -1461,6 +1470,8 @@ const REKAP_HINTS = {
   branch: 'baris = Regional &amp; Branch &middot; kolom = jumlah LOP per status &middot; klik angka untuk lihat &amp; download daftar lokasinya',
   batch: 'baris = batch &middot; setiap status menampilkan LOP (jml. order) &amp; Port berdampingan &middot; klik angka untuk lihat &amp; download daftar lokasinya',
   progress: 'baris = Regional &amp; Branch &middot; hanya 5 tahapan progress (PERIJINAN&ndash;FINISH INSTALASI), tanpa DROP MOM/DROP/GOLIVE &middot; klik angka untuk lihat &amp; download daftar lokasinya',
+  priority: 'baris = Regional &amp; Branch &middot; kolom = kategori Order Prioritas Tsel dari BX &middot; klik angka untuk daftar LOP dan unduh CSV',
+  priority20: 'baris = Regional &amp; Branch &middot; kolom = kategori Prioritas 20 Branch dari CD &middot; klik angka untuk daftar LOP dan unduh CSV',
   priority: 'baris = Regional &amp; Branch &middot; kolom = kategori Order Prioritas dari BX &middot; klik angka untuk daftar LOP dan unduh CSV',
   priority: 'baris = Regional &amp; Branch &middot; kolom = kategori Order Prioritas dari BX &middot; klik angka untuk daftar LOP dan unduh CSV',
 };
@@ -1474,6 +1485,7 @@ function setRekapView(view) {
   document.getElementById('pivotTableWrap').style.display = view === 'batch' ? 'block' : 'none';
   document.getElementById('progressTableWrap').style.display = view === 'progress' ? 'block' : 'none';
   document.getElementById('priorityPivotWrap').style.display = view === 'priority' ? 'block' : 'none';
+  document.getElementById('priority20PivotWrap').style.display = view === 'priority20' ? 'block' : 'none';
   document.getElementById('priorityPivotWrap').style.display = view === 'priority' ? 'block' : 'none';
   const hint = document.getElementById('rekapTableHint');
   if (hint) hint.innerHTML = REKAP_HINTS[view];

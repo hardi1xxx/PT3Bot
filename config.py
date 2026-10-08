@@ -92,6 +92,7 @@ COL_CPP_O = "O"    # CPP
 # di sebelah IHLD/Lokasi pada list "Lokasi Sedang Berjalan & Update Status".
 # Kosong -> badge tidak ditampilkan sama sekali.
 COL_ORDER_PRIORITAS = "BX"
+COL_ORDER_PRIORITAS_20_BRANCH = "CD"  # kategori Prioritas 20 Branch untuk tab PT3
 
 # Status yang dianggap "sedang berjalan" -> dipakai untuk KPI "Lokasi
 # Sedang Berjalan", chart distribusi status, dan notifikasi harian.
@@ -422,6 +423,7 @@ COL_SEMESTA_REGIONAL = "H"      # BANTEN / JAKARTA / Eastern Jabotabek / Jabar /
 COL_SEMESTA_STATUS_LOP = "I"    # posisi aktual di sheet
 COL_SEMESTA_POTENSI = "W"       # baru: isian "P1 AUG", "P2 SEP", dst
 COL_SEMESTA_PRIORITAS = "X"     # Order Priority ("P1" dst) -- tabel "Monitoring Order Prioritas" FBB
+COL_SEMESTA_PRIORITAS_20_BRANCH = "Z"   # Prioritas 20 Branch
 COL_SEMESTA_FINAL_PORT = "J"
 COL_SEMESTA_TGL_FI = "K"
 COL_SEMESTA_TGL_GOLIVE = "L"
