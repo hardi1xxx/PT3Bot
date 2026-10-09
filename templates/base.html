@@ -10,15 +10,23 @@
     /* ── Sidebar: bisa disembunyikan + grup menu FBB (kotak berbayang + garis penghubung) ── */
     .sidebar {
       transition: width .22s ease, opacity .18s ease, padding .22s ease;
-      position: relative;
+      position: sticky;
+      top: 0;
+      align-self: flex-start;
       display: flex;
       flex-direction: column;
-      height: 100%;
+      height: 100vh;
+      height: 100dvh;
+      width: clamp(160px, 18vw, 240px);
+      overflow: hidden;
     }
     .sidebar nav {
       flex: 1 1 auto;
+      min-height: 0;
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
+    .sidebar-logo-wrap, .sidebar-header { flex-shrink: 0; }
     .sidebar-logo-wrap {
       display: flex;
       justify-content: center;
@@ -141,6 +149,16 @@
       display: flex;
       align-items: center;
       gap: 14px;
+      min-width: 0;
+    }
+    .topbar-title { min-width: 0; flex: 1 1 280px; }
+    .topbar-title h1, .topbar-sub { overflow-wrap: anywhere; }
+    .topbar-logos { flex-wrap: wrap; gap: 10px; max-width: 100%; }
+    .content { max-width: none; }
+    @media (max-width: 720px) {
+      .sidebar { position: sticky; transform: none; width: 160px; }
+      .topbar { padding: 16px; gap: 12px; }
+      .sidebar-logo { max-height: 48px; }
     }
 
     .menu-group { margin-top: 2px; flex: none; height: auto; }
@@ -325,7 +343,10 @@
 
     function setHidden(hidden) {
       sidebar.classList.toggle('is-hidden', hidden);
+      sidebar.inert = hidden;
+      sidebar.setAttribute('aria-hidden', String(hidden));
       showBtn.classList.toggle('visible', hidden);
+      showBtn.setAttribute('aria-expanded', String(!hidden));
       try { localStorage.setItem(STORAGE_KEY, hidden ? '1' : '0'); } catch (e) {}
     }
 
