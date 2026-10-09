@@ -2163,8 +2163,8 @@ def get_fbb_summary(reference_date_str: str = None):
     regionals = sorted(set(r["regional"] for r in rows), key=lambda s: s.lower())
     programs_present = sorted(set(r["program"] for r in rows), key=lambda s: s.lower())
 
-    # Kolom Target tetap Mei-September (5-9), berapapun bulan berjalannya.
-    FIXED_TARGET_MONTHS = [5, 6, 7, 8, 9]
+    # Kirim seluruh bulan agar kurva dan ringkasan dapat mengikuti tanggal acuan.
+    TARGET_MONTHS = range(1, 13)
     Q3_END_MONTH = 9
 
     def build_entry(subset_rows, regional_key, program_key):
@@ -2177,7 +2177,7 @@ def get_fbb_summary(reference_date_str: str = None):
         t_ytd = cumulative_target(value_fn, current_month)
         t_q3 = cumulative_target(value_fn, Q3_END_MONTH)
         entry = _combine_with_target(actuals, t_month, t_ytd, t_q3)
-        entry["target_by_month"] = {m: value_fn(m) for m in FIXED_TARGET_MONTHS}
+        entry["target_by_month"] = {m: value_fn(m) for m in TARGET_MONTHS}
         return entry
 
     regional_results = []
@@ -2205,7 +2205,7 @@ def get_fbb_summary(reference_date_str: str = None):
         "current_month": current_month,
         "current_month_label": config.MONTH_LABEL_ID[current_month - 1],
         "prev_month_label": prev_month_label,
-        "target_month_labels": {m: config.MONTH_LABEL_ID[m - 1] for m in FIXED_TARGET_MONTHS},
+        "target_month_labels": {m: config.MONTH_LABEL_ID[m - 1] for m in TARGET_MONTHS},
         "programs": programs_present,
         "regionals": regional_results,
         "totals_by_program": totals_by_program,

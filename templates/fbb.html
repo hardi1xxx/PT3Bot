@@ -174,6 +174,15 @@
         <span class="hint">target: sheet TARGET · realisasi: sheet Semesta, status "5.GOLIVE"</span>
       </div>
       <div class="card chart-card">
+        <div style="display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+          <label for="fbbSCurveProgram" style="margin:0;">Program Kurva S</label>
+          <select id="fbbSCurveProgram" style="width:auto; margin:0;" onchange="renderSCurve()">
+            <option value="all">Semua (PT2, PT3 &amp; Total)</option>
+            <option value="PT2">PT2</option>
+            <option value="PT3">PT3</option>
+            <option value="TOTAL">Total PT2 + PT3</option>
+          </select>
+        </div>
         <div class="dashboard-chart-wrap"><canvas id="fbbSCurveChart"></canvas></div>
         <p class="sub" id="fbbSCurveHint" style="margin:10px 2px 0;"></p>
       </div>
@@ -523,9 +532,8 @@ function renderStatusChart(filteredRows) {
 // vs Realisasi (sheet Semesta: Program-kol B, Tgl Golive-kol L → diambil
 // bulannya, Final Port-kol J, difilter Status LOP-kol I = "5.GOLIVE").
 //
-// Kurva ini SELALU menampilkan ketiga kelompok sekaligus — PT2, PT3, dan
-// TOTAL (PT2+PT3) — terlepas dari centang Filter Program di bagian atas
-// halaman (filter itu hanya untuk tabel/donut, bukan untuk Kurva S ini).
+// Menu Program Kurva S memilih PT2, PT3, Total, atau semua kelompok.
+// Rentang sumbu dimulai Mei sampai bulan pada tanggal acuan.
 //
 // PENTING: baik Target maupun Realisasi dihitung KUMULATIF sejak awal tahun
 // (1 Jan) s/d akhir tiap bulan (atau s/d tanggal acuan untuk bulan berjalan)
@@ -539,8 +547,7 @@ function fbbMonthEndUTC(year, month1to12) {
   return new Date(Date.UTC(year, month1to12, 0));
 }
 
-// Warna tetap per kelompok, dipakai konsisten untuk garis Target (solid)
-// maupun Realisasi (putus-putus) dari kelompok yang sama.
+// Target putus-putus, Realisasi solid; warna tetap per program.
 const FBB_SCURVE_COLORS = { PT2: '#2563eb', PT3: '#d97706', TOTAL: '#16a34a' };
 
 function renderSCurve() {
@@ -550,8 +557,10 @@ function renderSCurve() {
   if (!fbbCache || !fbbSummaryCache) return;
 
   const grandTb = (fbbSummaryCache.grand_total || {}).target_by_month || {};
-  const monthKeys = Object.keys(grandTb).map(Number).sort((a, b) => a - b);
-  if (!monthKeys.length) {
+  const refDate = fbbParseDate(fbbSummaryCache.reference_date);
+  const refMonth = refDate ? refDate.getUTCMonth() + 1 : 10;
+  const monthKeys = Array.from({ length: Math.max(5, refMonth) - 4 }, (_, index) => index + 5);
+  if (!Object.keys(grandTb).length) {
     if (fbbSCurveChart) { fbbSCurveChart.destroy(); fbbSCurveChart = null; }
     hintEl.textContent = 'Data target bulanan (sheet TARGET) tidak tersedia.';
     return;
@@ -559,9 +568,7 @@ function renderSCurve() {
   const tml = fbbSummaryCache.target_month_labels || {};
   const monthLabels = monthKeys.map(m => tml[m] || `Bulan ${m}`);
 
-  const refDate = fbbParseDate(fbbSummaryCache.reference_date);
   const jan1 = refDate ? new Date(Date.UTC(refDate.getUTCFullYear(), 0, 1)) : null;
-  const refMonth = refDate ? refDate.getUTCMonth() + 1 : null;
 
   // Target kumulatif per bulan untuk satu program: dijumlahkan berjalan dari
   // bulan target pertama s/d bulan tsb. Untuk 'TOTAL' pakai grand_total
@@ -569,18 +576,10 @@ function renderSCurve() {
   // pada baris TOTAL tabel Ringkasan — bukan sekadar hasil penjumlahan
   // manual PT2+PT3 di sisi klien.
   function cumulativeTargetFor(programKeyOrNull) {
-    let run = 0;
-    return monthKeys.map(m => {
-      let monthTotal;
-      if (programKeyOrNull === null) {
-        monthTotal = grandTb[m] || 0;
-      } else {
-        const pm = (fbbSummaryCache.totals_by_program || {})[programKeyOrNull];
-        monthTotal = pm && pm.target_by_month ? (pm.target_by_month[m] || 0) : 0;
-      }
-      run += monthTotal;
-      return run;
-    });
+    const monthly = programKeyOrNull === null ? grandTb
+      : ((fbbSummaryCache.totals_by_program || {})[programKeyOrNull] || {}).target_by_month || {};
+    return monthKeys.map(month => Object.entries(monthly)
+      .reduce((sum, [key, value]) => sum + (Number(key) <= month ? Number(value) || 0 : 0), 0));
   }
 
   // Realisasi kumulatif per bulan untuk satu program (atau null = semua
@@ -590,11 +589,12 @@ function renderSCurve() {
   function cumulativeRealFor(programKeyOrNull) {
     return monthKeys.map(m => {
       if (!refDate) return 0;
-      const cutoff = (refMonth !== null && m === refMonth) ? refDate : fbbMonthEndUTC(refDate.getUTCFullYear(), m);
+      const end = fbbMonthEndUTC(refDate.getUTCFullYear(), m);
+      const cutoff = end > refDate ? refDate : end;
       return fbbCache.rows.reduce((sum, r) => {
         if (programKeyOrNull !== null && r.program !== programKeyOrNull) return sum;
         if (!fbbIsGolive(r.status_lop)) return sum;
-        const d = fbbParseDate(r.tgl_golive);
+        const d = fbbParseDate(r.tgl_golive_iso || r.tgl_golive);
         if (!fbbDateBetween(d, jan1, cutoff)) return sum;
         return sum + (r.final_port || 0);
       }, 0);
@@ -604,8 +604,10 @@ function renderSCurve() {
   // Kelompok yang ditampilkan: tiap program yang benar-benar ada di data
   // (biasanya PT2 & PT3), ditambah TOTAL gabungan semuanya.
   const programKeys = (fbbCache.programs || []).slice();
+  const selectedProgram = document.getElementById('fbbSCurveProgram').value;
   const groups = programKeys.map(p => ({ key: p, label: p, program: p }))
-    .concat([{ key: 'TOTAL', label: 'TOTAL (PT2+PT3)', program: null }]);
+    .concat([{ key: 'TOTAL', label: 'TOTAL (PT2+PT3)', program: null }])
+    .filter(group => selectedProgram === 'all' || group.key === selectedProgram);
 
   const datasets = [];
   const summaryParts = [];
@@ -614,14 +616,14 @@ function renderSCurve() {
     const color = FBB_SCURVE_COLORS[g.key] || '#64748b';
     const cumTarget = cumulativeTargetFor(g.program);
     const cumReal = cumulativeRealFor(g.program);
-    if (g.key === 'TOTAL') totalRealMax = Math.max(...cumReal, 0);
+    totalRealMax = Math.max(totalRealMax, ...cumReal, 0);
     datasets.push({
       label: `${g.label} — Target`, data: cumTarget, borderColor: color,
-      borderWidth: g.key === 'TOTAL' ? 3 : 2, borderDash: [], fill: false, tension: 0.3, pointRadius: 3,
+      borderWidth: g.key === 'TOTAL' ? 3 : 2, borderDash: [6, 4], fill: false, tension: 0.3, pointRadius: 3,
     });
     datasets.push({
       label: `${g.label} — Realisasi`, data: cumReal, borderColor: color,
-      borderWidth: g.key === 'TOTAL' ? 3 : 2, borderDash: [6, 4], fill: false, tension: 0.3, pointRadius: 3,
+      borderWidth: g.key === 'TOTAL' ? 3 : 2, borderDash: [], fill: false, tension: 0.3, pointRadius: 3,
     });
     const lastT = cumTarget[cumTarget.length - 1] || 0;
     const lastR = cumReal[cumReal.length - 1] || 0;
@@ -634,7 +636,8 @@ function renderSCurve() {
   // render ini dipanggil, atau kolom Tgl Golive kosong/format aneh di
   // banyak baris), tampilkan peringatan yang jelas alih-alih diam-diam
   // menampilkan kurva Realisasi 0 yang menyesatkan.
-  const totalGoliveRows = fbbCache.rows.filter(r => fbbIsGolive(r.status_lop)).length;
+  const totalGoliveRows = fbbCache.rows.filter(r => fbbIsGolive(r.status_lop)
+    && (selectedProgram === 'all' || selectedProgram === 'TOTAL' || r.program === selectedProgram)).length;
   if (totalGoliveRows > 0 && totalRealMax === 0) {
     console.warn('[Kurva S] Ada', totalGoliveRows, 'baris berstatus 5.GOLIVE tapi Realisasi terhitung 0 — kemungkinan kolom Tgl Golive kosong/format tidak dikenali, atau data belum sepenuhnya termuat saat kurva dirender. Coba klik "Update Data".');
   }
@@ -652,7 +655,7 @@ function renderSCurve() {
     },
   });
 
-  hintEl.textContent = `Realisasi/Target s/d ${monthLabels[monthLabels.length - 1]} (garis solid = Target, putus-putus = Realisasi) — ${summaryParts.join(' · ')}.`
+  hintEl.textContent = `Realisasi/Target s/d ${monthLabels[monthLabels.length - 1]} (garis putus-putus = Target, solid = Realisasi) — ${summaryParts.join(' · ')}.`
     + (totalGoliveRows > 0 && totalRealMax === 0
       ? ' ⚠️ Peringatan: terdeteksi baris berstatus 5.GOLIVE tapi Realisasi terhitung 0 — coba klik "Update Data" di atas untuk memuat ulang.'
       : '');
@@ -666,32 +669,36 @@ function drillTd(value, regionalKey, programKey, metric, label) {
   return `<td class="fbb-drill" ${attrs}>${fmtNumF(value)}</td>`;
 }
 
+function fbbSummaryTargetWindow(data) {
+  const month = Number(data.current_month) || 10;
+  return { baseline: Math.max(0, month - 3), months: Array.from({ length: Math.min(3, month) }, (_, i) => Math.max(1, month - 2) + i) };
+}
+
 function summaryRowHtml(label, m, regionalKey, programKey, opts) {
   opts = opts || {};
   const rowClass = opts.rowClass || '';
   const labelStyle = opts.labelStyle || 'text-align:left;';
   const tb = m.target_by_month || {};
+  const window = fbbSummaryTargetWindow(fbbSummaryCache);
+  const baselineTarget = Object.entries(tb).reduce((sum, [month, value]) =>
+    sum + (Number(month) <= window.baseline ? Number(value) || 0 : 0), 0);
   return `
     <tr class="${rowClass}">
       <th style="${labelStyle}">${escF(label)}</th>
       ${drillTd(m.total_order_port, regionalKey, programKey, 'total_order', `Total Order — ${label}`)}
-      <td>${fmtNumF(tb[5])}</td>
-      <td>${fmtNumF(tb[6])}</td>
-      <td>${fmtNumF(tb[7])}</td>
-      <td>${fmtNumF(tb[8])}</td>
-      <td>${fmtNumF(tb[9])}</td>
-      ${drillTd(m.real_ytd_prev_month, regionalKey, programKey, 'ytd_prev', `YTD s/d bulan lalu — ${label}`)}
+      ${window.baseline ? `<td>${fmtNumF(baselineTarget)}</td>` : ''}
+      ${window.months.map(month => `<td>${fmtNumF(tb[month])}</td>`).join('')}
       <td>${fmtNumF(m.target_ytd)}</td>
       ${drillTd(m.dod, regionalKey, programKey, 'dod', `DOD (Golive hari ini) — ${label}`)}
       ${drillTd(m.mtd, regionalKey, programKey, 'mtd', `MTD (Golive bulan ini) — ${label}`)}
       ${drillTd(m.potensi, regionalKey, programKey, 'potensi', `Potensi (3.OGP DEPLOY) — ${label}`)}
       <td style="${achCellStyle(m.ach_mtd)}">${fmtPctF(m.ach_mtd)}</td>
-      ${drillTd(m.ytd, regionalKey, programKey, 'ytd', `YTD (Golive Jan s/d hari ini) — ${label}`)}
       ${drillTd(m.outlook_ytd, regionalKey, programKey, 'outlook', `Outlook YTD (Potensi + YTD) — ${label}`)}
       <td style="${achCellStyle(m.ach_ytd)}">${fmtPctF(m.ach_ytd)}</td>
       <td style="${gapCellStyle(-m.gap_mtd)}">${fmtNumF(m.gap_mtd)}</td>
       <td style="${gapCellStyle(-m.gap_q3)}">${fmtNumF(m.gap_q3)}</td>
       <td style="${achCellStyle(m.ach_total_order)}">${fmtPctF(m.ach_total_order)}</td>
+      ${drillTd(m.ytd, regionalKey, programKey, 'ytd', `YTD (Golive Jan s/d tanggal acuan) — ${label}`)}
     </tr>
   `;
 }
@@ -715,8 +722,8 @@ function sortRegionalsForDisplay(regionals) {
 function renderSummaryTable(data) {
   const wrap = document.getElementById('fbbSummaryTableWrap');
   const monthLabel = data.current_month_label;
-  const prevMonthLabel = data.prev_month_label || '-';
   const tml = data.target_month_labels || {};
+  const targetWindow = fbbSummaryTargetWindow(data);
 
   document.getElementById('fbbRefDateLabel').textContent =
     `Bulan berjalan: ${monthLabel} · acuan: ${data.reference_date}`;
@@ -724,23 +731,19 @@ function renderSummaryTable(data) {
   let html = '<table class="pivot pivot-combined"><thead><tr>';
   html += '<th rowspan="2" style="text-align:left;">Regional / Program</th>';
   html += '<th rowspan="2">Total Order</th>';
-  html += `<th rowspan="2">Target<br>${escF(tml[5] || 'Mei')}</th>`;
-  html += `<th rowspan="2">Target<br>${escF(tml[6] || 'Juni')}</th>`;
-  html += `<th rowspan="2">Target<br>${escF(tml[7] || 'Juli')}</th>`;
-  html += `<th rowspan="2">Target<br>${escF(tml[8] || 'Agustus')}</th>`;
-  html += `<th rowspan="2">Target<br>${escF(tml[9] || 'September')}</th>`;
-  html += `<th rowspan="2">YTD<br>${escF(prevMonthLabel)}</th>`;
+  if (targetWindow.baseline) html += `<th rowspan="2">Target YTD<br>${escF(tml[targetWindow.baseline] || `Bulan ${targetWindow.baseline}`)}</th>`;
+  targetWindow.months.forEach(month => { html += `<th rowspan="2">Target<br>${escF(tml[month] || `Bulan ${month}`)}</th>`; });
   html += `<th rowspan="2">Target s/d<br>${escF(monthLabel)}</th>`;
   html += '<th rowspan="2">DOD</th>';
   html += `<th rowspan="2">MTD<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">Potensi<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">ACH MTD<br>${escF(monthLabel)}</th>`;
-  html += `<th rowspan="2">YTD<br>${escF(monthLabel)}</th>`;
   html += `<th rowspan="2">Outlook YTD<br>${escF(monthLabel)}</th>`;
   html += '<th rowspan="2">ACH YTD</th>';
   html += `<th rowspan="2">GAP MTD<br>${escF(monthLabel)}</th>`;
   html += '<th rowspan="2">GAP Q3</th>';
   html += '<th rowspan="2">ACH Total</th>';
+  html += `<th rowspan="2">YTD<br>${escF(monthLabel)}</th>`;
   html += '</tr><tr></tr></thead><tbody>';
 
   sortRegionalsForDisplay(data.regionals).forEach(reg => {
