@@ -98,12 +98,12 @@
 
 <div class="card" style="margin-bottom:18px;">
   <div class="fbb-data-view-tabs" role="tablist" aria-label="Tampilan data FBB">
-    <button type="button" class="fbb-data-view-btn active" data-fbb-data-view="regional" role="tab" aria-selected="true">Regional &times; Program</button>
-    <button type="button" class="fbb-data-view-btn" data-fbb-data-view="summary" role="tab" aria-selected="false">Summary</button>
+    <button type="button" class="fbb-data-view-btn active" data-fbb-data-view="summary" role="tab" aria-selected="true">Summary</button>
+    <button type="button" class="fbb-data-view-btn" data-fbb-data-view="regional" role="tab" aria-selected="false">Regional &times; Program</button>
     <button type="button" class="fbb-data-view-btn" data-fbb-data-view="priority" role="tab" aria-selected="false">Prioritas Oktober</button>
     <button type="button" class="fbb-data-view-btn" data-fbb-data-view="priority20" role="tab" aria-selected="false">Prioritas 20 Branch</button>
   </div>
-  <div id="fbbRegionalView">
+  <div id="fbbRegionalView" style="display:none;">
     <div class="section-title">Order &amp; Port per Regional &times; Program</div>
     <div class="pivot-table-wrap"><table class="pivot pivot-combined" id="fbbRegionalTable"></table></div>
   </div>
@@ -112,10 +112,10 @@
     <div class="pivot-table-wrap" id="fbbPriorityOctoberTableWrap" style="overflow:auto;"></div>
   </div>
   <div id="fbbPriority20View" style="display:none;">
-    <div class="section-title">Prioritas 20 Branch (kolom Z) <span class="hint" id="fbbPriority20Count"></span></div>
+    <div class="section-title">Prioritas 20 Branch — Status LOP (kolom I) <span class="hint" id="fbbPriority20Count"></span></div>
     <div class="pivot-table-wrap" id="fbbPriority20TableWrap" style="overflow:auto;"></div>
   </div>
-  <div id="fbbSummaryView" style="display:none;">
+  <div id="fbbSummaryView">
     <div class="section-title">Ringkasan Pencapaian per Regional &amp; Program <span class="hint">satuan PORT</span></div>
     <div class="pivot-table-wrap" id="fbbSummaryTableWrap" style="overflow-x:auto;">
       <div class="skeleton">Memuat ringkasan...</div>
@@ -178,8 +178,9 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Chart.js sudah dimuat dari static oleh base.html. -->
 <script>
+let fbbDataView = 'summary';
 let fbbCache = null;   // { programs, regionals, branches, rows }
 let fbbChart = null;
 let fbbSummaryCache = null;
@@ -294,6 +295,8 @@ wireFilterGroup('fbbProgramGrid', 'fbb-program-checkbox', 'fbbProgramSelectAll',
 wireFilterGroup('fbbRegionalGrid', 'fbb-regional-checkbox', 'fbbRegionalSelectAll', 'fbbRegionalClearAll', 'fbbRegionalFilterSummary', 'fbbRegionalFilterHeader', 'fbbRegionalFilterBody', 'fbbRegionalToggleBtn');
 
 function setFbbDataView(view) {
+  fbbDataView = view;
+  renderFbbActiveTable();
   const views = {
     regional: 'fbbRegionalView',
     summary: 'fbbSummaryView',
@@ -321,17 +324,23 @@ function refreshFbb() {
   document.getElementById('fbbCountPT2').textContent = fmtNumF(filtered.filter(r => r.program.toUpperCase() === 'PT2').length);
   document.getElementById('fbbCountPT3').textContent = fmtNumF(filtered.filter(r => r.program.toUpperCase() === 'PT3').length);
 
-  renderRegionalTable(filtered);
-  renderFbbPriorityPivot(filtered, 'prioritas', 'fbbPriorityOctoberTableWrap', 'fbbPriorityCount', 'prioritas');
-  renderFbbPriorityPivot(filtered, 'prioritas_20_branch', 'fbbPriority20TableWrap', 'fbbPriority20Count', 'prioritas_20_branch');
+  renderFbbActiveTable();
   renderStatusChart(filtered);
   renderSCurve();
+}
+
+function renderFbbActiveTable() {
+  if (!fbbCache) return;
+  const filtered = getFbbFilteredRows();
+  if (fbbDataView === 'regional') renderRegionalTable(filtered);
+  if (fbbDataView === 'priority') renderFbbPriorityPivot(filtered, 'prioritas', 'fbbPriorityOctoberTableWrap', 'fbbPriorityCount', 'prioritas');
+  if (fbbDataView === 'priority20') renderFbbPriorityPivot(filtered, 'prioritas_20_branch', 'fbbPriority20TableWrap', 'fbbPriority20Count', 'prioritas_20_branch');
 }
 
 function renderFbbPriorityPivot(filteredRows, categoryKey, wrapId, countId, viewKey) {
   const wrap = document.getElementById(wrapId);
   const priorityKey = categoryKey;
-  categoryKey = viewKey === 'prioritas' ? 'status_lop' : 'prioritas_20_branch';
+  categoryKey = 'status_lop';
   const rows = filteredRows.filter(row => String(row[priorityKey] || '').trim());
   rows.sort((a, b) => (a.branch || '').localeCompare(b.branch || '', 'id') || String(a[categoryKey]).localeCompare(String(b[categoryKey]), 'id', { numeric:true }));
   fbbCurrentPriorityRows[viewKey] = rows;
@@ -395,7 +404,7 @@ function renderFbbPriorityPivot(filteredRows, categoryKey, wrapId, countId, view
     const cell = event.target.closest('.fbb-priority-drill');
     if (!cell) return;
     const viewKey = cell.dataset.view;
-    const categoryKey = viewKey === 'prioritas' ? 'status_lop' : 'prioritas_20_branch';
+    const categoryKey = 'status_lop';
     const branch = cell.dataset.branch;
     const category = cell.dataset.category;
     const rows = fbbCurrentPriorityRows[viewKey].filter(row =>
