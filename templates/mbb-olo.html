@@ -27,8 +27,8 @@
   .mbb-value-box{background:#fff; border:2px dashed #db2777; border-radius:12px; padding:14px 10px; text-align:center;}
   .mbb-value-box .l{font-size:0.82rem; font-weight:600; color:#334155; margin-bottom:4px;}
   .mbb-value-box .n{font-size:1.7rem; font-weight:800; color:#0f172a;}
-  .mbb-dash-top{display:grid; grid-template-columns: 1fr 0.55fr 1fr; grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:stretch;}
-  .mbb-dash-bottom{display:grid; grid-template-columns: 1fr 1fr; grid-template-areas: "curve timeplan"; gap:14px; margin-bottom:14px; align-items:stretch;}
+  .mbb-dash-top{display:grid; grid-template-columns: minmax(0,1fr) minmax(0,0.55fr) minmax(0,1fr); grid-template-areas: "tree resume target"; gap:14px; margin-bottom:14px; align-items:stretch;}
+  .mbb-dash-bottom{display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-areas: "curve timeplan"; gap:14px; margin-bottom:14px; align-items:stretch;}
   .mbb-dash-siteids{margin-bottom:14px;}
   @media (max-width: 980px){
     .mbb-dash-top{grid-template-columns: 1fr; grid-template-areas: "tree" "resume" "target";}
@@ -41,7 +41,17 @@
   .mbb-dash-bottom .timeplan-card{grid-area:timeplan;}
   .mbb-dash-top .section-title,.mbb-dash-bottom .section-title{font-size:calc(0.95rem + 3px);}
   .mbb-tree-subtitle{color:#be185d; font-weight:800; font-size:calc(0.9rem + 3px); line-height:1.35; margin:0 0 8px;}
-  .mbb-tree-svg-wrap{overflow-x:auto;}
+  .mbb-tree-svg-wrap{width:100%; min-width:0; display:flex; justify-content:center; align-items:flex-start;}
+  /* Shrink to the card, but avoid enlarging the drawing as zoom-out adds space. */
+  .mbb-tree-svg-wrap svg{display:block; flex:0 1 auto; width:100%; max-width:460px; height:auto; aspect-ratio:460 / 480;}
+  .olo-dash-top .mbb-tree-svg-wrap svg{max-width:480px; aspect-ratio:1;}
+  .mbb-dash-top > *, .mbb-dash-bottom > *{min-width:0;}
+  .mbb-resume-list{overflow-wrap:anywhere;}
+  @container (max-width:1000px){
+    .mbb-dash-top{grid-template-columns:minmax(0,1fr); grid-template-areas:"tree" "resume" "target";}
+    .mbb-dash-bottom{grid-template-columns:minmax(0,1fr); grid-template-areas:"curve" "timeplan";}
+    .olo-dash-top{flex-direction:column;}
+  }
   .mbb-tree-svg-wrap svg text{user-select:none;}
   .mbb-tree-svg-wrap svg .tree-node:hover rect{opacity:0.88;}
   .mbb-notes-list{max-height:230px; overflow-y:auto; font-size:0.82rem;}
