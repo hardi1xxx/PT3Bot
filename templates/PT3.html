@@ -6,7 +6,7 @@
 {% block content %}
 
 <style>
-  .split-half { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 22px; }
+  .split-half { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; margin-bottom: 22px; }
   @media (max-width: 920px) { .split-half { grid-template-columns: 1fr; } }
   .split-half > .card { margin-bottom: 0; }
 
@@ -14,7 +14,7 @@
      dengan Kalender Target FI (kanan) -- tinggi kolom kiri & kanan dibuat
      sama (grid default: align-items stretch), lalu 2 chart di kiri
      membagi rata sisa tinggi itu supaya proporsinya tidak njomplang. */
-  .split-half-fi { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
+  .split-half-fi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 22px; }
   @media (max-width: 920px) { .split-half-fi { grid-template-columns: 1fr; } }
   .split-half-fi > .card, .split-half-fi > .fi-left-col { margin-bottom: 0; }
   .fi-left-col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
@@ -28,7 +28,8 @@
   .golive-trend-gran button { padding: 3px 10px; font-size: 0.75rem; border-radius: 6px; }
   .golive-trend-gran button.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }
   .golive-trend-gran select { flex: 0 0 154px; width: 154px; box-sizing: border-box; padding: 4px 7px; border: 1px solid #cbd5e1; border-radius: 6px; color: #1c3466; background: #fff; font-size: 0.75rem; }
-  .mini-chart-wrap { position: relative; flex: 1 1 auto; min-height: 140px; }
+  .mini-chart-wrap { position: relative; width:100%; min-width:0; height:200px; flex:1 1 200px; min-height:140px; }
+  .mini-chart-wrap canvas { position:absolute; inset:0; width:100% !important; height:100% !important; }
 
   /* Legend Distribusi Status: grid rapi 2 kolom biar ringkas & tidak
      membuat kartu jadi terlalu tinggi / bentrok dgn kartu di bawahnya. */
@@ -46,7 +47,7 @@
   .trend-golive-card .golive-trend-gran button.active { background: #f5b400; color: #1c3466; border-color: #f5b400; }
 
   .fi-cal-card { display: flex; flex-direction: column; }
-  .fi-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .fi-cal-head { display: flex; flex-wrap:wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
   .fi-cal-title { font-weight: 800; font-size: 0.95rem; color: var(--text); }
   .fi-cal-nav { display: flex; align-items: center; gap: 6px; }
   .fi-cal-nav button { border: none; background: var(--panel-alt); color: var(--text); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; font-size: 0.85rem; line-height: 1; }
@@ -55,14 +56,14 @@
   .fi-cal-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.7rem; color: var(--muted); margin-bottom: 10px; }
   .fi-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
   .fi-cal-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .fi-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; flex: 1 1 auto; align-content: start; }
+  .fi-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; flex: 1 1 auto; align-content: start; }
   .fi-cal-daylabel { text-align: center; font-size: 0.64rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 0 6px; }
-  .fi-cal-cell { min-height: 52px; border-radius: 8px; background: var(--panel-alt); padding: 4px 5px; font-size: 0.72rem; display: flex; flex-direction: column; gap: 3px; }
+  .fi-cal-cell { min-width:0; min-height: 52px; border-radius: 8px; background: var(--panel-alt); padding: 4px 5px; font-size: 0.72rem; display: flex; flex-direction: column; gap: 3px; }
   .fi-cal-cell.fi-outside { opacity: 0.35; }
   .fi-cal-cell.fi-today { outline: 2px solid var(--brand-blue, #29467a); outline-offset: -2px; }
   .fi-cal-daynum { font-weight: 700; color: var(--text); }
   .fi-cal-badges { display: flex; flex-wrap: wrap; gap: 3px; }
-  .fi-badge { display: inline-flex; align-items: center; gap: 3px; min-width: 17px; height: 16px; padding: 0 5px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; color: #fff; cursor: pointer; line-height: 1; white-space: nowrap; }
+  .fi-badge { max-width:100%; overflow:hidden; display: inline-flex; align-items: center; gap: 3px; min-width: 17px; height: 16px; padding: 0 5px; border-radius: 999px; font-size: 0.62rem; font-weight: 800; color: #fff; cursor: pointer; line-height: 1; white-space: nowrap; }
   .fi-badge.fi-over { background: #dc2626; }
   .fi-badge.fi-upcoming { background: var(--brand-blue, #29467a); }
   .fi-badge.fi-upcoming-golive { background: #7c3aed; }
@@ -76,7 +77,7 @@
   .fi-cal-summary strong { color: var(--text); }
 
   /* Tab Rekap Port & LOP: Per Branch (default) / Per Batch */
-  .rekap-tabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--border, #2a3550); padding-bottom: 10px; }
+  .rekap-tabs { display: flex; flex-wrap:wrap; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--border, #2a3550); padding-bottom: 10px; }
   .rekap-tab-btn { border: 1px solid var(--border, #2a3550); background: var(--panel-alt); color: var(--muted); font-weight: 700; font-size: 0.82rem; padding: 7px 16px; border-radius: 8px; cursor: pointer; }
   .rekap-tab-btn:hover { color: var(--text); }
   .rekap-tab-btn.active { background: var(--brand-blue, #29467a); color: #fff; border-color: var(--brand-blue, #29467a); }

@@ -155,6 +155,8 @@ a:hover { text-decoration: underline; }
 
 /* ── Content ──────────────────────────────────────────────────────── */
 .content {
+  min-width: 0;
+  container-type: inline-size;
   padding: 22px 28px 40px;
   max-width: 1400px;
   width: 100%;
@@ -228,19 +230,22 @@ a:hover { text-decoration: underline; }
 /* ── Tables + chart grid ──────────────────────────────────────────── */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1.6fr 1fr;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
   margin-bottom: 22px;
 }
 
 .tables-col {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
 .pivot-table-wrap {
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
 }
 
@@ -647,7 +652,7 @@ table.pivot-combined tbody tr.subtotal-row th {
 /* ── Search + update split panel ─────────────────────────────────── */
 .split-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -772,4 +777,20 @@ button:disabled { background: #9ca3af; cursor: not-allowed; }
   .sidebar.open { transform: translateX(0); }
   .stat-grid { grid-template-columns: 1fr; }
   .content { padding: 16px; }
+}
+
+/* Keep intrinsic table/canvas widths inside their dashboard columns. */
+.dashboard-grid > *, .split-grid > *, .split-half > *, .split-half-fi > *,
+.card, .stat-card, .fi-left-col { min-width: 0; }
+.chart-card canvas { max-width: 100%; }
+.dashboard-chart-wrap { position: relative; width: 100%; height: 280px; min-width: 0; }
+.dashboard-chart-wrap canvas { width: 100% !important; height: 100% !important; }
+@container (max-width: 1000px) {
+  .content .dashboard-grid, .content .split-grid,
+  .content .split-half, .content .split-half-fi {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 650px) {
+  .content .dashboard-filter-row { grid-template-columns: minmax(0, 1fr); }
 }

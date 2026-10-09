@@ -29,7 +29,7 @@
   .dashboard-grid .chart-legend { margin-top:auto; padding-top:12px; }
   .fbb-scurve-block { margin-top:0; display:flex; flex-direction:column; flex:1; }
   .fbb-scurve-block .card { flex:1; display:flex; flex-direction:column; }
-  .fbb-scurve-block .card canvas { flex:1 1 auto; min-height:260px; }
+  .fbb-scurve-block .dashboard-chart-wrap { flex:1 0 280px; }
   .fbb-data-view-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
   .fbb-data-view-btn { border:1px solid var(--border, #e2e8f0); border-radius:7px; background:#f8fafc; color:var(--muted, #64748b); padding:6px 11px; font-size:0.78rem; font-weight:700; cursor:pointer; }
   .fbb-data-view-btn.active { background:var(--brand-blue, #29467a); border-color:var(--brand-blue, #29467a); color:#fff; }
@@ -169,14 +169,14 @@
         <span class="hint">target: sheet TARGET · realisasi: sheet Semesta, status "5.GOLIVE"</span>
       </div>
       <div class="card chart-card">
-        <canvas id="fbbSCurveChart" height="220"></canvas>
+        <div class="dashboard-chart-wrap"><canvas id="fbbSCurveChart"></canvas></div>
         <p class="sub" id="fbbSCurveHint" style="margin:10px 2px 0;"></p>
       </div>
     </div>
   </div>
   <div class="card chart-card">
     <div class="section-title">Distribusi Status LOP</div>
-    <canvas id="fbbStatusChart" height="220"></canvas>
+    <div class="dashboard-chart-wrap"><canvas id="fbbStatusChart"></canvas></div>
     <div class="chart-legend" id="fbbStatusLegend"></div>
   </div>
 </div>
@@ -489,7 +489,7 @@ function renderStatusChart(filteredRows) {
   fbbChart = new Chart(ctx, {
     type: 'doughnut',
     data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
-    options: { plugins: { legend: { display: false } }, cutout: '55%' },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '55%' },
   });
   const total = values.reduce((a, b) => a + b, 0);
   document.getElementById('fbbStatusLegend').innerHTML = labels.map((l, i) => `
