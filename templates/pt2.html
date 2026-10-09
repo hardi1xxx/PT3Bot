@@ -138,7 +138,7 @@
 </div>
 
 <!-- Kendala -->
-<div class="section-title">Kendala</div>
+<div class="section-title">Analisa Kategori Drop &amp; Kendala</div>
 <div class="card" style="margin-bottom:22px;">
   <p style="color:var(--muted, #64748b); font-size:0.85rem; margin:0 0 12px;">
     Klik kategori untuk lihat daftar lokasi &amp; download.
@@ -951,7 +951,7 @@ function pt2ComputeKendalaTable(rows) {
     (rowsByLabel[r.klasifikasi] = rowsByLabel[r.klasifikasi] || []).push(r);
   });
   return Object.keys(counter).sort((a, b) => counter[b] - counter[a])
-    .map(label => ({ label, count: counter[label], rows: rowsByLabel[label], group: pt2KendalaGroupOf(label) }));
+    .map(label => ({ label, count: counter[label], port: rowsByLabel[label].reduce((sum, row) => sum + (Number(row.port) || 0), 0), rows: rowsByLabel[label], group: pt2KendalaGroupOf(label) }));
 }
 
 function pt2RenderKendala(data) {
@@ -973,12 +973,7 @@ function pt2RenderKendalaGrid() {
   const items = pt2Cache.kendala_table
     .map((item, i) => Object.assign({ _idx: i }, item))
     .filter(item => item.group === pt2ActiveKendalaGroup);
-  if (!items.length) { el.innerHTML = '<div class="empty-state">Tidak ada data kendala pada kategori ini.</div>'; return; }
-  el.innerHTML = items.map(item => `
-    <div class="bh-chip" data-kendala-index="${item._idx}" title="Klik untuk lihat daftar lokasi & download">
-      <span>${pt2Esc(item.label)}</span><span class="bh-count">${pt2FmtNum(item.count)}</span>
-    </div>
-  `).join('');
+  renderIssueAnalysis(el, items, item => pt2OpenFilteredList(item.label, item.rows));
 }
 
 document.getElementById('pt2KendalaTabs').addEventListener('click', (e) => {

@@ -151,6 +151,11 @@
     &#128196; Buat Laporan
   </button>
 </div>
+<div class="section-title">Analisa Order Drop &amp; Kendala</div>
+<div class="card" style="margin-bottom:22px;">
+  <div id="fbbIssueAnalysis"><div class="skeleton">Memuat data Drop &amp; Kendala...</div></div>
+</div>
+
 <!-- Modal: daftar lokasi hasil drill-down + download CSV -->
 <div class="modal-overlay" id="fbbListModalOverlay">
   <div class="modal-box" id="fbbListModalBox" style="max-width:1000px;"></div>
@@ -329,7 +334,24 @@ function refreshFbb() {
 
   renderFbbActiveTable();
   renderStatusChart(filtered);
+  renderFbbIssues(filtered);
   renderSCurve();
+}
+
+function renderFbbIssues(rows) {
+  const groups = new Map();
+  rows.forEach(row => {
+    const status = String(row.status_lop || '').trim();
+    if (!/drop|kendala/i.test(status)) return;
+    const key = status.toLocaleLowerCase('id');
+    if (!groups.has(key)) groups.set(key, { label:status, count:0, port:0, rows:[] });
+    const item = groups.get(key);
+    item.count++;
+    item.port += Number(row.final_port) || 0;
+    item.rows.push(row);
+  });
+  renderIssueAnalysis(document.getElementById('fbbIssueAnalysis'), Array.from(groups.values()),
+    item => fbbOpenFilteredList(item.label, item.rows));
 }
 
 function renderFbbActiveTable() {

@@ -327,17 +327,25 @@
 </div>
 
 <!-- Kategori Drop (kolom BH) -->
-<div class="section-title">Kategori Drop</div>
+<div class="section-title">Analisa Kategori Drop &amp; Kendala</div>
 <div class="card" style="margin-bottom:22px;">
   <div class="bh-grid" id="bhGrid"><div class="skeleton">Memuat data...</div></div>
 </div>
 
 <!-- Search + update -->
-<div class="section-title">Lokasi Sedang Berjalan &amp; Update Status</div>
-<div class="split-grid">
-  <div class="card">
+<h2 class="progress-section-heading"><span class="progress-step">03</span> Update Progress <small>Pilih LOP dari daftar di sebelah kiri, lalu lengkapi pembaruan.</small></h2>
+<div class="progress-workspace">
+  <div class="card lop-picker">
+    <h3 class="lop-picker-title">Pilih LOP</h3>
     <label for="q">Cari IHLD / Lokasi IHLD</label>
     <input type="text" id="q" placeholder="Ketik untuk mencari, atau lihat semua di bawah...">
+    <div class="lop-stage-tabs" id="pt3LopStageTabs" role="group" aria-label="Filter status pilihan LOP">
+      <button type="button" class="active" data-lop-stage="" aria-pressed="true">Semua</button>
+      <button type="button" data-lop-stage="PERIJINAN" aria-pressed="false">Perijinan</button>
+      <button type="button" data-lop-stage="PERSIAPAN" aria-pressed="false">Persiapan</button>
+      <button type="button" data-lop-stage="INSTALASI" aria-pressed="false">Instalasi</button>
+      <button type="button" data-lop-stage="GOLIVE" aria-pressed="false">Golive</button>
+    </div>
     <div id="cellFilterChip" style="margin-top:8px;"></div>
     <div class="loc-list" id="locList" style="margin-top: 12px;">
       <div class="skeleton">Memuat lokasi aktif...</div>
@@ -1001,7 +1009,7 @@ function getLocListRows(filteredRows) {
       return true;
     });
   }
-  return filteredRows.filter(r => r.status);
+  return pt3LopStage ? filteredRows : filteredRows.filter(r => r.status);
 }
 
 // ── Build port/LOP pivot tables from filtered rows ────────────────
@@ -2102,26 +2110,22 @@ function computeBhTable(filteredRows) {
   const counter = {};
   const rowsByLabel = {};
   filteredRows.forEach(r => {
-    if (!r.bh) return;
-    counter[r.bh] = (counter[r.bh] || 0) + 1;
-    (rowsByLabel[r.bh] = rowsByLabel[r.bh] || []).push({
-      row: r.row, ihld: r.ihld, lokasi: r.lokasi, batch: r.batch, status_z: r.status_raw,
+    const category = r.bh || (/drop|kendala/i.test(r.status_raw || '') ? r.status_raw : '');
+    if (!category) return;
+    counter[category] = (counter[category] || 0) + 1;
+    (rowsByLabel[category] = rowsByLabel[category] || []).push({
+      row: r.row, ihld: r.ihld, lokasi: r.lokasi, batch: r.batch, status_z: r.status_raw, port: Number(r.port) || 0,
     });
   });
   return Object.keys(counter).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-    .map(label => ({ label, count: counter[label], rows: rowsByLabel[label] }));
+    .map(label => ({ label, count: counter[label], port: rowsByLabel[label].reduce((sum, row) => sum + row.port, 0), rows: rowsByLabel[label] }));
 }
 
 function renderBH(filteredRows) {
   const bhTable = computeBhTable(filteredRows);
   dashboardCache.bh_table = bhTable; // cache for modal lookups
   const el = document.getElementById('bhGrid');
-  if (!bhTable.length) { el.innerHTML = '<div class="empty-state">Belum ada data kategori drop.</div>'; return; }
-  el.innerHTML = bhTable.map((item, i) => `
-    <div class="bh-chip" data-bh-index="${i}" title="Klik untuk lihat daftar">
-      <span>${esc(item.label)}</span><span class="bh-count">${fmtNum(item.count)}</span>
-    </div>
-  `).join('');
+  renderIssueAnalysis(el, bhTable, item => openBhCategory(item.label));
 }
 
 document.getElementById('bhGrid').addEventListener('click', (e) => {
@@ -2278,25 +2282,27 @@ document.getElementById('kmlModalOverlay').addEventListener('click', (e) => {
 });
 
 // ── Lokasi sedang berjalan ─────────────────────────────────────────
+let pt3LopStage = '';
+document.getElementById('pt3LopStageTabs').addEventListener('click', event => {
+  const button = event.target.closest('[data-lop-stage]');
+  if (!button) return;
+  pt3LopStage = button.dataset.lopStage;
+  document.querySelectorAll('#pt3LopStageTabs button').forEach(tab => {
+    tab.classList.toggle('active', tab === button);
+    tab.setAttribute('aria-pressed', String(tab === button));
+  });
+  if (dashboardCache) renderLocList(getLocListRows(getFilteredRows()), document.getElementById('q').value);
+});
+
 function renderLocList(locations, filterText) {
   const el = document.getElementById('locList');
   const q = (filterText || '').trim().toLowerCase();
-  const filtered = q
-    ? locations.filter(r => (r.ihld + ' ' + r.lokasi).toLowerCase().includes(q))
-    : locations;
+  const filtered = locations.filter(r => (!q || (r.ihld + ' ' + r.lokasi).toLowerCase().includes(q))
+    && (!pt3LopStage || (r.status_raw || '').toUpperCase().includes(pt3LopStage)));
 
   if (!filtered.length) { el.innerHTML = '<div class="empty-state">Tidak ada lokasi ditemukan.</div>'; return; }
 
-  el.innerHTML = filtered.map(r => `
-    <div class="result-item ${r.row === selectedRow ? 'selected' : ''}" onclick="openRow(${r.row})">
-      ${r.priority_bx ? `<div class="badge priority-order" style="background:#fef2f2; color:#b91c1c; border:1px solid #fca5a5; font-weight:800; letter-spacing:0.02em; margin-bottom:4px; display:inline-block;">&#9888; ${esc(r.priority_bx)}</div>` : ''}
-      <div class="ihld">${esc(r.ihld) || '(tanpa IHLD)'} — ${esc(r.lokasi) || '-'}</div>
-      <div class="meta">
-        <span class="badge">${esc(r.batch)}</span>
-        <span class="badge status">${esc(r.status)}</span>
-      </div>
-    </div>
-  `).join('');
+  renderLopPicker(el, filtered, selectedRow, openRow);
 }
 
 async function loadDashboard(force = false) {
@@ -2546,7 +2552,7 @@ async function openRow(rowNum) {
     currentKmlVisibleStatuses = json.kml_visible_statuses || [];
 
     const historyCard = (snapshot.last_note || snapshot.note_preview) ? `
-      <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:14px;">
+      <div class="card update-history" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:14px;">
         ${snapshot.last_note ? `
           <label>Keterangan sebelumnya</label>
           <div class="note-preview" style="border-color:var(--brand-blue); color:var(--text); margin-bottom:${snapshot.note_preview ? '10px' : '0'};">${esc(snapshot.last_note)}</div>
@@ -2644,12 +2650,15 @@ async function openRow(rowNum) {
         <textarea id="note_text" placeholder="cth: penarikan kabel selesai 80%..."></textarea>
       </div>
       <div id="updateMsg"></div>
+      <button type="button" class="progress-cancel" onclick="openRow(${rowNum})">Batal</button>
       <button onclick="saveUpdate(${rowNum})">Simpan Update</button>
       &nbsp; <a href="#" onclick="document.getElementById('q').focus(); return false;">&larr; Cari lagi</a>
     `;
     onPanelStatusZChange(rowNum, snapshot.status_z, true, snapshot.status_aa);
     initMitraCombo();
     }
+
+    layoutProgressPanel(panel);
 
     // KML SENGAJA di-load terpisah/lazy setelah panel utama tampil (bukan
     // ikut Promise.all di atas) -- supaya buka panel tidak ikut nunggu

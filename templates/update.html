@@ -4,7 +4,23 @@
 {% block page_sub %}Update status &amp; keterangan tanpa buka Google Sheet{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:640px; margin:0 auto 16px; background:var(--panel-alt); padding:14px 16px;">
+<h2 class="progress-section-heading"><span class="progress-step">03</span> Update Progress <small>Pilih LOP, lalu lengkapi pembaruan progress.</small></h2>
+<div class="progress-workspace">
+<aside class="card lop-picker">
+  <h3 class="lop-picker-title">Pilih LOP</h3>
+  <label for="standaloneLopSearch">Cari IHLD / Lokasi IHLD</label>
+  <input type="search" id="standaloneLopSearch" placeholder="Cari IHLD / Lokasi IHLD..." style="width:100%;">
+  <div class="lop-stage-tabs" id="standaloneLopTabs" role="group" aria-label="Filter status LOP">
+    <button type="button" class="active" data-lop-stage="" aria-pressed="true">Semua</button>
+    <button type="button" data-lop-stage="PERIJINAN" aria-pressed="false">Perijinan</button>
+    <button type="button" data-lop-stage="PERSIAPAN" aria-pressed="false">Persiapan</button>
+    <button type="button" data-lop-stage="INSTALASI" aria-pressed="false">Instalasi</button>
+    <button type="button" data-lop-stage="GOLIVE" aria-pressed="false">Golive</button>
+  </div>
+  <div class="loc-list" id="standaloneLopList"><div class="skeleton">Memuat pilihan LOP...</div></div>
+</aside>
+<div class="standalone-update-column">
+<div class="card" id="standaloneOverview" style="background:var(--panel-alt); padding:14px 16px;">
   <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
     <div style="min-width:0;">
       <div style="font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.03em; margin-bottom:3px;">Baris #{{ row }}{% if label %} &middot; {{ label.ihld }}{% endif %}</div>
@@ -20,6 +36,7 @@
   <div style="display:flex; gap:6px; flex-wrap:wrap;">
     <span class="badge status">Status: {{ snapshot.status_z or '-' }}</span>
     <span class="badge">Sub: {{ snapshot.status_aa or '-' }}</span>
+    {% if snapshot.order_prioritas %}<span class="lop-priority">{{ snapshot.order_prioritas }}</span>{% endif %}
   </div>
   {% if snapshot.progress_stage_label == 'Drop' %}
     <div class="badge" style="background:#7f1d1d; margin-bottom:10px; display:inline-block;">Status: Drop — di luar progress tahapan</div>
@@ -47,8 +64,10 @@
     </div>
   {% endif %}
   {% if snapshot.note_preview %}
+    <div class="update-history" id="standaloneHistory">
     <label>Riwayat keterangan (terbaru di atas)</label>
     <div class="note-preview">{{ snapshot.note_preview }}</div>
+    </div>
   {% endif %}
 </div>
 
@@ -61,7 +80,7 @@
   <a href="/pt3">&larr; Kembali ke dashboard</a>
 </div>
 {% else %}
-<form method="post" class="card update-form" style="max-width:640px; margin:0 auto;" enctype="multipart/form-data">
+<form method="post" class="card update-form" enctype="multipart/form-data">
   <style>
     /* Dropdown pencarian Nama Mitra (kolom Y) -- daftar bisa ~500 nama,
        jadi dibuat combobox kecil dgn hasil filter dibatasi (lihat JS),
@@ -140,8 +159,8 @@
     <label>Dokumen LOP</label>
     {% for doc_key, doc in snapshot.documents.items() %}
       {% set mode = document_modes.get(doc_key, 'hidden') %}
-      {% if mode != 'hidden' %}
-      <div class="card" style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
+      {% if doc_key in document_modes %}
+      <div class="card" data-document-status="{{ doc.required_status }}" {% if mode == 'hidden' %}hidden{% endif %} style="background:var(--panel-alt); padding:10px 12px; margin-bottom:8px;">
         <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
           <strong>{{ doc.label }}</strong>
           <span style="font-size:0.72rem; color:var(--muted);">{{ 'wajib saat ' + doc.required_status if document_upload_required else 'opsional sementara' }}</span>
@@ -152,12 +171,29 @@
           <div style="font-size:0.8rem; color:{{ '#dc2626' if mode == 'upload' else 'var(--muted)' }}; margin:4px 0;">Belum diupload</div>
         {% endif %}
         {% if doc.log %}<div class="note-preview" style="font-size:0.75rem; margin-bottom:6px; white-space:pre-line;">{{ doc.log }}</div>{% endif %}
-        {% if mode == 'upload' %}
+        <div data-document-upload {% if mode != 'upload' %}hidden{% endif %}>
           <input type="file" name="doc_{{ doc_key }}" style="display:block; font-size:0.8rem; margin-bottom:4px;">
           <input type="text" name="doc_note_{{ doc_key }}" placeholder="Catatan (wajib kalau revisi — apa yang diubah/dihapus/ditambah)" style="width:100%;">
-        {% endif %}
+        </div>
       </div>
       {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="field">
+    <label>KML Lokasi <span class="sub">(opsional)</span></label>
+    <div id="standaloneKml" data-visible-statuses='{{ kml_visible_statuses | tojson }}'></div>
+  </div>
+  <div class="field">
+    <label>BOQ <span class="sub">(opsional)</span></label>
+    <div id="standaloneBoq"></div>
+  </div>
+  <div id="extraFieldsContainer">
+    {% for key, meta in extra_field_meta.items() %}
+    <div class="field" data-standalone-extra="{{ key }}">
+      <label for="extra_{{ key }}">{{ meta.label }}{% if meta.type == 'currency' %} (Rp){% endif %} <span class="sub">(opsional)</span></label>
+      <input type="text" name="extra_{{ key }}" id="extra_{{ key }}" placeholder="{{ meta.placeholder or '' }}" value="{{ snapshot.extra_fields.get(key, '') or '' }}">
+    </div>
     {% endfor %}
   </div>
 
@@ -165,6 +201,7 @@
     <label for="note_text">Keterangan update</label>
     <textarea name="note_text" id="note_text" placeholder="cth: penarikan kabel selesai 80%..." required></textarea>
   </div>
+  <button type="reset" class="progress-cancel">Batal</button>
   <button type="submit">Simpan Update</button>
   &nbsp; <a href="/pt3">&larr; Kembali ke dashboard</a>
 </form>
@@ -176,6 +213,8 @@ const STATUS_AA_GROUPS = {{ status_aa_groups | tojson }};
 const PRE_FINISH_INSTALL_STATUSES = {{ pre_finish_install_statuses | tojson }};
 const PROGRESS_DROP_STATUSES = {{ progress_drop_statuses | tojson }};
 const CURRENT_STATUS_AA = {{ (snapshot.status_aa or '') | tojson }};
+const STANDALONE_EXTRA_FIELDS = {{ extra_fields_by_status | tojson }};
+const STANDALONE_PROGRESS_STAGES = {{ progress_stages | tojson }};
 
 const statusZSelect = document.getElementById('status_z');
 const statusAaSelect = document.getElementById('status_aa');
@@ -219,9 +258,31 @@ function onStatusZChange(preserveAa) {
   renderAaOptions(zValue, preserveAa ? CURRENT_STATUS_AA : '');
   toggleTargetFi(zValue);
   toggleKategoriDrop(zValue);
+  document.querySelectorAll('[data-standalone-extra]').forEach(field => {
+    const visible = (STANDALONE_EXTRA_FIELDS[zValue] || []).includes(field.dataset.standaloneExtra);
+    field.hidden = !visible;
+    field.querySelector('input').disabled = !visible;
+  });
+  const currentStage = STANDALONE_PROGRESS_STAGES.findIndex(stage => (stage.z_values || []).includes(zValue));
+  document.querySelectorAll('[data-document-status]').forEach(card => {
+    const requiredStage = STANDALONE_PROGRESS_STAGES.findIndex(stage => (stage.z_values || []).includes(card.dataset.documentStatus));
+    card.hidden = currentStage < 0 || requiredStage < 0 || currentStage < requiredStage;
+    const upload = card.querySelector('[data-document-upload]');
+    const editable = !card.hidden && currentStage === requiredStage;
+    upload.hidden = !editable;
+    upload.querySelectorAll('input').forEach(input => { input.disabled = !editable; });
+  });
 }
 
 statusZSelect.addEventListener('change', () => onStatusZChange(false));
+document.querySelector('.update-form').addEventListener('reset', event => {
+  event.currentTarget.dataset.dirty = '0';
+  requestAnimationFrame(() => {
+    onStatusZChange(true);
+    mitraSearchInput.value = mitraHiddenInput.value;
+    updateMitraJenisHint();
+  });
+});
 onStatusZChange(true); // render awal: pertahankan sub status yang sedang tersimpan
 
 // ── Nama Mitra (kolom Y): combobox pencarian + auto Jenis Pekerjaan (kolom X) ──
@@ -342,4 +403,20 @@ fetch('/api/mitra-options')
   .catch(() => { /* dropdown tetap bisa dipakai manual (isi teks bebas) kalau fetch gagal */ });
 </script>
 {% endif %}
+</div>
+</div>
+<script>
+(function () {
+  const form = document.querySelector('.update-form');
+  if (form) {
+    const overview = document.getElementById('standaloneOverview');
+    const history = document.getElementById('standaloneHistory');
+    if (history) form.prepend(history);
+    form.prepend(overview);
+    layoutProgressPanel(form);
+    initStandaloneAttachments({{ row }});
+  }
+  initStandaloneLopPicker({{ row }});
+})();
+</script>
 {% endblock %}

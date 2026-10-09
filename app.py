@@ -747,6 +747,10 @@ def update_form(row_num):
         document_types=config.DOCUMENT_TYPES,
         document_modes=sheets_service.get_document_ui_modes(snapshot["status_z"]),
         document_upload_required=config.DOCUMENT_UPLOAD_REQUIRED,
+        extra_fields_by_status=config.EXTRA_FIELDS_BY_STATUS,
+        extra_field_meta=config.EXTRA_FIELD_META,
+        kml_visible_statuses=config.KML_VISIBLE_STATUSES,
+        progress_stages=config.PROGRESS_STAGES,
         today_iso=datetime.date.today().isoformat(),
     )
 
@@ -767,6 +771,15 @@ def do_update(row_num):
     target_fi = request.form.get("target_fi", "").strip()
     kategori_drop = request.form.get("kategori_drop", "").strip()
     mitra_value = request.form.get("nama_mitra", "").strip()
+    extra_fields = {
+        key: request.form.get(f"extra_{key}", "").strip()
+        for key in config.EXTRA_FIELDS_BY_STATUS.get(z_value, [])
+    }
+    for key, raw_value in extra_fields.items():
+        ok, message = sheets_service.validate_extra_field(key, raw_value)
+        if not ok:
+            flash(f"{config.EXTRA_FIELD_META.get(key, {}).get('label', key)}: {message}", "error")
+            return redirect(url_for("update_form", row_num=row_num))
 
     if not z_value:
         flash("Status (kolom Z) wajib dipilih.", "error")
@@ -813,7 +826,7 @@ def do_update(row_num):
     try:
         date_col, note_col = sheets_service.update_status(
             row_num, z_value, aa_value, note_text, target_fi=target_fi,
-            kategori_drop=kategori_drop, mitra_value=mitra_value,
+            kategori_drop=kategori_drop, mitra_value=mitra_value, extra_fields=extra_fields,
         )
         flash(f"Berhasil diupdate ke kolom {note_col} (tanggal di {date_col}).", "success")
     except Exception as e:
